@@ -1,6 +1,6 @@
 /**
  * Uyelik: kullanici adi + parola. Uyeyi yalniz yetkili olan (uye.yonet) olusturur.
- * Her uyenin bir ROLU (yetki.mjs: yerlesik ya da ozel rol), istege bagli KAPSAMI (hangi kameralari gorebilir),
+ * Her uyenin bir ROLU (permission.mjs: yerlesik ya da ozel rol), istege bagli KAPSAMI (hangi kameralari gorebilir),
  * hesap BITIS tarihi ve IP/CIDR listesi vardir.
  * Parolalar scrypt ile tuzlanip saklanir (uyeler tablosu; bellekte onbellekli, yazma veritabanina islenince degisir); oturum, gizli
  * anahtarla imzali cerezdir (sunucuda oturum tablosu yok; cerez her istekte uyeden yeniden dogrulanir: uye silinince, parola degisince, cikis yapilinca
@@ -9,7 +9,7 @@
 import { createHmac, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto';
 import { Kilit, Koleksiyon, yazGeriAl } from '../core/tables.mjs';
 import { UYELER } from '../database/schema.mjs';
-import { bitisNormalle, ipEslesir, iplerNormalle, kapsamNormalle } from './yetki.mjs';
+import { bitisNormalle, ipEslesir, iplerNormalle, kapsamNormalle } from './permission.mjs';
 
 const AD_KURALI = /^[a-zA-Z0-9._@-]{3,64}$/;   // @: merkezden gelen uye adi e-posta (diger paneller gibi)
 const OTURUM_GUN = 30;

@@ -8,9 +8,9 @@ import { VeritabaniHatasi } from '../core/errors.mjs';
 import { Uniview } from '../drivers/uniview.mjs';
 import { Hikvision } from '../drivers/hikvision.mjs';
 import { Xiongmai } from '../drivers/xiongmai.mjs';
-import { IpKamera } from '../drivers/ipkamera.mjs';
-import { CihazGrubu } from '../drivers/grup.mjs';
-import { CihazDeposu, TURLER } from '../models/cihaz.mjs';
+import { IpKamera } from '../drivers/ip-camera.mjs';
+import { CihazGrubu } from '../drivers/group.mjs';
+import { CihazDeposu, TURLER } from '../models/device.mjs';
 
 function ffmpegBul(tercih) {
   for (const a of [tercih, 'ffmpeg'].filter(Boolean)) if (spawnSync(a, ['-version'], { stdio: 'ignore' }).status === 0) return a;
@@ -33,7 +33,7 @@ export class CihazHizmeti {
     this.#adlariUygula();
   }
   /** Testler icin sahte surucu kaydi (yalniz yapilandirma.cihaz.test). */
-  async sahteyiKaydet() { if (!this.y.cihaz.test) return; const { Sahte } = await import('../drivers/sahte.mjs'); this.suruculer.sahte = Sahte; this.turler.sahte = TURLER.sahte = { ad: 'Sahte (test)', kanal: 4, etiket: 'T' }; }
+  async sahteyiKaydet() { if (!this.y.cihaz.test) return; const { Sahte } = await import('../drivers/mock.mjs'); this.suruculer.sahte = Sahte; this.turler.sahte = TURLER.sahte = { ad: 'Sahte (test)', kanal: 4, etiket: 'T' }; }
   /** Depoyu acar (tohumlar) ve cihazlari baslatir. sahteyiKaydet()'ten SONRA cagrilir. */
   async baslat() {
     let tohum = []; try { tohum = JSON.parse(this.y.cihaz.tohum); } catch (e) { throw new Error(`KAMERA_CIHAZLAR okunamadı: ${e.message}`); }

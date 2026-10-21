@@ -2,7 +2,7 @@
  * Guncelleme kontrolu: GitHub'a cikmadan, sahte fetch ile. DC panellerindeki GuncellemeDenetimiTest'in karsiligi.
  * Asil kurallar: karsilastirma son BASARILI derlemeyle yapilir, yon olculur (ileride olan "guncelleme" sayilmaz), jeton
  * sonucta ve iletilerde gecmez, jeton yoksa acik depoya jetonsuz sorulur; uclar yalniz guncelleme.denetle iznine acik.
- * Calisan surum, derlemeye commit vermeyen platformlarda baglamdaki .git'ten okunur (docker/surum-oku.sh).
+ * Calisan surum, derlemeye commit vermeyen platformlarda baglamdaki .git'ten okunur (docker/read-version.sh).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,14 +11,14 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GuncellemeHizmeti } from '../src/services/guncelleme.mjs';
-import { IZINLER } from '../src/models/yetki.mjs';
+import { GuncellemeHizmeti } from '../src/services/updates.mjs';
+import { IZINLER } from '../src/models/permission.mjs';
 import { uygulamaAc, vtAc } from './helpers.mjs';
 import { Ayarlar } from '../src/core/tables.mjs';
 
 const JETON = 'github_pat_SINAMA_JETONU_123';
 const CALISAN = 'a'.repeat(40), SON = 'b'.repeat(40);
-const AYAR = { depo: 'mustafa-ozen95/kamera-ornek', is: 'imaj.yml', dal: 'main', jeton: JETON, surum: CALISAN, saat: '06:50', api: 'https://api.github.com' };
+const AYAR = { depo: 'mustafa-ozen95/kamera-ornek', is: 'image.yml', dal: 'main', jeton: JETON, surum: CALISAN, saat: '06:50', api: 'https://api.github.com' };
 
 /** Sahte GitHub: derleme listesi ve compare yaniti; gelen istekler `istekler`de. */
 function sahteGithub({ son = SON, fark = { status: 'identical' }, kod = 200, kopuk = false, govde = { message: 'Bad credentials' } } = {}) {
@@ -27,7 +27,7 @@ function sahteGithub({ son = SON, fark = { status: 'identical' }, kod = 200, kop
     istekler.push({ url: String(url), secenek });
     if (kopuk) throw new TypeError('fetch failed');
     const yanit = (k, j) => new Response(JSON.stringify(j), { status: k, headers: { 'Content-Type': 'application/json' } });
-    if (String(url).includes('/actions/workflows/imaj.yml/runs')) return kod === 200 ? yanit(200, { workflow_runs: [{ head_sha: son, updated_at: '2026-10-20T10:00:00Z' }] }) : yanit(kod, govde);
+    if (String(url).includes('/actions/workflows/image.yml/runs')) return kod === 200 ? yanit(200, { workflow_runs: [{ head_sha: son, updated_at: '2026-10-20T10:00:00Z' }] }) : yanit(kod, govde);
     if (String(url).includes('/compare/')) return yanit(200, fark);
     return yanit(404, { message: 'Not Found' });
   };
@@ -57,7 +57,7 @@ test('jetonsuz sorulan özel ya da olmayan depo anlaşılır hata verir', async 
 });
 
 test('çalışan sürüm derleme bağlamındaki .git\'ten okunur (ayrı ref, packed-refs, .git yok)', () => {
-  const betik = join(dirname(fileURLToPath(import.meta.url)), '..', 'docker', 'surum-oku.sh');
+  const betik = join(dirname(fileURLToPath(import.meta.url)), '..', 'docker', 'read-version.sh');
   const kok = mkdtempSync(join(tmpdir(), 'cam-srm-'));
   const oku = () => execFileSync('sh', [betik, kok], { encoding: 'utf8' }).trim();
   try {

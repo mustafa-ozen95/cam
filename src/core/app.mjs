@@ -5,7 +5,7 @@
 import { createServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { readFileSync, existsSync } from 'node:fs';
-import { Yonlendirici, zincir } from './yonlendirici.mjs';
+import { Yonlendirici, zincir } from './router.mjs';
 import { hataYaniti, json } from './http.mjs';
 
 export class Uygulama {

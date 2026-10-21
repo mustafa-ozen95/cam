@@ -2,7 +2,7 @@
  * Dis API v1 (/api/v1/...): kararli, dokumante, surumlu. Kimlik: Bearer API anahtari (cerez de calisir).
  * Kaynak odakli adlandirma; kanal yollari /api/v1/kameralar/:kanal/... Ayni denetleyiciler kullanilir (tek is mantigi).
  */
-import { izin, herhangi } from '../src/middleware/yetki.mjs';
+import { izin, herhangi } from '../src/middleware/permissions.mjs';
 import { json, temizIp } from '../src/core/http.mjs';
 
 export function apiV1Rotalari(r, d, ara, { cihazlar, yapilandirma, vt }) {

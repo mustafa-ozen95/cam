@@ -4,7 +4,7 @@
  * Kayit listesi: cihaz yalniz gun bazinda "kayit var" bilgisi veriyor (DailyDistribution); gunler 15 dk'lik dilimlere bolunur.
  * Zaman: arayuz cihazin YEREL saatini kullanir; RTSP/LAPI epoch'u = yerel saat - cihaz saat dilimi (GMT+02:00 gibi).
  */
-import { CihazTaban, digestIstek, yerelMetin, yerelSn } from './taban.mjs';
+import { CihazTaban, digestIstek, yerelMetin, yerelSn } from './base.mjs';
 import { RtspCihaz } from './rtsp.mjs';
 
 const DILIM = 900;                       // kayit dilimi (sn)

@@ -4,7 +4,7 @@
  * Anahtar gizlisi yalniz olusturma/yenileme yanitinda bir kez doner; dosyada ozet saklanir.
  */
 import { govdeOku, json } from '../core/http.mjs';
-import { IZINLER, IZIN_GRUPLARI, YetkiHatasi, izinAltKume, izinGenislet } from '../models/yetki.mjs';
+import { IZINLER, IZIN_GRUPLARI, YetkiHatasi, izinAltKume, izinGenislet } from '../models/permission.mjs';
 
 export function yetkiDenetleyici({ yetki, gunluk, cihazlar }) {
   const tumYetki = (asal) => asal.izinVar('yetki.yonet');

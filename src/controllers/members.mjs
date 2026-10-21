@@ -4,7 +4,7 @@
  */
 import { cerezYaz, govdeOku, json } from '../core/http.mjs';
 import { VeritabaniHatasi } from '../core/errors.mjs';
-import { YetkiHatasi, bitisNormalle, iplerNormalle, izinAltKume, kapsamIcinde, kapsamNormalle } from '../models/yetki.mjs';
+import { YetkiHatasi, bitisNormalle, iplerNormalle, izinAltKume, kapsamIcinde, kapsamNormalle } from '../models/permission.mjs';
 
 export function uyelerDenetleyici({ uyeler, yetki, gunluk, cihazlar, baglar = null, yapilandirma }) {
   const rolDenetle = (asal, rol) => { if (rol !== undefined && !izinAltKume(yetki.rolIzinleri(rol), asal.izinler)) throw new YetkiHatasi('YETKI_YUKSELTME', 'Sahip olmadığınız izinleri içeren bir rol veremezsiniz', 403); };

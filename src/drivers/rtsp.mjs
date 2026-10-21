@@ -4,8 +4,8 @@
  * Alt siniflar yalniz adresleri verir: canliYol(kanal, tur), oynatYol(kanal, bas, bit) ve cihazSimdi() (cihazin yerel saati, sn).
  */
 import { spawn } from 'node:child_process';
-import { CihazTaban, yerelMetin, yerelSn } from './taban.mjs';
-import { MP4_CIKIS, Mp4Yayin, cevirArgumanlari } from './mp4yayin.mjs';
+import { CihazTaban, yerelMetin, yerelSn } from './base.mjs';
+import { MP4_CIKIS, Mp4Yayin, cevirArgumanlari } from './mp4-stream.mjs';
 
 const JPEG_BAS = Buffer.from([0xff, 0xd8]);
 const JPEG_SON = Buffer.from([0xff, 0xd9]);
@@ -97,7 +97,7 @@ export const mp4Argumanlari = (url, tur, cevir) => ['-rtsp_transport', 'tcp', '-
 
 /** Canli/kayitli MJPEG akisi: aboneler, son, kareSayac, hazir, hata, durdur, ilkKare (sunucu.mjs bu sozlesmeyi kullanir). */
 /**
- * ffmpeg argumanlari (test/rtsp-arguman.test.mjs). Suzgec: kare hizi (yalniz canli izgara) ve olcek;
+ * ffmpeg argumanlari (test/rtsp-args.test.mjs). Suzgec: kare hizi (yalniz canli izgara) ve olcek;
  * genislik 0 = olceksiz, kameranin tam cozunurlugu. Suzgec yoksa -vf hic yazilmaz.
  */
 export function yayinArgumanlari(cihaz, { yol, genislik, oynatma, fps }) {

@@ -8,7 +8,7 @@ import { VeritabaniHatasi } from '../core/errors.mjs';
 import { join } from 'node:path';
 import { govdeOku, hamGovdeOku, json } from '../core/http.mjs';
 
-const DOSYALAR = { 'live.js': 'text/javascript; charset=utf-8', 'live.css': 'text/css; charset=utf-8', 'tema.mjs': 'text/javascript; charset=utf-8' };
+const DOSYALAR = { 'live.js': 'text/javascript; charset=utf-8', 'live.css': 'text/css; charset=utf-8', 'theme.mjs': 'text/javascript; charset=utf-8' };
 
 export function liveDenetleyici({ live, yapilandirma }) {
   const kok = join(yapilandirma.gorunumler, '..', 'live');

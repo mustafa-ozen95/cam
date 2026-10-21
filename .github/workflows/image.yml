@@ -7,7 +7,7 @@
 #  v* etiketlerinde sürüm. org.opencontainers.image.revision etiketi imaja
 #  gömülür; çalışan sürüm oradan okunabilir.
 # =============================================================================
-name: imaj
+name: image
 
 on:
   push:
@@ -20,7 +20,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: imaj-${{ github.ref }}
+  group: image-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

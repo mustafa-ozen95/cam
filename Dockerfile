@@ -24,6 +24,6 @@ ARG SURUM=""
 ENV UYGULAMA_SURUMU=${SURUM}
 # SURUM verilmezse (commit vermeyen derleme ortamlarında) baglamdaki .git'ten okunur, /app/SURUM'a
 # yazilir; config/app.mjs once ortama, sonra bu dosyaya bakar. .git yoksa dosya bos kalir.
-RUN --mount=type=bind,target=/tmp/baglam sh /tmp/baglam/docker/surum-oku.sh > /app/SURUM
+RUN --mount=type=bind,target=/tmp/baglam sh /tmp/baglam/docker/read-version.sh > /app/SURUM
 USER node
 CMD ["node", "bin/cam.mjs"]

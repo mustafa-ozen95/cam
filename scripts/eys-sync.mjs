@@ -6,8 +6,8 @@
  *   node scripts/eys-sync.mjs [EYS_KOKU] --kontrol  yalniz bakar: EYS'de degisen dosya var mi
  *
  * Kopyalananlar: resources/css/** -> web/css/eys/, resources/js/{lib/dom.js, components/<LISTE>} -> web/js/eys/.
- * web/css/eys ve web/js/eys ELLE DEGISTIRILMEZ; test/eys-tasarim.test.mjs OZET.json'a karsi denetler.
- * Kameraya ozgu kurallar web/css/kamera.css'te: yeni secici ekler, EYS secicisini yeniden tanimlamaz.
+ * web/css/eys ve web/js/eys ELLE DEGISTIRILMEZ; test/eys-design.test.mjs OZET.json'a karsi denetler.
+ * Kameraya ozgu kurallar web/css/camera.css'te: yeni secici ekler, EYS secicisini yeniden tanimlamaz.
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';

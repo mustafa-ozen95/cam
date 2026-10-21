@@ -1,8 +1,8 @@
 /*
  * Giris noktasi: yerel yazi tipleri, EYS tasarimi (css/eys, BIREBIR kopya; elle degistirme,
- * scripts/eys-sync.mjs), en sonda kameraya ozgu eklemeler (kamera.css yalnizca ekler).
+ * scripts/eys-sync.mjs), en sonda kameraya ozgu eklemeler (camera.css yalnizca ekler).
  */
 
 @import './fonts.css';
 @import './eys/app.css';
-@import './kamera.css';
+@import './camera.css';

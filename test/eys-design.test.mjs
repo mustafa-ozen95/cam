@@ -1,7 +1,7 @@
 /**
  * EYS tasarimi BIREBIR: web/css/eys ve web/js/eys EYS'den kopyadir (scripts/eys-sync.mjs), elle degistirilmez.
  *  - OZET.json'daki her dosyanin sha256'si yeniden hesaplanir; elle yapilan degisiklik burada yakalanir.
- *  - kamera.css yalniz EKLER: EYS'nin tanimladigi bir seciciyi yeniden tanimlayamaz (ayni secici metni yasak;
+ *  - camera.css yalniz EKLER: EYS'nin tanimladigi bir seciciyi yeniden tanimlayamaz (ayni secici metni yasak;
  *    .detail--genis gibi yeni degistiriciler serbest).
  * Bagimlilik yok: secici ayristirma bilerek basit (yorumlar atilir, "{" oncesindeki baslangiclar virgulle bolunur).
  */
@@ -56,15 +56,15 @@ test('css/eys ve js/eys altinda OZET.json disinda dosya yok', () => {
 test('app.css EYS agacini aynen ice aktarir; eski ayrismis dosyalar yok', () => {
   const app = readFileSync(join(WEB, 'css', 'app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   const ice = [...app.matchAll(/@import\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
-  assert.deepEqual(ice, ['./fonts.css', './eys/app.css', './kamera.css']);
+  assert.deepEqual(ice, ['./fonts.css', './eys/app.css', './camera.css']);
   for (const eski of ['base.css', 'layout.css', 'tokens.css', 'utilities.css', 'themes', 'components']) assert.ok(!existsSync(join(WEB, 'css', eski)), `eski dosya duruyor: css/${eski}`);
 });
 
-test('kamera.css EYS seciciyi yeniden tanimlamaz', () => {
+test('camera.css EYS seciciyi yeniden tanimlamaz', () => {
   const eys = new Set(cssDosyalari(join(WEB, 'css', 'eys')).flatMap((d) => seciciler(readFileSync(join(WEB, 'css', 'eys', d), 'utf8'))));
   assert.ok(eys.has('.row-item') && eys.has('.modal__box'), 'EYS secicileri okunamadi');
-  const kamera = seciciler(readFileSync(join(WEB, 'css', 'kamera.css'), 'utf8'));
+  const kamera = seciciler(readFileSync(join(WEB, 'css', 'camera.css'), 'utf8'));
   assert.ok(kamera.length > 0);
   const cakisan = [...new Set(kamera.filter((s) => eys.has(s)))];
-  assert.deepEqual(cakisan, [], `kamera.css EYS secicilerini yeniden tanimliyor: ${cakisan.join(' | ')}`);
+  assert.deepEqual(cakisan, [], `camera.css EYS secicilerini yeniden tanimliyor: ${cakisan.join(' | ')}`);
 });

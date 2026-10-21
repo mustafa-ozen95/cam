@@ -152,7 +152,7 @@ export class MerkezBaglari {
 
   /**
    * Giriste: bagli uyeyi dondurur; bag yoksa ve merkez "hesap acilabilir" diyorsa uye acar.
-   * Uye adi e-postanin kendisidir (diger paneller gibi; uye.mjs kurali: 3-64, harf/rakam/._-@); catisirsa @ oncesine sayi eklenir.
+   * Uye adi e-postanin kendisidir (diger paneller gibi; member.mjs kurali: 3-64, harf/rakam/._-@); catisirsa @ oncesine sayi eklenir.
    */
   async girisYap(kimlik, istek) {
     let bag = this.bul(kimlik.sub);

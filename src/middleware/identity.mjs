@@ -5,7 +5,7 @@
  * izin ve kapsami hicbir zaman sahibin GUNCEL rolunun ustune cikmaz. (Sahibi uye olmayan anahtar — yetki.yonet'in verdigi entegrasyon etiketi — kendi haklariyla calisir.)
  * `kimlik` oturum zorunlu; `kimlikIstege` yoksa gecer (ctx.asal = null).
  */
-import { Asal, YetkiHatasi, ipEslesir, izinKesisim, kapsamKesisim } from '../models/yetki.mjs';
+import { Asal, YetkiHatasi, ipEslesir, izinKesisim, kapsamKesisim } from '../models/permission.mjs';
 import { cerezOku, istemciIp, json } from '../core/http.mjs';
 
 export function kimlikKur({ uyeler, yetki, cihazlar, yapilandirma, baglar = null }) {

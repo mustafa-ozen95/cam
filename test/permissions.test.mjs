@@ -5,7 +5,7 @@ import { vtAc } from './helpers.mjs';
 import {
   Asal, HataKisiti, HizSiniri, IZINLER, YetkiDeposu, YetkiHatasi, YERLESIK_ROLLER, bitisNormalle, iplerNormalle, ipEslesir, ipKuraliGecerli,
   izinAltKume, izinGecerli, izinGenislet, izinKesisim, izinVar, kapsamIcinde, kapsamKanalIzinli, kapsamKesisim, kapsamKumesi, kapsamNormalle,
-} from '../src/models/yetki.mjs';
+} from '../src/models/permission.mjs';
 
 // kanallar: cihaz A = 0..3, cihaz B = 4..7
 const cihazIdOf = (k) => (k < 4 ? 'aaaa1111' : k < 8 ? 'bbbb2222' : null);

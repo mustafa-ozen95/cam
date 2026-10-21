@@ -5,7 +5,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { VeritabaniHatasi } from '../core/errors.mjs';
 import { cerezOku, cerezYaz, govdeOku, json } from '../core/http.mjs';
-import { MerkezYetkisizHatasi } from '../services/merkez.mjs';
+import { MerkezYetkisizHatasi } from '../services/hub.mjs';
 
 const AKIS_CEREZI = 'kamera_merkez_akis';
 const AKIS_SN = 600;

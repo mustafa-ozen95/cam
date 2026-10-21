@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
 import { json } from '../core/http.mjs';
-import { MERKEZ_HATALARI } from './merkez.mjs';
+import { MERKEZ_HATALARI } from './hub.mjs';
 
 const kacir = (m) => String(m).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -14,7 +14,7 @@ export function gorunumDenetleyici({ yapilandirma, merkez = null }) {
   return {
     async anaSayfa(ctx) {
       const kim = ctx.asal?.tur === 'uye';   // kimlikIstege: imza + merkez erisimi + ortak cikis + IP
-      const dosya = join(kok, kim ? 'index.html' : 'giris.html');
+      const dosya = join(kok, kim ? 'index.html' : 'login.html');
       let html = readFileSync(dosya, 'utf8').replaceAll('Kamera Paneli', yapilandirma.sunucu.baslik).replaceAll('Kamera paneli', yapilandirma.sunucu.baslik);
       if (!kim) {
         // Merkez ile giris dugmesi yalnizca yapilandirilmissa; hata metni adres cubugundaki KODA gore sunucuda secilir.

@@ -2,7 +2,7 @@
  * Yetki ara katmanlari: izin(...) belirli bir izni zorunlu kilar; herhangi(...) listeden biri yeterli.
  * ctx.gerek(izin) ve ctx.kanalGerek(kanal) denetleyicilere de verilir (dinamik denetim icin).
  */
-import { YetkiHatasi } from '../models/yetki.mjs';
+import { YetkiHatasi } from '../models/permission.mjs';
 
 export const gerekKur = (asal) => ({
   gerek: (izin) => { if (!asal.izinVar(izin)) throw new YetkiHatasi('YETKI_YOK', `Bu işlem için izin gerekir: ${izin}`, 403, { gerekenIzin: izin }); },

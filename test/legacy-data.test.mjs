@@ -9,7 +9,7 @@ import { createHmac, randomBytes, scryptSync, createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CihazDeposu } from '../src/models/cihaz.mjs';
+import { CihazDeposu } from '../src/models/device.mjs';
 import { uygulamaAc } from './helpers.mjs';
 
 const SUB_ADMIN = '5a0d0000-0000-7000-8000-000000000001', SUB_KAPALI = '5a0d0000-0000-7000-8000-000000000002', SUB_OLU = '5a0d0000-0000-7000-8000-000000000003';

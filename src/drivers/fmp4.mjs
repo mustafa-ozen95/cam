@@ -1,6 +1,6 @@
 /**
  * Parcali MP4 (fMP4) okuma: ffmpeg'in "-c:v copy -movflags empty_moov+frag_keyframe" ciktisini kutulara ayirir.
- * Baslangic (ftyp+moov) bir kez gelir; sonra her parca moof+mdat. Canli yayin bunu izleyicilere dagitir (mp4yayin.mjs).
+ * Baslangic (ftyp+moov) bir kez gelir; sonra her parca moof+mdat. Canli yayin bunu izleyicilere dagitir (mp4-stream.mjs).
  * Kodek adi (RFC 6381) tarayicinin MediaSource.isTypeSupported sorusu icin baslangictan cikarilir.
  */
 

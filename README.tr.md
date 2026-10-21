@@ -23,7 +23,7 @@ src/controllers/           denetleyiciler: giris, uyeler, cihazlar, akis, yetki,
 src/services/              hizmetler: cihazlar (sürücü kaydı, grup, kanal ayarı), gunluk (HMAC zincirli denetim günlüğü), live, merkez
 src/models/                modeller: uye (üyelik, scrypt), yetki (izin/rol/anahtar çekirdeği), cihaz (şifreli cihaz deposu)
 src/drivers/               sürücüler: taban, rtsp, uniview, hikvision, xiongmai(-dvr, -dvrip), ipkamera, grup, sahte (test)
-resources/views/web/       arayüz (index.html, giris.html, css/, js/) — görünümde iş mantığı yok, API ile konuşur
+resources/views/web/       arayüz (index.html, login.html, css/, js/) — görünümde iş mantığı yok, API ile konuşur
 resources/views/live/      /live sayfası (WebRTC)
 docs/                      api-v1.tr.md, api-v1.en.md, openapi.json (scripts/openapi.mjs üretir); /dokuman adresinden sunulur
 scripts/                   openapi.mjs, eys-sync.mjs
@@ -89,16 +89,16 @@ Parolalar scrypt; cihaz parolaları AES-256-GCM; anahtarlar HMAC özeti; çerez 
 
 ## Güncelleme kontrolü
 Üst menüdeki **Güncelleme** (`guncelleme.denetle` izni; admin'de var) çalışan sürümü GitHub'da main dalının **son başarılı imaj derlemesiyle** karşılaştırır: kaç commit geride, hangi commit'ler yeni. Yön de ölçülür; çalışan sürüm son derlemeden yeniyse "güncelleme" denmez. Kontrol her sabah 06:50'de kendiliğinden yapılır, düğme hemen yapar; yeni sürüm varsa bu izni olanlar sayfanın üstünde uyarı görür. Ekran **yalnızca bakar**; güncelleme sunucudan yapılır. DC panellerindeki Ayarlar → Güncelleme ile aynı kurallar.
-- Çalışan sürüm imaja derlemede yazılır (`ARG SURUM` → `UYGULAMA_SURUMU`; iş akışı commit'i verir). Derleme commit vermiyorsa derleme bağlamındaki `.git`'ten okunur (`docker/surum-oku.sh`; `.dockerignore` yalnız `HEAD` ve ref'leri alır). Sonuç veritabanında (`settings`, `update-status`).
+- Çalışan sürüm imaja derlemede yazılır (`ARG SURUM` → `UYGULAMA_SURUMU`; iş akışı commit'i verir). Derleme commit vermiyorsa derleme bağlamındaki `.git`'ten okunur (`docker/read-version.sh`; `.dockerignore` yalnız `HEAD` ve ref'leri alır). Sonuç veritabanında (`settings`, `update-status`).
 - Depo açık: jeton gerekmez, GitHub'a jetonsuz sorulur (sınır IP başına saatte 60 istek). Depo özelse `GUNCELLEME_JETONU` salt okunur bir jeton olmalı (fine-grained, yalnız panel depoları, Contents ve Actions: read).
 - Panel GitHub'a çıkamıyorsa (kapalı ağ) kontrol "erişilemedi" der.
 
 ## Dil
-Arayüz dizgeleri Türkçe yazılır; `resources/views/web/js/dil.js` sözlüğü ve kuralları EN'e çevirir (seçim üst çubuktaki hesap menüsünden yapılır ve tarayıcıda saklanır). Yeni bir dizge eklerken sözlüğe İngilizcesini ekleyin; dinamik metinler için kural (regex) yazın. Rol/izin adları sunucudan `{tr, en}` gelir.
+Arayüz dizgeleri Türkçe yazılır; `resources/views/web/js/lang.js` sözlüğü ve kuralları EN'e çevirir (seçim üst çubuktaki hesap menüsünden yapılır ve tarayıcıda saklanır). Yeni bir dizge eklerken sözlüğe İngilizcesini ekleyin; dinamik metinler için kural (regex) yazın. Rol/izin adları sunucudan `{tr, en}` gelir.
 
 ## Tasarım (EYS ile birebir)
 İç ekranlar EYS panelinin tasarım şablonunu **değiştirmeden** kullanır: üst çubuk, hesap menüsü, sütun şeridi (canlı, kayıtlar, cihaz üç bölmeli), yönetim tabloları, pencereler, bildirimler ve tema aynı işaretleme ve aynı CSS ile çizilir.
-- `resources/views/web/css/eys/` ve `resources/views/web/js/eys/` EYS'den **kopyadır, elle değiştirilmez.** EYS değişince `node scripts/eys-sync.mjs <EYS deposu>` ile yeniden kopyalanır (`--kontrol` yalnız farkı söyler); dosya özetleri `css/eys/OZET.json`'da, `test/eys-tasarim.test.mjs` elle yapılan değişikliği yakalar.
-- `css/app.css` yalnız `fonts.css` (yerel yazı tipleri), `eys/app.css` ve `kamera.css`'i içe aktarır.
-- `css/kamera.css` **yalnızca ekler**: kameraya özgü parçalar (ızgara, oynatıcı, zaman çizelgesi, kayıt satırı, tam ekran). EYS'nin tanımladığı bir seçiciyi yeniden tanımlamaz (test denetler); gerekiyorsa `.detail--genis` gibi yeni bir değiştirici eklenir.
-- `js/bolme.js`: dar ekranda doğru bölmeye iner (EYS `columns.js` kuralı, seçim adreste değil sayfa durumunda olduğu için).
+- `resources/views/web/css/eys/` ve `resources/views/web/js/eys/` EYS'den **kopyadır, elle değiştirilmez.** EYS değişince `node scripts/eys-sync.mjs <EYS deposu>` ile yeniden kopyalanır (`--kontrol` yalnız farkı söyler); dosya özetleri `css/eys/OZET.json`'da, `test/eys-design.test.mjs` elle yapılan değişikliği yakalar.
+- `css/app.css` yalnız `fonts.css` (yerel yazı tipleri), `eys/app.css` ve `camera.css`'i içe aktarır.
+- `css/camera.css` **yalnızca ekler**: kameraya özgü parçalar (ızgara, oynatıcı, zaman çizelgesi, kayıt satırı, tam ekran). EYS'nin tanımladığı bir seçiciyi yeniden tanımlamaz (test denetler); gerekiyorsa `.detail--genis` gibi yeni bir değiştirici eklenir.
+- `js/split.js`: dar ekranda doğru bölmeye iner (EYS `columns.js` kuralı, seçim adreste değil sayfa durumunda olduğu için).

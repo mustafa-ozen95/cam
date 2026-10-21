@@ -589,7 +589,7 @@
 
 <div class="toast-host" data-flash="" data-flash-variant="success"></div>
 
-<script src="/js/dil.js"></script>
+<script src="/js/lang.js"></script>
 <script type="module">
 /*
  * EYS bilesenleri BIREBIR (js/eys, scripts/eys-sync.mjs): tema, hesap menusu, pencere, bildirim, sutun seridi.
@@ -601,12 +601,12 @@ import * as kullaniciMenu from '/js/eys/components/kullanici-menu.js';
 import * as dialog from '/js/eys/components/dialog.js';
 import * as toast from '/js/eys/components/toast.js';
 import * as columns from '/js/eys/components/columns.js';
-import { bolmeyeIn } from '/js/bolme.js';
+import { bolmeyeIn } from '/js/split.js';
 
 theme.init();
 document.addEventListener('DOMContentLoaded', () => { dialog.init(); kullaniciMenu.init(); toast.init(); columns.init(); });
 
-const dil = window.DIL?.gecerli ?? 'tr';                       // 'tr' | 'en' (js/dil.js)
+const dil = window.DIL?.gecerli ?? 'tr';                       // 'tr' | 'en' (js/lang.js)
 /** Bildirim: EYS toast (tur: success | danger | info). */
 const bildir = (mesaj, tur = 'info') => toast.emit(String(mesaj), tur);
 /** Pencereler EYS .modal[data-modal]: acmak hidden kaldirir ve ilk alana odaklanir (EYS dialog.js ile ayni), kapatmak yalniz gizler (form sifirlanmaz; kapatma dugmesi/Escape/zemin EYS'de sifirlar). */
@@ -694,7 +694,7 @@ let bilgi = null;
 const gorunur = () => (bilgi ? bilgi.kanalAdlari.map((_, k) => k).filter((k) => !bilgi.kanalBos?.[k]) : []);
 const durum = { sekme: 'canli', odak: null, cihaz: null, cihazSecildi: false };
 const SEKMELER = ['canli', 'kayit', 'indirilen', 'cihaz', 'uyeler', 'gunluk', 'guncelleme', 'yetki'];
-// İzin tabanlı görünürlük: sunucunun /api/ben ile verdiği izin listesi (yetki.mjs kataloğu)
+// İzin tabanlı görünürlük: sunucunun /api/ben ile verdiği izin listesi (models/permission.mjs kataloğu)
 const izinVar = (i) => !!ben?.izinler?.includes(i);
 const SEKME_IZIN = { canli: ['canli.izle'], kayit: ['kayit.listele', 'kayit.izle', 'kayit.indir'], cihaz: ['cihaz.oku'], uyeler: ['uye.yonet'], gunluk: ['gunluk.oku'], guncelleme: ['guncelleme.denetle'], yetki: ['yetki.yonet', 'api.anahtar'] };
 // Ust baslikta konum yolu (kirinti) YOK: bolum menude secili, alt duzey orta bolmenin basliginda.
@@ -2415,7 +2415,7 @@ $('#anahtarForm').addEventListener('submit', async (e) => {
 $('#cikis').addEventListener('click', async () => { try { await api('/api/cikis', { method: 'POST' }); } catch {} location.reload(); });
 /** Avatar: adin bas harfleri (EYS topbar__avatar). "ali.veli" / "Ali Veli" -> AV, "admin" -> AD. */
 const basHarfler = (ad) => { const p = String(ad ?? '').split(/[\s._@-]+/).filter(Boolean); return (p.length > 1 ? p[0][0] + p[1][0] : (p[0] ?? '?').slice(0, 2)).toLocaleUpperCase('tr'); };
-// Dil: hesap menusundeki tek oge diger dile gecer (TR -> "English", EN -> "Türkçe"); metin dil.js cevirisine girmez.
+// Dil: hesap menusundeki tek oge diger dile gecer (TR -> "English", EN -> "Türkçe"); metin lang.js cevirisine girmez.
 { const d = $('#dilDegis'), ote = dil === 'en' ? 'tr' : 'en'; d.textContent = ote === 'en' ? 'English' : 'Türkçe'; d.lang = ote; d.translate = false; d.addEventListener('click', () => window.DIL?.degistir(ote)); }
 function rolUygula() {
   $('#kimlik').textContent = ben.ad; $('#kimlik').title = rolAdi(ben.rol);

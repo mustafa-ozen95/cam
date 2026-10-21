@@ -1,7 +1,7 @@
 /** Giris / cikis / ben. */
 import { cerezOku, cerezYaz, govdeOku, json } from '../core/http.mjs';
 import { VeritabaniHatasi } from '../core/errors.mjs';
-import { HataKisiti, izinGenislet } from '../models/yetki.mjs';
+import { HataKisiti, izinGenislet } from '../models/permission.mjs';
 
 export function girisDenetleyici({ uyeler, gunluk, yapilandirma, merkez = null, baglar = null }) {
   /**

@@ -11,7 +11,7 @@
   "scripts": {
     "start": "node bin/cam.mjs",
     "test": "node --test test/*.test.mjs",
-    "test:birim": "node --test test/yetki.test.mjs",
+    "test:birim": "node --test test/permissions.test.mjs",
     "test:api": "node --test test/api.test.mjs"
   },
   "dependencies": {

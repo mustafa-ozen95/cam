@@ -40,6 +40,7 @@ test('/live acik: izleme kimliksiz, duzen yalniz admin (CSRF), gomme yalniz /liv
     const panel = await fetch(`${u.B}/`);
     assert.match(panel.headers.get('content-security-policy'), /frame-ancestors 'self'/, 'panelin geri kalani gomulemez');
     assert.equal((await fetch(`${u.B}/live/live.js`)).status, 200);
+    assert.equal((await fetch(`${u.B}/live/theme.mjs`)).status, 200);
     assert.equal((await fetch(`${u.B}/live/..%2Findex.html`)).status, 404);
     const k = await (await fetch(`${u.B}/live/kameralar.json`)).json();
     assert.deepEqual(k.kameralar.map((x) => x.yol), ['k0', 'k1']); assert.ok(!JSON.stringify(k).includes('rtsp'));

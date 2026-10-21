@@ -9,7 +9,7 @@ import { createHmac, randomBytes, scryptSync } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CihazDeposu } from '../src/models/cihaz.mjs';
+import { CihazDeposu } from '../src/models/device.mjs';
 import { Veritabani } from '../src/core/database.mjs';
 import { gizliAnahtarCoz } from '../src/core/secret-key.mjs';
 import { MIGRATIONS } from '../src/database/migrations.mjs';

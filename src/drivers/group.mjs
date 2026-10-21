@@ -4,7 +4,7 @@
  * sunucu.mjs grubu tek bir cihazmis gibi kullanir. Bir cihaza ulasilamazsa son bilinen kanal listesi korunur
  * (arayuz yeniden dizilmez), baska cihazlar etkilenmez. Cihazlar calisirken eklenip cikarilabilir.
  */
-import { CihazTaban } from './taban.mjs';
+import { CihazTaban } from './base.mjs';
 
 export class CihazGrubu extends CihazTaban {
   constructor({ cihazlar = [], ...o }) {

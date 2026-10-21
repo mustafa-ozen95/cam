@@ -4,7 +4,7 @@
  */
 import { spawn } from 'node:child_process';
 import { RtspCihaz } from './rtsp.mjs';
-import { CihazTaban } from './taban.mjs';
+import { CihazTaban } from './base.mjs';
 
 export const SABLONLAR = {
   hikvision: { ad: 'Hikvision', ana: 'Streaming/Channels/101', alt: 'Streaming/Channels/102' },

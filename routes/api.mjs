@@ -2,14 +2,14 @@
  * Panel API'si (/api/...): arayuzun kullandigi uc noktalar. Cerezle (CSRF basligi zorunlu) ya da Bearer anahtarla calisir.
  * Her rota gerekli izni ara katmanla bildirir; izin listesi dokumana buradan uretilir.
  */
-import { izin, herhangi } from '../src/middleware/yetki.mjs';
+import { izin, herhangi } from '../src/middleware/permissions.mjs';
 
 export function apiRotalari(r, d, ara) {
   r.post('/api/giris', d.giris.giris, [ara.kimlikIstege]);
   r.post('/api/cikis', d.giris.cikis);
-  // Merkezden "bu kimlik degisti" bildirimi: jeton yok, HMAC imza (bkz. src/controllers/merkez.mjs · tazele).
+  // Merkezden "bu kimlik degisti" bildirimi: jeton yok, HMAC imza (bkz. src/controllers/hub.mjs · tazele).
   r.post('/api/kimlik/tazele', d.merkez.tazele);
-  // Merkezden ortak cikis bildirimi: HMAC imza ani da kapsar (bkz. src/controllers/merkez.mjs · cikis).
+  // Merkezden ortak cikis bildirimi: HMAC imza ani da kapsar (bkz. src/controllers/hub.mjs · cikis).
   r.post('/api/kimlik/cikis', d.merkez.cikis);
 
   r.grup([ara.kimlik], () => {

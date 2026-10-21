@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { yapilandirma as temel } from '../config/app.mjs';
 import { uygulamaKur } from '../src/bootstrap.mjs';
 import { gecicivt } from '../test/helpers.mjs';
-import { IZINLER } from '../src/models/yetki.mjs';
+import { IZINLER } from '../src/models/permission.mjs';
 
 const ACIKLAMA = {
   'GET /api/v1': 'Sürüm ve bağlantılar', 'GET /api/v1/saglik': 'Canlılık denetimi (yalnız konteynerin kendi 127.0.0.1 adresinden; diğerlerine 404)', 'GET /api/v1/ben': 'Kimlik: tür, yöntem, izinler, kapsam', 'GET /api/v1/izinler': 'İzin kataloğu',

@@ -2,8 +2,8 @@
  * SAHTE cihaz (yalniz testler): KAMERA_TEST=1 iken kullanilabilir. Gercek cihaza baglanmadan canli akis, kayit listesi,
  * oynatma ve indirme taklidi yapar; yetkilendirme/API entegrasyon testleri bununla kosar.
  */
-import { CihazTaban } from './taban.mjs';
-import { MP4_CIKIS, Mp4Yayin } from './mp4yayin.mjs';
+import { CihazTaban } from './base.mjs';
+import { MP4_CIKIS, Mp4Yayin } from './mp4-stream.mjs';
 
 // SOI + APP0 + EOI: bayt duzeyinde gecerli en kucuk "JPEG" (sunucu kareyi cozmez, yalniz tasir)
 export const SAHTE_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xd9]);

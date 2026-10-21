@@ -1,7 +1,7 @@
 /**
  * HTTP yardimcilari: JSON yanit, hata yaniti, govde okuma (boyut sinirli), cerez okuma/yazma, istemci IP.
  */
-import { YetkiHatasi } from '../models/yetki.mjs';
+import { YetkiHatasi } from '../models/permission.mjs';
 import { VeritabaniHatasi } from './errors.mjs';
 
 export class HttpHatasi extends Error { constructor(durum, mesaj, kod = 'HATA') { super(mesaj); this.durum = durum; this.kod = kod; } }

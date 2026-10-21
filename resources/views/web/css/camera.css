@@ -3,7 +3,7 @@
  *
  * EYS tasarimi css/eys altinda BIREBIR (scripts/eys-sync.mjs, elle degistirilmez). Bu dosya yalnizca
  * EYS'de OLMAYAN secicileri ekler; EYS'nin tanimladigi bir seciciyi yeniden tanimlamaz (.detail--liste,
- * .column__body--izgara gibi yeni degistiriciler serbest). test/eys-tasarim.test.mjs denetler.
+ * .column__body--izgara gibi yeni degistiriciler serbest). test/eys-design.test.mjs denetler.
  * Renk, aralik ve yaricap hep EYS belirteclerinden.
  */
 

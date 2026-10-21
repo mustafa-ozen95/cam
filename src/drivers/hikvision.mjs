@@ -4,7 +4,7 @@
  * Kayit listesi: ISAPI /ContentMgmt/search gercek kayit araliklarini verir; araliklar 15 dk'lik dilimlere bolunur (liste/indirme icin).
  * Zaman: cihaz yerel saati "Z" ekiyle yazar ve okur (UTC degil); panel de yerel saat kullanir, donusum gerekmez.
  */
-import { CihazTaban, digestIstek, yerelMetin, yerelSn } from './taban.mjs';
+import { CihazTaban, digestIstek, yerelMetin, yerelSn } from './base.mjs';
 import { RtspCihaz } from './rtsp.mjs';
 
 const DILIM = 900;

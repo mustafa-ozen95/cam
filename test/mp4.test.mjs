@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { Fmp4Ayirici, hvc1Yap, kodekAdi, kutuBul, kutular } from '../src/drivers/fmp4.mjs';
-import { CEVIR_BIT, MP4_CIKIS } from '../src/drivers/mp4yayin.mjs';
+import { CEVIR_BIT, MP4_CIKIS } from '../src/drivers/mp4-stream.mjs';
 import { mp4Argumanlari } from '../src/drivers/rtsp.mjs';
 import { uygulamaAc } from './helpers.mjs';
 
@@ -65,7 +65,7 @@ test('/akis/canli-mp4: kimliksiz 401; X-Kodek; ikinci izleyici baslangic + anaht
 });
 
 test('ffmpeg baslatilamazsa (ENOENT) MP4 yayini hata ile kapanir, surec dusmez', async () => {
-  const { Mp4Yayin } = await import('../src/drivers/mp4yayin.mjs');
+  const { Mp4Yayin } = await import('../src/drivers/mp4-stream.mjs');
   let bitti = false;
   const y = new Mp4Yayin({ ffmpeg: '/yok/ffmpeg', argumanlar: [], bitince: () => { bitti = true; } }).baslat();
   await y.hazir;

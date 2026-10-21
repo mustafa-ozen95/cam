@@ -102,7 +102,7 @@ export const yapilandirma = Object.freeze({
    */
   guncelleme: {
     depo: env.GUNCELLEME_DEPO || 'mustafa-ozen95/cam',
-    is: 'imaj.yml', dal: 'main',
+    is: 'image.yml', dal: 'main',
     jeton: env.GUNCELLEME_JETONU || '',
     surum: env.UYGULAMA_SURUMU || dosyaSatiri(join(KOK, 'SURUM')),   // imaja derlemede yazilir (Dockerfile: ARG SURUM ya da .git)
     saat: '06:50',                                  // her sabah (sunucu saati, TZ)

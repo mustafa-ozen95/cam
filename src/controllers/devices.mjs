@@ -1,7 +1,7 @@
 /** Cihaz yonetimi (cihaz.oku / cihaz.yonet / cihaz.saat / kanal.yonet). Parolalar yanitlarda ve gunlukte YOK. */
 import { govdeOku, json } from '../core/http.mjs';
 import { VeritabaniHatasi } from '../core/errors.mjs';
-import { YetkiHatasi } from '../models/yetki.mjs';
+import { YetkiHatasi } from '../models/permission.mjs';
 
 export function cihazlarDenetleyici({ cihazlar, gunluk }) {
   const hataIle = async (res, fn) => { try { return await fn(); } catch (e) { if (e instanceof YetkiHatasi || e instanceof VeritabaniHatasi || e instanceof SyntaxError) throw e; return json(res, 400, { hata: e.message, kod: 'GECERSIZ_ISTEK' }); } };

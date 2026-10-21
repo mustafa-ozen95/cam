@@ -148,7 +148,7 @@ async function yetkiSor() {
   let y = null;
   try { y = await (await fetch('yetki', { cache: 'no-store', credentials: 'same-origin' })).json(); } catch {}
   $('#ust').hidden = !y?.duzenleyebilir;
-  // Tema yalniz admin icin (tema.mjs); admin degilse hep gece.
+  // Tema yalniz admin icin (theme.mjs); admin degilse hep gece.
   if (y?.duzenleyebilir) { document.documentElement.dataset.admin = '1'; document.dispatchEvent(new Event('live-admin')); }
   else { delete document.documentElement.dataset.admin; document.documentElement.dataset.theme = 'dark'; }
   if (!y?.duzenleyebilir && duzenKipi) kipAyarla(false);
