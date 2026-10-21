@@ -1,5 +1,8 @@
 FROM node:22-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg tzdata && rm -rf /var/lib/apt/lists/*
+# Güvenlik sürümü çıkınca artır; temel imaj bundan eskiyse derleme durur (önce: docker pull node:22-slim).
+ARG NODE_EN_AZ=22.23.4
+RUN node -e 'const [a, b] = [process.versions.node, process.env.NODE_EN_AZ].map(s => s.split(".").map(Number)); const k = a.findIndex((x, i) => x !== b[i]); if (k >= 0 && a[k] < b[k]) { console.error("Node en az " + process.env.NODE_EN_AZ + " olmalı"); process.exit(1); }'
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends ffmpeg tzdata && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json ./
 COPY bin ./bin
