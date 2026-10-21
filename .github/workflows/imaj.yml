@@ -1,0 +1,83 @@
+# =============================================================================
+#  İmajı derle ve GitHub Container Registry'ye yükle
+# =============================================================================
+#  Sunucu imajı kaynaktan derlemek zorunda değildir, buradan da çekebilir.
+#
+#  Etiketler: latest (son main), tarih ve kısa commit (geri dönüş hedefi),
+#  v* etiketlerinde sürüm. org.opencontainers.image.revision etiketi imaja
+#  gömülür; çalışan sürüm oradan okunabilir.
+# =============================================================================
+name: imaj
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: imaj-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sina:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Cihaz hizmeti açılışta ffmpeg'i arıyor; sahte sürücüyle bile kurulu olmalı.
+      - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - run: npm test
+
+  derle:
+    needs: sina
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: etiket
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value={{date 'YYYY-MM-DD'}},enable={{is_default_branch}}
+            type=sha,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+          labels: |
+            org.opencontainers.image.title=${{ github.event.repository.name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+      - uses: docker/build-push-action@v6
+        # Depo açık: derleme kaydı (.dockerbuild artefaktı) ve provenance
+        # commit yazarını ve olay yükünü taşır, herkes indirebilir. Kapalı.
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          DOCKER_BUILD_SUMMARY: false
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.etiket.outputs.tags }}
+          labels: ${{ steps.etiket.outputs.labels }}
+          # Panel kendi sürümünü bilsin (Güncelleme sekmesi).
+          build-args: |
+            SURUM=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false

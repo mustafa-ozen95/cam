@@ -1,0 +1,118 @@
+/*
+ * Kayıt formu: koşullu alanlar ve "Gelişmiş" bölümü.
+ *
+ * Alanların görünürlüğü kosullu-alan.js'te; burada yalnızca yerleşim var.
+ * Pencere içinde paneller başlıklı bölüm gibi durur (bkz. modal.css);
+ * "Gelişmiş" de onlarla aynı çizgiyle ayrılır.
+ */
+
+/* Kutunun altında açılan alanlar kutuya bağlı okunmalı: az boşluk, girinti yok. */
+.kayit-formu__ic {
+    margin-top: var(--space-3);
+}
+
+.kayit-formu__ic:not(.is-hidden) {
+    animation: kayit-formu-acil 160ms ease-out;
+}
+
+/* Bütün alanları gizlenmiş satır (bkz. kosullu-alan.js). */
+.field-row.is-bos {
+    display: none;
+}
+
+[data-elle-hesap] {
+    margin-top: var(--space-4);
+}
+
+.kayit-formu__gelismis {
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--color-line);
+}
+
+.kayit-formu__gelismis > summary {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    cursor: pointer;
+    list-style: none;
+}
+
+.kayit-formu__gelismis > summary::-webkit-details-marker { display: none; }
+
+/* Açılır ok: metin karakteri değil, dönen bir üçgen. */
+.kayit-formu__gelismis > summary::before {
+    content: '';
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 6px solid var(--color-text-muted);
+    transition: transform 150ms ease;
+}
+
+.kayit-formu__gelismis[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+.kayit-formu__gelismis-baslik {
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.kayit-formu__gelismis-govde {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding-top: var(--space-3);
+}
+
+.kayit-formu__gelismis-govde > .field { margin-top: 0; }
+
+@keyframes kayit-formu-acil {
+    from { opacity: 0; transform: translateY(-2px); }
+    to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .kayit-formu__ic:not(.is-hidden) { animation: none; }
+    .kayit-formu__gelismis > summary::before { transition: none; }
+}
+
+/*
+ * Rol istisnaları: rol başına tek satır (bkz. credentials/form). Dar ve
+ * sade — genel .table'ın dar ekranda kartlaşan biçimi burada istenmiyor.
+ */
+.rol-istisna {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+}
+
+.rol-istisna th,
+.rol-istisna td {
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--color-line);
+    text-align: center;
+    vertical-align: middle;
+}
+
+.rol-istisna thead th {
+    font-weight: 500;
+    color: var(--color-text-muted);
+}
+
+.rol-istisna th[scope='row'],
+.rol-istisna thead th:first-child {
+    text-align: left;
+    font-weight: 500;
+}
+
+.rol-istisna td:nth-child(2) {
+    width: 10rem;
+}
+
+.rol-istisna .select {
+    width: 100%;
+}

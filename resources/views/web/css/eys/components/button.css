@@ -1,0 +1,148 @@
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    height: 28px;
+    padding: 0 var(--space-4);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--color-text);
+    font-size: var(--text-base);
+    font-weight: var(--weight-medium);
+    white-space: nowrap;
+    /* Esnek satırlarda düğme içeriğinin altına sıkışmamalı. */
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.btn:hover:not(:disabled) {
+    background: var(--color-hover);
+}
+
+.btn:disabled,
+.btn[aria-disabled='true'] {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.btn svg {
+    width: 13px;
+    height: 13px;
+}
+
+/* Vurgu rengi yalnızca birincil eylemde kullanılır. */
+.btn--primary {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-accent-on);
+    font-weight: var(--weight-semibold);
+}
+
+.btn--primary:hover:not(:disabled) {
+    background: var(--color-accent-hover);
+    border-color: var(--color-accent-hover);
+}
+
+.btn--ghost {
+    border-color: transparent;
+    color: var(--color-text-secondary);
+}
+
+.btn--ghost:hover:not(:disabled) {
+    background: var(--color-hover);
+    color: var(--color-text);
+}
+
+.btn--danger {
+    border-color: var(--color-red-fg);
+    color: var(--color-red-fg);
+}
+
+.btn--danger:hover:not(:disabled) {
+    background: var(--color-red-bg);
+}
+
+/*
+ * Seçili durum: aralık seçici gibi düğme gruplarında hangisinin etkin olduğu
+ * görünmeli. Vurgu rengi bu tasarımda "seçim" anlamına geldiği için burada da
+ * o kullanılır.
+ */
+.btn[aria-pressed='true'] {
+    background: var(--color-accent-soft);
+    border-color: var(--color-accent-edge);
+    color: var(--color-accent-text);
+    font-weight: var(--weight-semibold);
+}
+
+.btn[aria-pressed='true']:hover {
+    background: var(--color-accent-soft);
+}
+
+.btn--sm {
+    height: 24px;
+    padding: 0 var(--space-3);
+    font-size: var(--text-sm);
+}
+
+.btn--icon {
+    width: 28px;
+    padding: 0;
+}
+
+/*
+ * Seçili durum: aralık seçici gibi düğme gruplarında hangisinin etkin olduğu
+ * görünmeli. Vurgu rengi bu tasarımda "seçim" anlamına geldiği için burada da
+ * o kullanılır.
+ */
+.btn[aria-pressed='true'] {
+    background: var(--color-accent-soft);
+    border-color: var(--color-accent-edge);
+    color: var(--color-accent-text);
+    font-weight: var(--weight-semibold);
+}
+
+.btn[aria-pressed='true']:hover {
+    background: var(--color-accent-soft);
+}
+
+.btn--icon.btn--sm {
+    width: 24px;
+}
+
+.btn--block {
+    width: 100%;
+}
+
+/*
+ * DOKUNMATİKTE DÜĞMELER ALANLARLA AYNI BOYDA.
+ *
+ * Dar ekranda ve dokunmatik cihazlarda form alanları 32 piksele çıkıyor
+ * (bkz. form.css: 16 piksel yazı, iOS'un kendiliğinden yakınlaştırmaması
+ * için). Düğmeler 24/28 pikselde kalınca yan yana duran ikili — "Tüm
+ * platformlar" seçim kutusu ile "Filtrele" düğmesi — farklı boyda görünüyor
+ * ve şerit tırtıklı duruyordu.
+ *
+ * Kazancı yalnızca hizalama değil: 24 piksel bir parmak için küçük.
+ */
+/*
+ * 32 piksel 28'e indi: başlık şeridi telefonda ekranın üçte birini
+ * alıyordu. 28 piksel hâlâ parmakla tutulabilir ve alanlarla aynı boyda
+ * (bkz. form.css · filter-bar).
+ */
+@media (max-width: 720px), (pointer: coarse) {
+    .btn,
+    .btn--sm {
+        height: 28px;
+    }
+
+    .btn--sm {
+        font-size: var(--text-base);
+    }
+
+    .btn--icon.btn--sm {
+        width: 28px;
+    }
+}

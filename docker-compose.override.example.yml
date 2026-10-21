@@ -1,0 +1,11 @@
+# Vekilsiz, doğrudan porttan kullanım (deneme, iç ağda tek panel):
+#     cp docker-compose.override.example.yml docker-compose.override.yml
+# Compose bu dosyayı kendiliğinden okur. Bir platformun (NineDeploy, Coolify...) ya da
+# önde bir vekilin arkasında GEREKMEZ.
+services:
+  cam:
+    ports:
+      - "${KAMERA_DIS_PORT:-1165}:80"
+    environment:
+      # Önde vekil yok: X-Real-IP'ye güvenilmez (istemci taklit edebilir), çerez düz HTTP'de de çalışır.
+      KAMERA_IP_BASLIGI: ""

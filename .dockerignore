@@ -1,0 +1,11 @@
+veri/
+test/
+scripts/
+node_modules/
+.git/
+# Calisan surum icin yalniz HEAD ve ref'ler (docker/surum-oku.sh); nesneler girmez.
+!.git/HEAD
+!.git/packed-refs
+!.git/refs/heads/
+.env
+*.log

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="tr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="tema-alan" content="">
+<meta name="robots" content="noindex, nofollow">
+<title>Giriş · Kamera Paneli</title>
+<link rel="icon" href="./simge.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./css/app.css">
+<script type="module">
+  /* Tema: EYS theme.js birebir (cerez dc-tema; paneller arasi ortak secim). */
+  import * as theme from '/js/eys/components/theme.js';
+  theme.init();
+</script>
+</head>
+<body>
+<!--
+  GİRİŞ EKRANI EYS İLE BİREBİR AYNI DÜZENDE:
+  gate__mark / gate__lead, merkez düğmesi, "veya" ayracı, katlı parola formu,
+  alt not. Sınıflar ve CSS DC panellerinden; burada yalnızca işaretleme var.
+  Sunucu doldurur: MERKEZ (düğme + ayraç), MERKEZ_HATA, ACIK (merkez yoksa
+  parola formu açık), BIRINCIL (merkez yoksa "Oturum aç" birincil düğme).
+-->
+<button type="button" class="btn btn--ghost btn--icon btn--sm gate__tema" data-theme-toggle aria-label="Temayı değiştir">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke-linecap="round" />
+  </svg>
+</button>
+<main class="gate">
+  <div class="gate__panel">
+    <div class="gate__mark">Kamera Paneli</div>
+    <p class="gate__lead">NVR ve kamera izleme — devam etmek için oturum açın.</p>
+
+    <!--MERKEZ_HATA-->
+    <div class="alert alert--danger gate__alert" id="hata" role="alert" hidden></div>
+
+    <!--MERKEZ-->
+
+    <details class="gate__katlanir"<!--ACIK-->>
+      <summary class="gate__katlanir-baslik">Parolayla giriş</summary>
+
+      <form id="form" autocomplete="on">
+        <div class="field">
+          <label class="field__label" for="ad">Kullanıcı adı</label>
+          <input class="input input--mono" id="ad" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="parola">Parola</label>
+          <input class="input" id="parola" name="password" type="password" autocomplete="current-password" required>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn--block<!--BIRINCIL-->" id="gonder">Oturum aç</button>
+        </div>
+      </form>
+
+      <p class="gate__foot">Hesap açma isteği için sistem yöneticisine başvurun.</p>
+    </details>
+  </div>
+</main>
+<script>
+  const f = document.getElementById('form'), hata = document.getElementById('hata'), dugme = document.getElementById('gonder');
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault(); hata.hidden = true; dugme.disabled = true;
+    try {
+      const y = await fetch('/api/giris', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kamera': '1' }, body: JSON.stringify({ ad: document.getElementById('ad').value.trim(), parola: document.getElementById('parola').value }) });
+      const j = await y.json().catch(() => ({}));
+      if (!y.ok) throw new Error(j.hata ?? `Hata ${y.status}`);
+      location.reload(); // ayni adres: replace() sayfayi yenilemez, reload() yeni cerezle paneli getirir
+    } catch (err) { hata.textContent = err.message; hata.hidden = false; dugme.disabled = false; document.getElementById('parola').select(); }
+  });
+</script>
+</body>
+</html>

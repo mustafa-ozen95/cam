@@ -1,0 +1,2492 @@
+<!doctype html>
+<html lang="tr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="tema-alan" content="">
+<title>Kamera Paneli</title>
+<link rel="icon" href="./simge.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./css/app.css">
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <a href="#canli" class="topbar__mark" title="Kamera paneli">Kamera Paneli</a>
+
+    <nav class="topbar__nav" aria-label="Bölümler" id="sekmeler">
+      <a href="#canli" class="topbar__link" data-s="canli">Canlı</a>
+      <a href="#kayit" class="topbar__link" data-s="kayit">Kayıtlar</a>
+      <a href="#indirilen" class="topbar__link" data-s="indirilen">İndirmeler</a>
+      <a href="#cihaz" class="topbar__link" data-s="cihaz">Cihaz</a>
+      <a href="#uyeler" class="topbar__link" data-s="uyeler" hidden>Üyeler</a>
+      <a href="#gunluk" class="topbar__link" data-s="gunluk" hidden>Günlük</a>
+      <a href="#guncelleme" class="topbar__link" data-s="guncelleme" hidden>Güncelleme</a>
+    </nav>
+
+    <span class="topbar__spacer"></span>
+
+    <span class="topbar__counts"><span class="status"><span class="dot dot--gray" id="cihazNokta" aria-hidden="true"></span><span id="cihazYazi">bağlanıyor…</span></span></span>
+
+    <!-- Gecici canli izleme sitesi (/live, ayri docker): yalniz admin ve site yanit verirken gorunur -->
+    <a href="/live/" class="btn btn--ghost btn--sm" id="liveBag" title="Canlı izleme sayfasına geç (üyeliksiz, gecikmesiz)" hidden>Live</a>
+    <button type="button" class="btn btn--ghost btn--icon btn--sm" data-theme-toggle aria-label="Temayı değiştir">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+              stroke-linecap="round" />
+      </svg>
+    </button>
+
+    <div class="kullanici-menu" data-menu>
+      <button type="button" class="kullanici-menu__dugme" data-menu-ac
+              aria-haspopup="true" aria-expanded="false" aria-label="Hesap menüsü">
+        <span class="topbar__avatar" aria-hidden="true" id="kimlikBas"></span>
+        <span class="topbar__name" id="kimlik"></span>
+        <svg class="kullanici-menu__ok" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+          <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+
+      <div class="kullanici-menu__liste" data-menu-liste hidden>
+        <button type="button" class="kullanici-menu__oge" id="dilDegis"></button>
+        <button type="button" class="kullanici-menu__oge kullanici-menu__oge--cikis" id="cikis">Çıkış</button>
+      </div>
+    </div>
+  </header>
+
+    <!-- Yeni surum uyarisi: yalniz guncelleme.denetle izni olana; ayrinti Guncelleme sekmesinde. -->
+    <div class="alert alert--info alert--aralikli" id="guncellemeUyari" role="status" hidden>
+      <strong>Panelin yeni sürümü var.</strong> <span id="guncellemeUyariYazi"></span> <a href="#guncelleme" data-s="guncelleme">Güncelleme</a>
+    </div>
+
+    <!-- CANLI -->
+    <section class="columns" id="s-canli">
+      <div class="column">
+        <div class="column__head"><span class="eyebrow">Kameralar</span><span class="column__count" id="kameraSay"></span></div>
+        <div class="column__body" id="kameraListe"></div>
+      </div>
+
+      <div class="column column--fill">
+        <div class="column__head">
+          <span class="eyebrow" id="canliBaslik">Hepsi</span>
+          <span class="column__count" id="canliSay"></span>
+          <span class="izgsayfa" id="izgSayfa" hidden></span>
+          <span class="spacer"></span>
+          <span class="row row--wrap row--tight" id="canliArac" hidden>
+            <button type="button" class="btn btn--sm btn--ghost" id="geri">← Tüm kameralar</button>
+            <button type="button" class="btn btn--sm" id="goruntuAl">Görüntü al</button>
+            <button type="button" class="btn btn--sm" id="tamEkran">Tam ekran</button>
+            <button type="button" class="btn btn--sm" id="odakKayit">Kayıtlar</button>
+          </span>
+        </div>
+        <div class="column__body column__body--izgara">
+          <div class="izgara" id="izgara"></div>
+          <div class="odak" id="odak" hidden><video id="odakVideo"></video><div class="kanal__durum" id="odakDurum"></div><div class="odak__arac" id="odakArac"><button type="button" class="btn btn--sm" id="odakGoruntu" title="Görüntü al" aria-label="Görüntü al"></button><button type="button" class="btn btn--sm" id="odakTamCik" title="Tam ekrandan çık" aria-label="Tam ekrandan çık"></button></div></div>
+        </div>
+      </div>
+
+      <aside class="detail" id="canliDetay" hidden>
+        <div class="detail__head">
+          <div class="detail__title detail__title--plain" id="kamAd"></div>
+          <p class="detail__subtitle" id="kamCihaz"></p>
+        </div>
+        <div class="detail__body">
+          <div class="detail__section"><span class="eyebrow">Kamera</span><dl class="facts detail__block" id="kamBilgi"></dl></div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- KAYITLAR -->
+    <section class="columns" id="s-kayit" hidden>
+      <div class="column">
+        <div class="column__head"><span class="eyebrow">Kanallar</span><span class="column__count" id="kayitKanalSay"></span></div>
+        <div class="column__body" id="kayitKanallar"></div>
+      </div>
+
+      <div class="column column--fill">
+        <div class="column__head">
+          <span class="eyebrow" id="oynBaslik">Oynatıcı</span>
+          <span class="column__count" id="oynAlt"></span>
+        </div>
+        <div class="column__body column__body--oynatici">
+          <section class="oynatici" id="oynatici">
+            <div class="oynatici__kontrol">
+              <div class="mz-satir">
+                <button type="button" class="btn btn--sm btn--primary btn--icon" id="oynat" title="Oynat / duraklat" aria-label="Oynat / duraklat"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none"/></svg></button>
+                <label class="btn btn--sm mz-tarih" id="mzZaman" title="Tarih seç"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span id="oynSaat"></span><input type="date" id="mzTarih" class="mz-tarih-giris" aria-label="Tarih seç"></label>
+                <span class="mz-bosluk"></span>
+                <button type="button" class="btn btn--sm btn--icon" id="mzIndir" title="Bu kaydı indir (seçili kameralar)" aria-label="Bu kaydı indir"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></svg></button>
+                <button type="button" class="btn btn--sm btn--icon" id="oynTam" title="Tam ekran" aria-label="Tam ekran"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+              </div>
+              <div class="mz-satir">
+                <span class="mz-etiket" title="Zaman çizelgesinde aynı anda görünen süre (yalnız çubuğun ölçeği; video değişmez)">Çizelge aralığı</span><div class="segment" id="mzSegment" role="group" aria-label="Zaman çizelgesi aralığı: çubuğun gösterdiği süre" title="Zaman çizelgesinde aynı anda görünen süre"><button type="button" data-p="300" aria-pressed="true">5dk</button><button type="button" data-p="1800">30dk</button><button type="button" data-p="7200">2sa</button><button type="button" data-p="86400" title="Bütün gün">24sa</button></div>
+              </div>
+            </div>
+            <div class="mz-indirme" id="mzIndirme" hidden></div>
+            <div class="mz-izgara" id="mzIzgara"></div>
+            <div class="zaman" id="zaman" title="Sürükleyin: tüm kameralar birlikte kayar. Dokunduğunuz ana gider."></div>
+            <div class="mz-ipucu" id="ipucu" hidden></div>
+            <div class="saatler" id="saatler"></div>
+          </section>
+        </div>
+      </div>
+
+      <aside class="detail detail--liste" id="kayitDetay">
+        <div class="detail__head">
+          <div class="row row--between">
+            <span class="eyebrow" id="kGunYazi">Kayıtlar</span>
+            <span class="column__count" id="kSay"></span>
+          </div>
+          <form class="kayit-suzgec" id="kSuzgec" role="search">
+            <select class="select" id="kKanal" aria-label="Kanal" hidden></select>
+            <div class="row row--tight kayit-gun detail__block">
+              <button type="button" class="btn btn--sm btn--icon" id="kDun" title="Önceki gün" aria-label="Önceki gün">‹</button>
+              <input class="input" type="date" id="kGun" aria-label="Gün">
+              <button type="button" class="btn btn--sm btn--icon" id="kYarin" title="Sonraki gün" aria-label="Sonraki gün">›</button>
+            </div>
+            <details class="kayit-formu__gelismis" id="kSuzgecKat">
+              <summary><span class="kayit-formu__gelismis-baslik">Süzgeç</span><span class="text-sm text-muted" id="kSuzgecOzet"></span></summary>
+              <div class="kayit-formu__gelismis-govde">
+                <div class="form-grid">
+                  <div class="field"><label class="field__label" for="kTur">Tür</label><select class="select" id="kTur"><option value="">Tüm türler</option><option value="R">Sürekli</option><option value="M">Hareket</option><option value="A">Alarm</option><option value="H">Elle</option></select></div>
+                  <div class="field"><label class="field__label" for="kBoyut">Sayfada</label><select class="select" id="kBoyut"><option value="10">10 / sayfa</option><option value="25" selected>25 / sayfa</option><option value="50">50 / sayfa</option><option value="100">100 / sayfa</option></select></div>
+                  <div class="field"><label class="field__label" for="kSaat1">Saatten</label><input class="input" type="time" id="kSaat1" step="60"></div>
+                  <div class="field"><label class="field__label" for="kSaat2">Saate</label><input class="input" type="time" id="kSaat2" step="60"></div>
+                  <div class="field field--wide"><label class="field__label" for="kGun2">Bitiş günü</label><input class="input" type="date" id="kGun2"><span class="field__hint">Boş bırakılırsa yalnız seçilen gün (en çok 31 gün)</span></div>
+                </div>
+                <div class="row row--end row--tight">
+                  <button type="button" class="btn btn--sm btn--ghost" id="kTemizle">Süzgeci temizle</button>
+                  <button type="button" class="btn btn--sm" id="kYukle">Yenile</button>
+                </div>
+              </div>
+            </details>
+          </form>
+          <div class="row row--wrap kayit-toplu detail__block">
+            <input type="checkbox" id="toplu-araclar-ac" class="toplu-araclar__kutu" hidden>
+            <label for="toplu-araclar-ac" class="btn btn--sm toplu-araclar__dugme">Toplu işlemler</label>
+            <div class="toplu-araclar">
+              <div class="bulk" id="kToplu">
+                <label class="bulk__all">
+                  <input type="checkbox" id="kTumu" aria-label="Süzgeçteki tüm kayıtları seç">
+                  <span>Tümü <span class="bulk__ready" id="kTopluSay"></span></span>
+                </label>
+                <button type="button" class="btn btn--sm" id="kTopluIndir" disabled>Seçilenleri indir (0)</button>
+                <button type="button" class="btn btn--sm btn--ghost" id="kTopluTemizle" hidden>Seçimi temizle</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="detail__body">
+          <div class="indirme-seridi" id="kIndirme" hidden></div>
+          <div id="kListe"></div>
+          <div id="kSayfa"></div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- INDIRMELER -->
+    <section class="page" id="s-indirilen" hidden><div class="page__inner page__inner--wide">
+      <header class="page-head">
+        <div class="page-head__text"><h1>İndirmeler</h1><p class="page-head__subtitle">Kayıt kamera cihazından bir kez çekilir ve sunucuda 6 saat saklanır; aynı kaydı isteyen diğer kullanıcılar cihaza yeniden istek atmadan buradan indirir.</p></div>
+        <div class="page-head__actions"><button type="button" class="btn btn--sm" id="isTemizle">Bitenleri temizle</button></div>
+      </header>
+      <section class="panel">
+        <header class="panel__head"><h2 class="panel__title">İşler</h2></header>
+        <div class="panel__body panel__body--flush" id="isListe"><div class="empty"><span class="empty__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" stroke-linecap="round" /></svg></span><p class="empty__title">İşlem yok</p></div></div>
+      </section>
+      <section class="panel">
+        <header class="panel__head"><div><h2 class="panel__title">Önbellek</h2><p class="text-sm text-muted">Sunucuda 6 saat saklanan dosyalar</p></div></header>
+        <div class="panel__body panel__body--flush" id="arsivListe"><div class="empty"><span class="empty__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" stroke-linecap="round" /></svg></span><p class="empty__title">Sunucuda bekleyen dosya yok</p></div></div>
+      </section>
+      <div id="aSayfa"></div>
+    </div></section>
+
+    <!-- UYELER (yalniz admin) -->
+    <section class="page" id="s-uyeler" hidden><div class="page__inner page__inner--wide">
+      <header class="page-head">
+        <div class="page-head__text"><h1>Üyeler</h1><p class="page-head__subtitle">Roller DC panelleriyle aynı: <b>Yönetici</b> her şeyi yapar; <b>Network</b>, <b>Teknik</b> ve <b>Muhasebe</b> rollerinin izinleri Roller sekmesinden verilir. Merkezle girenlerin rolü merkezden gelir.</p></div>
+        <div class="page-head__actions"><button type="button" class="btn btn--primary btn--sm" id="uyeEkle">Yeni üye</button></div>
+      </header>
+      <nav class="tabs uye-sekmeleri" aria-label="Üyeler ve yetki">
+        <a href="#uyeler" class="tabs__link" data-uye-sekme="uyeler">Üyeler</a>
+        <a href="#yetki" class="tabs__link" data-uye-sekme="roller">Roller</a>
+        <a href="#yetki" class="tabs__link" data-uye-sekme="anahtarlar">API anahtarları</a>
+      </nav>
+      <form class="filter column__filter" id="uyeAraForm" role="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" stroke-linecap="round" /></svg>
+        <input class="filter__input" type="search" id="uyeAra" placeholder="Kullanıcı adı" aria-label="Üye filtrele" autocomplete="off">
+      </form>
+      <section class="panel"><div class="panel__body panel__body--flush" id="uyeListe"></div></section>
+    </div></section>
+
+    <!-- GUNLUK (yalniz admin) -->
+    <section class="page" id="s-gunluk" hidden><div class="page__inner page__inner--wide">
+      <header class="page-head">
+        <div class="page-head__text"><h1>Günlük</h1><p class="page-head__subtitle">Giriş, izleme, indirme ve saat ayarı olayları; IP, kaynak port ve zamanla. Yalnızca admin görür; liste kendiliğinden güncellenir.</p></div>
+      </header>
+      <div class="chain chain--unknown" id="gunlukZincir">
+        <span class="text-muted" id="gunlukZincirYazi">Zincir henüz doğrulanmadı.</span>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn--sm" id="gunlukDogrula">Zinciri doğrula</button>
+      </div>
+      <form class="row row--wrap filter-bar" id="gSuzgec" role="search">
+        <label class="filter">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" stroke-linecap="round" /></svg>
+          <input class="filter__input" type="search" id="gKullanici" placeholder="Kullanıcı" aria-label="Kullanıcıya göre süz" autocomplete="off">
+        </label>
+        <input class="input input--mono" type="text" id="gIp" placeholder="IP" aria-label="IP adresine göre süz" autocomplete="off">
+        <select class="select" id="gOlay" aria-label="Olay"><option value="">Tüm olaylar</option><option value="giris">Giriş</option><option value="giris-hata">Hatalı giriş</option><option value="oynatma">Oynatma</option><option value="indirme-istek">İndirme isteği</option><option value="indirme-teslim">İndirildi</option><option value="indirme-yarim">İndirme yarım</option><option value="saat-ayari">Saat ayarı</option></select>
+        <input class="input" type="date" id="gGun" aria-label="Gün">
+        <select class="select" id="gBoyut" aria-label="Sayfada"><option value="25">25 / sayfa</option><option value="50" selected>50 / sayfa</option><option value="100">100 / sayfa</option><option value="200">200 / sayfa</option></select>
+        <button type="button" class="btn btn--sm" id="gTemizle">Süzgeci temizle</button>
+        <span class="spacer"></span>
+        <span class="text-sm text-muted mono" id="gOzet"></span>
+      </form>
+      <section class="panel"><div class="panel__body panel__body--flush" id="gunlukListe"></div></section>
+      <div id="gunlukSayfa"></div>
+    </div></section>
+
+    <!-- GUNCELLEME (guncelleme.denetle): yalnizca bakar; guncelleme sunucudan yapilir -->
+    <section class="page" id="s-guncelleme" hidden><div class="page__inner page__inner--wide">
+      <header class="page-head">
+        <div class="page-head__text"><h1>Güncelleme</h1><p class="page-head__subtitle">Panelin sürümü ve GitHub'daki son başarılı derleme.</p></div>
+        <div class="page-head__actions"><button type="button" class="btn btn--primary btn--sm" id="guncellemeDenetle">Şimdi kontrol et</button></div>
+      </header>
+      <section class="panel">
+        <header class="panel__head"><h2 class="panel__title">Sürüm</h2></header>
+        <div class="panel__body"><dl class="facts" id="guncellemeBilgi"></dl></div>
+      </section>
+      <section class="panel" id="guncellemeCommitPanel" hidden>
+        <header class="panel__head"><div><h2 class="panel__title">Yeni commit'ler</h2><p class="text-sm text-muted">Çalışan sürümden sonra gelenler, en yenisi üstte.</p></div></header>
+        <div class="panel__body panel__body--flush" id="guncellemeCommitler"></div>
+      </section>
+      <section class="panel">
+        <header class="panel__head"><h2 class="panel__title">Nasıl çalışır</h2></header>
+        <div class="panel__body"><ul class="text-sm stack">
+          <li>Kontrol her sabah kendiliğinden yapılır; düğme aynı kontrolü hemen yapar. Yeni sürüm varsa bu izni olanlar sayfanın üstünde uyarı görür.</li>
+          <li>Karşılaştırma, deponun main dalındaki son başarılı imaj derlemesiyle yapılır. Derlemesi bitmemiş ya da düşmüş bir commit kurulamaz; yeni sürüm sayılmaz.</li>
+          <li>Yön de ölçülür: çalışan sürüm son derlemeden yeniyse bu "güncelleme" değil, geri alma olurdu; ekran bunu ayrıca söyler.</li>
+          <li>Bu ekran yalnızca bakar. Güncellemenin kendisi sunucudan, yedek alınarak ve onayla yapılır.</li>
+        </ul></div>
+      </section>
+    </div></section>
+
+    <!-- CIHAZ -->
+    <section class="columns" id="s-cihaz" hidden>
+      <div class="column">
+        <div class="column__head">
+          <span class="eyebrow">Cihazlar</span>
+          <span class="column__count" id="cihazSay"></span>
+          <span class="column__hint"><button type="button" class="btn btn--primary btn--sm" id="cihazEkle">Yeni cihaz</button></span>
+        </div>
+        <div class="column__body" id="cihazListe"></div>
+      </div>
+
+      <div class="column column--fill">
+        <div class="column__head">
+          <span class="eyebrow" id="cihazBaslik2">Cihaz</span>
+          <span class="column__count" id="cihazKanalSay"></span>
+          <span class="spacer"></span>
+          <span class="row row--wrap row--tight" id="cihazEylem"></span>
+        </div>
+        <div class="column__body column__body--padded" id="cihazGovde">
+          <!-- Diskler ustte: durum ilk bakista gorunsun; kanal listesi uzun. -->
+          <section class="panel" id="diskPanel">
+            <header class="panel__head"><h2 class="panel__title">Diskler</h2></header>
+            <div class="panel__body panel__body--flush" id="diskListe"></div>
+            <p class="panel__block text-sm text-muted" id="diskNot"></p>
+          </section>
+          <section class="panel" id="kanalYonet">
+            <header class="panel__head">
+              <div><h2 class="panel__title">Kanallar</h2><p class="text-sm text-muted">Her kanal bir kameradır. Görünen ad ve panelde gösterme yalnız bu paneli etkiler; <b>Otomatik</b>: cihazda görüntü olmayan kanal gizlenir.</p></div>
+              <div class="panel__actions" id="kanalKaydetYer"></div>
+            </header>
+            <div class="panel__body panel__body--flush" id="kanalListe"></div>
+          </section>
+          <section class="panel" hidden>
+            <header class="panel__head"><h2 class="panel__title">Kayıtları silme</h2></header>
+            <div class="panel__body">
+              <div class="alert alert--danger"><div>Bu cihaz (eski XM/NetSurveillance sürümü) <b>tek tek kayıt silmeyi desteklemez</b>. Cihazdaki kayıtlar disk dolunca en eskiden başlayarak kendiliğinden üzerine yazılır. Aşağıdaki düğme cihazdaki <b>tüm kayıtları</b> siler (diski temizler) ve geri alınamaz.</div></div>
+              <div class="form-actions"><button type="button" class="btn btn--sm btn--danger" id="tumSil">Cihazdaki tüm kayıtları sil…</button></div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <aside class="detail" id="cihazDetay" hidden>
+        <div class="detail__head">
+          <div class="detail__title detail__title--plain" id="cdAd"></div>
+          <p class="detail__subtitle" id="cdAlt"></p>
+        </div>
+        <div class="detail__body">
+          <div class="detail__section"><span class="eyebrow">Cihaz</span><dl class="facts detail__block" id="cdBilgi"></dl></div>
+          <div class="detail__section">
+            <span class="eyebrow">Saat</span>
+            <dl class="facts detail__block" id="saatBilgi"></dl>
+            <p class="text-sm text-muted detail__block">Kayıt zamanları ve görüntüdeki saat cihazın kendi saatinden gelir. <b>Saati eşitle</b> cihaz saatini sunucu saatine (Europe/Istanbul) ayarlar; yalnız düğmeye basınca yapılır. Hikvision cihazı panelden eşitlenirse elle (manual) saat moduna geçer.</p>
+          </div>
+        </div>
+        <div class="detail__foot" id="cdEylem"></div>
+      </aside>
+    </section>
+    <!-- YETKI -->
+    <section class="page" id="s-yetki" hidden><div class="page__inner page__inner--wide">
+      <header class="page-head">
+        <div class="page-head__text"><h1>Üyeler</h1><p class="page-head__subtitle">Roller ve API anahtarları. Tüm kameralara ve yönetime API’den tam erişim için Rol: Yönetici ile anahtar oluşturun. Kimse sahip olmadığı izni ya da kapsamı dışındaki kamerayı başkasına veremez. API belgesi: <a href="/dokuman/api-v1.tr.md" target="_blank" rel="noopener">Türkçe</a> · <a href="/dokuman/api-v1.en.md" target="_blank" rel="noopener">English</a> · <a href="/dokuman/openapi.json" target="_blank" rel="noopener">OpenAPI</a></p></div>
+        <div class="page-head__actions"><button type="button" class="btn btn--sm" id="rolEkle" hidden>Yeni rol</button><button type="button" class="btn btn--sm btn--primary" id="anahtarEkle" hidden>API anahtarı oluştur</button></div>
+      </header>
+      <nav class="tabs uye-sekmeleri" aria-label="Üyeler ve yetki">
+        <a href="#uyeler" class="tabs__link" data-uye-sekme="uyeler">Üyeler</a>
+        <a href="#yetki" class="tabs__link" data-uye-sekme="roller">Roller</a>
+        <a href="#yetki" class="tabs__link" data-uye-sekme="anahtarlar">API anahtarları</a>
+      </nav>
+      <div id="rolListe" data-yetki-icerik="roller"></div>
+      <section class="panel" data-yetki-icerik="anahtarlar" hidden><div class="panel__body panel__body--flush" id="anahtarListe"></div></section>
+    </div></section>
+</div>
+
+<!-- Gorunum ayarlari: uyenin kendi kaydinda (sunucuda); her bilgisayarda ayni. -->
+<div class="modal" id="ayarDlg" data-modal hidden role="dialog" aria-modal="true" aria-labelledby="ayarBaslik">
+  <div class="modal__box">
+    <header class="modal__header">
+      <h2 class="modal__title" id="ayarBaslik">Görünüm ayarları</h2>
+      <button type="button" class="modal__close" data-modal-close aria-label="Kapat">&times;</button>
+    </header>
+    <form id="ayarForm" autocomplete="off">
+      <div class="modal__body">
+        <div class="field"><label class="field__label" for="ayHepsiSayi">“Hepsi”de bir sayfada kaç kamera</label>
+          <select class="select" id="ayHepsiSayi"><option value="4">4</option><option value="6">6</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="12">12</option><option value="16">16</option></select>
+          <span class="field__hint">En çok 16: kayıt cihazı aynı anda 16 canlı görüntü veriyor. Masaüstünde geçerli, kareler ekrana sığdırılır; telefonda sayfa başına 8.</span></div>
+        <div class="field"><label class="field__label" for="ayAkis">Izgarada akış</label>
+          <select class="select" id="ayAkis"><option value="alt">Alt akış (varsayılan)</option><option value="ana">Ana akış</option></select>
+          <span class="field__hint">Ana akış daha net görüntü verir; kayıt cihazı, ağ ve sunucu yükü belirgin artar. Büyütülen kamera her zaman ana akıştır.</span></div>
+        <label class="checkbox"><input type="checkbox" id="ayArkaPlan"><span>Başka sekmeye geçince kameraları durdur</span></label>
+        <p class="field__hint">Kapalıysa sekmeye döndüğünüzde görüntü beklemeden sürer; ağ ve cihaz yükü artar.</p>
+        <div class="field"><span class="field__label">Yerleşim</span>
+          <div><button type="button" class="btn btn--sm" id="aySira">Varsayılan sıraya dön</button></div>
+          <span class="field__hint">Kareleri sürükleyip bırakarak yerini değiştirebilirsiniz (Hepsi ve cihaz sekmeleri); sıra kaydedilir. Başka sayfadaki kamerayı soldaki listeden bir karenin üstüne ya da sayfa düğmesine sürükleyin.</span></div>
+      </div>
+      <footer class="modal__footer">
+        <button type="button" class="btn" data-modal-close>Vazgeç</button>
+        <button type="submit" class="btn btn--primary">Kaydet</button>
+      </footer>
+    </form>
+  </div>
+</div>
+
+<div class="modal" id="kamDlg" data-modal hidden role="dialog" aria-modal="true" aria-labelledby="kamBaslik">
+  <div class="modal__box">
+    <header class="modal__header">
+      <h2 class="modal__title" id="kamBaslik"></h2>
+      <button type="button" class="modal__close" data-modal-close aria-label="Kapat">&times;</button>
+    </header>
+    <form id="kamForm" autocomplete="off">
+      <div class="modal__body">
+        <p class="text-sm text-muted modal__alert">Kamera NVR'ın boş bir kanalına kaydedilir ve kayıt NVR'da yapılır. Mevcut kanallara dokunulmaz.</p>
+        <div class="alert alert--danger modal__alert" id="kmHata" hidden></div>
+        <div class="field"><label class="field__label" for="kmAd">Kamera adı</label><input class="input" id="kmAd" maxlength="40" autocomplete="off"></div>
+        <div class="field"><label class="field__label" for="kmIp">Kamera IP adresi</label><input class="input input--mono" id="kmIp" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="decimal" placeholder="192.168.2.50"></div>
+        <div class="field"><label class="field__label" for="kmKul">Kullanıcı adı</label><input class="input input--mono" id="kmKul" autocomplete="off" autocapitalize="none" spellcheck="false" value="admin"></div>
+        <div class="field"><label class="field__label" for="kmPar">Parola</label><input class="input" id="kmPar" type="password" autocomplete="new-password" autocapitalize="none" spellcheck="false"></div>
+        <div class="field"><label class="field__label" for="kmProto">Protokol</label><select class="select" id="kmProto"><option value="HIKVISION">Hikvision (port 8000)</option><option value="ONVIF">ONVIF (port 80)</option></select></div>
+        <div class="field"><label class="field__label" for="kmPort">Port</label><input class="input input--mono" id="kmPort" type="number" min="1" max="65535"><span class="field__hint">boşsa protokolün varsayılanı</span></div>
+      </div>
+      <footer class="modal__footer">
+        <button type="button" class="btn" data-modal-close id="kmVazgec">Vazgeç</button>
+        <button type="submit" class="btn btn--primary" id="kmKaydet">NVR'a ekle</button>
+      </footer>
+    </form>
+  </div>
+</div>
+
+<div class="modal" id="cihazDlg" data-modal hidden role="dialog" aria-modal="true" aria-labelledby="cihazBaslik">
+  <div class="modal__box">
+    <header class="modal__header">
+      <h2 class="modal__title" id="cihazBaslik"></h2>
+      <button type="button" class="modal__close" data-modal-close aria-label="Kapat">&times;</button>
+    </header>
+    <form id="cihazForm" autocomplete="off">
+      <div class="modal__body">
+        <div class="alert alert--danger modal__alert" id="cHata" hidden></div>
+        <div class="field"><label class="field__label" for="cAd">Ad</label><input class="input" id="cAd" maxlength="40" autocomplete="off" placeholder="Cihaz A, Cihaz B…"><span class="field__hint">Canlı sekmesinde görünür</span></div>
+        <div class="field"><label class="field__label" for="cTur">Tür</label><select class="select" id="cTur"></select></div>
+        <div class="field cKamSatir"><label class="field__label" for="cSablon">Kamera markası</label><select class="select" id="cSablon"><option value="hikvision">Hikvision</option><option value="dahua">Dahua</option><option value="uniview">Uniview</option><option value="ozel">Özel adres</option></select><span class="field__hint">RTSP adresi şablonu</span></div>
+        <div class="field cKamSatir" id="cYolSatir"><label class="field__label" for="cYol">RTSP yolu</label><input class="input input--mono" id="cYol" autocomplete="off" autocapitalize="none" spellcheck="false"><span class="field__hint">örn. stream1</span></div>
+        <div class="field"><label class="field__label" for="cAna">Adres</label><input class="input input--mono" id="cAna" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="url"><span class="field__hint">IP ya da alan adı</span></div>
+        <div class="field"><label class="field__label" for="cKul">Kullanıcı adı</label><input class="input input--mono" id="cKul" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
+        <div class="field"><label class="field__label" for="cPar">Parola</label><input class="input" id="cPar" type="password" autocomplete="new-password" autocapitalize="none" spellcheck="false"><span id="cParNot" class="field__hint"></span></div>
+        <details class="kayit-formu__gelismis">
+          <summary><span class="kayit-formu__gelismis-baslik">Gelişmiş</span></summary>
+          <div class="kayit-formu__gelismis-govde">
+            <div class="field cKanalSatir"><label class="field__label" for="cKanal">Kanal sayısı</label><input class="input input--mono" id="cKanal" type="number" min="1" max="128"></div>
+            <div class="field"><label class="field__label" for="cEtiket">Kanal öneki</label><input class="input input--mono" id="cEtiket" maxlength="3" autocomplete="off" autocapitalize="characters"><span class="field__hint">D1, H1 gibi</span></div>
+            <div class="field cPortSatir"><label class="field__label" for="cPort">DVR bağlantı portu</label><input class="input input--mono" id="cPort" type="number" min="1" max="65535" placeholder="34567"></div>
+            <div class="field cHttpSatir"><label class="field__label" for="cHttp">HTTP portu</label><input class="input input--mono" id="cHttp" type="number" min="1" max="65535" placeholder="80"></div>
+            <div class="field cRtspSatir"><label class="field__label" for="cRtsp">RTSP portu</label><input class="input input--mono" id="cRtsp" type="number" min="1" max="65535" placeholder="554"></div>
+          </div>
+        </details>
+      </div>
+      <footer class="modal__footer">
+        <button type="button" class="btn" data-modal-close id="cVazgec">Vazgeç</button>
+        <button type="submit" class="btn btn--primary" id="cKaydet">Kaydet</button>
+      </footer>
+    </form>
+  </div>
+</div>
+
+<div class="modal" id="rolDlg" data-modal hidden role="dialog" aria-modal="true" aria-labelledby="rolBaslik">
+  <div class="modal__box modal__box--wide">
+    <header class="modal__header">
+      <h2 class="modal__title" id="rolBaslik"></h2>
+      <button type="button" class="modal__close" data-modal-close aria-label="Kapat">&times;</button>
+    </header>
+    <form id="rolForm" autocomplete="off">
+      <div class="modal__body">
+        <div class="alert alert--danger modal__alert" id="rolHata" hidden></div>
+        <div class="field"><label class="field__label" for="rolId">Kimlik</label><input class="input input--mono" id="rolId" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="32"><span class="field__hint">a-z, 0-9, -, _</span></div>
+        <div class="field-row">
+          <div class="field"><label class="field__label" for="rolAdTr">Ad (TR)</label><input class="input" id="rolAdTr" maxlength="60"></div>
+          <div class="field"><label class="field__label" for="rolAdEn">Name (EN)</label><input class="input" id="rolAdEn" maxlength="60"></div>
+        </div>
+        <div class="field"><label class="field__label" for="rolAciklama">Açıklama</label><input class="input" id="rolAciklama" maxlength="200"></div>
+        <div class="field"><span class="field__label">İzinler</span><div id="rolIzinler" class="izin-liste"></div></div>
+      </div>
+      <footer class="modal__footer">
+        <button type="button" class="btn" data-modal-close id="rolVazgec">Vazgeç</button>
+        <button type="submit" class="btn btn--primary" id="rolKaydet">Kaydet</button>
+      </footer>
+    </form>
+  </div>
+</div>
+
+<div class="modal" id="anahtarDlg" data-modal hidden role="dialog" aria-modal="true" aria-labelledby="anahtarBaslik">
+  <div class="modal__box modal__box--wide">
+    <header class="modal__header">
+      <h2 class="modal__title" id="anahtarBaslik"></h2>
+      <button type="button" class="modal__close" data-modal-close aria-label="Kapat">&times;</button>
+    </header>
+    <form id="anahtarForm" autocomplete="off">
+      <div class="modal__body">
+        <div class="alert alert--danger modal__alert" id="akHata" hidden></div>
+        <div class="field"><label class="field__label" for="akAd">Ad</label><input class="input" id="akAd" maxlength="60" autocomplete="off"><span class="field__hint">hangi uygulama/kim kullanacak</span></div>
+        <div class="field"><label class="field__label" for="akRol">Rol</label><select class="select" id="akRol"><option value="">— rol yok, yalnız seçili izinler —</option></select><span class="field__hint">izinler rolden gelir; ek izin aşağıda</span></div>
+        <div class="field"><span class="field__label">Ek izinler</span><div id="akIzinler" class="izin-liste"></div></div>
+        <div class="field"><span class="field__label">Kamera kapsamı</span><div id="akKapsam" class="kapsam-liste"></div><span class="field__hint">boş = tümü</span></div>
+        <details class="kayit-formu__gelismis">
+          <summary><span class="kayit-formu__gelismis-baslik">Sınırlar</span></summary>
+          <div class="kayit-formu__gelismis-govde">
+            <div class="field"><label class="field__label" for="akBitis">Bitiş tarihi</label><input class="input" type="date" id="akBitis"></div>
+            <div class="field"><label class="field__label" for="akIpler">İzinli IP / CIDR</label><input class="input input--mono" id="akIpler" autocomplete="off" placeholder="10.0.0.0/24"><span class="field__hint">virgülle</span></div>
+            <div class="field-row">
+              <div class="field"><label class="field__label" for="akHiz">Hız limiti (istek/dk)</label><input class="input input--mono" type="number" id="akHiz" min="1" max="6000" value="120"></div>
+              <div class="field"><label class="field__label" for="akAkis">Eşzamanlı akış</label><input class="input input--mono" type="number" id="akAkis" min="0" max="32" value="4"></div>
+            </div>
+            <div class="field"><label class="field__label" for="akNot">Not</label><input class="input" id="akNot" maxlength="200"></div>
+          </div>
+        </details>
+      </div>
+      <footer class="modal__footer">
+        <button type="button" class="btn" data-modal-close id="akVazgec">Vazgeç</button>
+        <button type="submit" class="btn btn--primary" id="akKaydet">Kaydet</button>
+      </footer>
+    </form>
+  </div>
+</div>
+
+<div class="modal" id="gizliDlg" data-modal hidden role="dialog" aria-modal="true" aria-labelledby="gizliBaslik">
+  <div class="modal__box">
+    <header class="modal__header">
+      <h2 class="modal__title" id="gizliBaslik">API anahtarı</h2>
+      <button type="button" class="modal__close" data-modal-close aria-label="Kapat">&times;</button>
+    </header>
+    <div class="modal__body">
+      <p class="text-sm text-muted modal__alert">Bu değer yalnız şimdi gösterilir; kapattıktan sonra bir daha görüntülenemez. Güvenli bir yere kaydedin.</p>
+      <pre id="gizliDeger" class="gizli-kutu"></pre>
+    </div>
+    <footer class="modal__footer">
+      <button type="button" class="btn" id="gizliKopyala">Kopyala</button>
+      <button type="button" class="btn btn--primary" id="gizliKapat">Kaydettim, kapat</button>
+    </footer>
+  </div>
+</div>
+
+<div class="modal" id="uyeDlg" data-modal hidden role="dialog" aria-modal="true" aria-labelledby="uyeBaslik">
+  <div class="modal__box">
+    <header class="modal__header">
+      <h2 class="modal__title" id="uyeBaslik"></h2>
+      <button type="button" class="modal__close" data-modal-close aria-label="Kapat">&times;</button>
+    </header>
+    <form id="uyeForm" autocomplete="off">
+      <div class="modal__body">
+        <div class="alert alert--danger modal__alert" id="uyeHata" hidden></div>
+        <div class="field"><label class="field__label" for="uyeAd">Kullanıcı adı</label><input class="input input--mono" id="uyeAd" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
+        <div class="field"><label class="field__label" for="uyeParola">Parola</label><input class="input" id="uyeParola" type="text" autocomplete="new-password" autocapitalize="none" spellcheck="false" placeholder="en az 8 karakter"><span id="uyeParolaNot" class="field__hint"></span></div>
+        <div class="field"><label class="field__label" for="uyeRol">Rol</label><select class="select" id="uyeRol"></select><span class="field__hint" id="uyeRolNot"></span></div>
+        <details class="kayit-formu__gelismis">
+          <summary><span class="kayit-formu__gelismis-baslik">Erişim kısıtları (isteğe bağlı)</span></summary>
+          <div class="kayit-formu__gelismis-govde">
+            <div class="field"><span class="field__label">Kamera kapsamı</span><div id="uyeKapsam" class="kapsam-liste"></div><span class="field__hint">boş = tüm kameralar</span></div>
+            <div class="field"><label class="field__label" for="uyeBitis">Hesap bitiş tarihi</label><input class="input" type="date" id="uyeBitis"></div>
+            <div class="field"><label class="field__label" for="uyeIpler">İzinli IP / CIDR listesi</label><input class="input input--mono" id="uyeIpler" autocomplete="off" placeholder="10.0.0.0/24, 203.0.113.5"><span class="field__hint">virgülle; boş = kısıtsız</span></div>
+          </div>
+        </details>
+      </div>
+      <footer class="modal__footer">
+        <button type="button" class="btn" data-modal-close id="uyeVazgec">Vazgeç</button>
+        <button type="submit" class="btn btn--primary" id="uyeKaydet">Kaydet</button>
+      </footer>
+    </form>
+  </div>
+</div>
+
+<div class="modal" id="dlg" data-modal hidden role="dialog" aria-modal="true" aria-labelledby="dlgAd">
+  <div class="modal__box modal__box--wide">
+    <header class="modal__header">
+      <h2 class="modal__title mono" id="dlgAd"></h2>
+      <button type="button" class="modal__close" data-modal-close aria-label="Kapat">&times;</button>
+    </header>
+    <div class="modal__body modal__body--video"><video id="dlgVideo" controls playsinline></video></div>
+    <footer class="modal__footer">
+      <button type="button" class="btn" data-modal-close id="dlgKapat">Kapat</button>
+    </footer>
+  </div>
+</div>
+
+<div class="modal" data-confirm-dialog id="onayDlg" hidden role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+  <div class="modal__box">
+    <header class="modal__header">
+      <div>
+        <h2 class="modal__title" id="confirm-title" data-confirm-title></h2>
+      </div>
+      <button type="button" class="modal__close" data-confirm-cancel aria-label="Kapat">&times;</button>
+    </header>
+
+    <div class="modal__body">
+      <p data-confirm-message id="onayMetin"></p>
+
+      <div class="field" data-confirm-reason-field hidden>
+        <label class="field__label" for="confirm-reason">Gerekçe</label>
+        <textarea class="textarea" id="confirm-reason" data-confirm-reason rows="2"
+                  placeholder="Bu işlemi neden yapıyorsunuz?"></textarea>
+        <span class="field__hint">Kayıtlara yazılır; sonradan değiştirilemez.</span>
+      </div>
+
+      <div class="field" data-confirm-verify-field hidden>
+        <label class="field__label" for="onayGirdi">
+          Onaylamak için <strong data-confirm-expected class="mono"></strong> yazın
+        </label>
+        <input type="text" class="input mono" id="onayGirdi" data-confirm-input autocomplete="off">
+      </div>
+    </div>
+
+    <footer class="modal__footer">
+      <button type="button" class="btn btn--secondary" data-confirm-cancel>Vazgeç</button>
+      <button type="button" class="btn btn--primary" data-confirm-accept id="onayTamam">Onayla</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toast-host" data-flash="" data-flash-variant="success"></div>
+
+<script src="/js/dil.js"></script>
+<script type="module">
+/*
+ * EYS bilesenleri BIREBIR (js/eys, scripts/eys-sync.mjs): tema, hesap menusu, pencere, bildirim, sutun seridi.
+ * Kurulum EYS app.js ile ayni: tema hemen, digerleri DOMContentLoaded'da bir kez.
+ */
+import { $ } from '/js/eys/lib/dom.js';
+import * as theme from '/js/eys/components/theme.js';
+import * as kullaniciMenu from '/js/eys/components/kullanici-menu.js';
+import * as dialog from '/js/eys/components/dialog.js';
+import * as toast from '/js/eys/components/toast.js';
+import * as columns from '/js/eys/components/columns.js';
+import { bolmeyeIn } from '/js/bolme.js';
+
+theme.init();
+document.addEventListener('DOMContentLoaded', () => { dialog.init(); kullaniciMenu.init(); toast.init(); columns.init(); });
+
+const dil = window.DIL?.gecerli ?? 'tr';                       // 'tr' | 'en' (js/dil.js)
+/** Bildirim: EYS toast (tur: success | danger | info). */
+const bildir = (mesaj, tur = 'info') => toast.emit(String(mesaj), tur);
+/** Pencereler EYS .modal[data-modal]: acmak hidden kaldirir ve ilk alana odaklanir (EYS dialog.js ile ayni), kapatmak yalniz gizler (form sifirlanmaz; kapatma dugmesi/Escape/zemin EYS'de sifirlar). */
+// Dokunmatik ekranda pencere ilk alana odaklanmaz: odak klavyeyi (ya da secim listesini) kendiliginden aciyor, pencereyi de tepeye
+// itiyordu. Odak kapatma dugmesinde; kullanici bir alana dokununca klavye acilir ve pencere ustte durur (css: [data-modal]:has(...)).
+const dokunmatik = () => matchMedia('(pointer: coarse)').matches;
+const pencereAc = (id) => {
+  const k = document.getElementById(id);
+  if (!k?.matches('[data-modal]')) return;
+  k.hidden = false;
+  k.querySelector('input:not([type=hidden]), select, textarea')?.focus();
+  if (dokunmatik()) k.querySelector('.modal__close')?.focus();
+};
+/** Pencerenin ilk alanina odak: yalniz fare/klavyede. Dokunmatikte klavyeyi kendiliginden acmaz (bkz. pencereAc). */
+const ilkAlan = (e) => { if (!dokunmatik()) e?.focus(); };
+const pencereKapat = (id) => { const d = document.getElementById(id); if (d) d.hidden = true; };
+/** Pencere gizlenince (hangi yoldan olursa olsun) is: video durdurma, gizli degeri silme. */
+const kapaninca = (id, is) => { const d = document.getElementById(id); new MutationObserver(() => { if (d.hidden) is(); }).observe(d, { attributes: true, attributeFilter: ['hidden'] }); };
+const el = (ad, ozellik = {}, ...cocuk) => { const e = document.createElement(ad); for (const [k, v] of Object.entries(ozellik)) { if (k === 'class') e.className = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v); } e.append(...cocuk); return e; };
+const api = async (yol, secenek = {}) => {
+  const yontem = (secenek.method ?? 'GET').toUpperCase();
+  const basliklar = { ...(yontem !== 'GET' ? { 'X-Kamera': '1', 'Content-Type': 'application/json' } : {}), ...(secenek.headers ?? {}) };
+  const y = await fetch(yol, { ...secenek, headers: basliklar });
+  const j = await y.json().catch(() => ({}));
+  if (y.status === 401) { location.reload(); throw new Error('Oturum gerekli'); }
+  if (!y.ok) throw new Error(j.hata ?? `Hata ${y.status}`);
+  return j;
+};
+let ben = { ad: '', rol: 'kullanici' };
+const yonetici = () => ben.rol === 'admin';
+const boyutYaz = (b) => b >= 1e9 ? (b / 1e9).toFixed(2) + ' GB' : b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.round(b / 1e3) + ' KB';
+const etiketle = (tr, adlar, ozel = {}) => { [...tr.children].forEach((td, i) => { if (adlar[i]) td.dataset.label = adlar[i]; }); return tr; };
+const iki = (n) => String(n).padStart(2, '0');
+const sn = (z) => { const [h, m, s] = z.slice(11).split(':').map(Number); return h * 3600 + m * 60 + s; };
+const saatYaz = (s) => `${iki(Math.floor(s / 3600) % 24)}:${iki(Math.floor(s / 60) % 60)}:${iki(Math.floor(s) % 60)}`;
+const sureYaz = (s) => s >= 3600 ? `${Math.floor(s / 3600)} sa ${iki(Math.floor(s / 60) % 60)} dk` : s >= 60 ? `${Math.floor(s / 60)} dk ${iki(s % 60)} sn` : `${s} sn`;
+function tamEkran(oge, video = null) {
+  const tamKapat = document.exitFullscreen ?? document.webkitExitFullscreen;
+  if (document.fullscreenElement || document.webkitFullscreenElement) { tamKapat?.call(document); return; }
+  if (oge.classList.contains('sahte-tam')) { oge.classList.remove('sahte-tam'); return; }
+  const f = oge.requestFullscreen ?? oge.webkitRequestFullscreen;
+  try {
+    if (f) { const p = f.call(oge); if (p?.catch) p.catch(() => oge.classList.add('sahte-tam')); return; }
+    if (video?.webkitEnterFullscreen) { video.webkitEnterFullscreen(); return; }   // iPhone: yalniz video yerlesik tam ekrani
+  } catch {}
+  oge.classList.add('sahte-tam');
+}
+const IKON = {"kamera":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 8h3l2-2.5h6L17 8h3v11H4z\"/><circle cx=\"12\" cy=\"13\" r=\"3.5\"/></svg>","oynat":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M8 5.5v13l11-6.5z\" fill=\"currentColor\" stroke=\"none\"/></svg>","duraklat":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"6.5\" y=\"5\" width=\"4\" height=\"14\" rx=\"1\" fill=\"currentColor\" stroke=\"none\"/><rect x=\"13.5\" y=\"5\" width=\"4\" height=\"14\" rx=\"1\" fill=\"currentColor\" stroke=\"none\"/></svg>","takvim":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3.5\" y=\"5\" width=\"17\" height=\"15\" rx=\"2\"/><path d=\"M3.5 10h17M8 3v4M16 3v4\"/></svg>","indir":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14\"/></svg>","tam":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5\"/></svg>","tamCik":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5\"/></svg>"};
+const oynIkon = (oynuyor) => { $('#oynat').innerHTML = oynuyor ? IKON.duraklat : IKON.oynat; };
+const tamDurum = (oge) => !!oge && (document.fullscreenElement === oge || document.webkitFullscreenElement === oge || oge.classList.contains('sahte-tam'));
+function tamEtiket() {
+  const tam = tamDurum($('#oynatici'));
+  $('#oynTam').innerHTML = tam ? IKON.tamCik : IKON.tam; $('#oynTam').title = tam ? 'Tam ekrandan çık' : 'Tam ekran'; $('#oynTam').setAttribute('aria-label', $('#oynTam').title);
+  const tamYazi = tamDurum($('#odak')) ? 'Tam ekrandan çık' : 'Tam ekran';
+  $('#tamEkran').textContent = tamYazi; 
+}
+for (const o of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(o, tamEtiket);
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  for (const o of document.querySelectorAll('.sahte-tam')) o.classList.remove('sahte-tam');
+  tamEtiket();
+});
+/** EYS dugmesi: varsayilan (cerceveli) .btn; tur 'primary' | 'danger' | 'ghost' degistiricisini ekler. */
+const dugme = (ad, tur, tikla, ozel = {}) => el('button', { type: 'button', class: `btn btn--sm${tur && tur !== 'secondary' ? ' btn--' + tur : ''}`, onclick: tikla, ...ozel }, ad);
+const BUYUTEC = () => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '1.8'); s.innerHTML = '<circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" stroke-linecap="round" />'; return s; };
+/** EYS bos durum (x-ui.empty). */
+const bosYaz = (baslik, metin = '') => el('div', { class: 'empty' }, el('span', { class: 'empty__icon', 'aria-hidden': 'true' }, BUYUTEC()), el('p', { class: 'empty__title' }, baslik), ...(metin ? [el('p', { class: 'empty__text' }, metin)] : []));
+/** Hata: EYS uyari serit. */
+const hataYaz = (metin) => el('div', { class: 'alert alert--danger' }, metin);
+/** Durum noktasi (x-ui.status-dot). */
+const durumNokta = (renk, ad) => el('span', { class: 'status' }, el('span', { class: `dot dot--${renk}`, 'aria-hidden': 'true' }), ad);
+/** Satir eylemleri (EYS table__row-actions). */
+const satirEylem = (...d) => el('div', { class: 'table__row-actions' }, ...d.filter(Boolean));
+/**
+ * EYS yonetim tablosu: thead basliklari; hucrelere data-label (dar ekranda satir bloguna doner).
+ * basliklar: ['Ad', ...] ya da ['Boyut', 'sag'] (sayi sutunu sagda). Bos baslik = eylem sutunu (etiketsiz).
+ */
+function tablo(basliklar, satirlar) {
+  const b = basliklar.map((x) => (Array.isArray(x) ? x : [x]));
+  return el('table', { class: 'table' }, el('thead', {}, el('tr', {}, ...b.map(([ad, sag]) => el('th', sag ? { class: 'text-right' } : {}, ad)))),
+    el('tbody', {}, ...satirlar.map((tr) => etiketle(tr, b.map(([ad]) => ad)))));
+}
+
+let bilgi = null;
+const gorunur = () => (bilgi ? bilgi.kanalAdlari.map((_, k) => k).filter((k) => !bilgi.kanalBos?.[k]) : []);
+const durum = { sekme: 'canli', odak: null, cihaz: null, cihazSecildi: false };
+const SEKMELER = ['canli', 'kayit', 'indirilen', 'cihaz', 'uyeler', 'gunluk', 'guncelleme', 'yetki'];
+// İzin tabanlı görünürlük: sunucunun /api/ben ile verdiği izin listesi (yetki.mjs kataloğu)
+const izinVar = (i) => !!ben?.izinler?.includes(i);
+const SEKME_IZIN = { canli: ['canli.izle'], kayit: ['kayit.listele', 'kayit.izle', 'kayit.indir'], cihaz: ['cihaz.oku'], uyeler: ['uye.yonet'], gunluk: ['gunluk.oku'], guncelleme: ['guncelleme.denetle'], yetki: ['yetki.yonet', 'api.anahtar'] };
+// Ust baslikta konum yolu (kirinti) YOK: bolum menude secili, alt duzey orta bolmenin basliginda.
+const izinli = (s) => SEKMELER.includes(s) && s !== 'indirilen' && (SEKME_IZIN[s] ?? []).some(izinVar);
+
+// ---------- sekmeler (sayfa yenilenmez: yalniz bolum degisir) ----------
+function sekmeAc(ad) {
+  durum.sekme = ad;
+  const menude = ad === 'yetki' ? 'uyeler' : ad;   // Yetki, Uyeler'in icinde
+  for (const b of document.querySelectorAll('#sekmeler a')) { if (b.dataset.s === menude) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); }
+  for (const s of document.querySelectorAll('.shell > section')) s.hidden = s.id !== `s-${ad}`;
+  canliGuncelle();
+  if (ad === 'canli') bolmeyeIn($('#s-canli'), 1);   // canli: izgara (ya da odak) acilir; kamera listesi solda
+  if (ad === 'kayit') kayitSekmesi();
+  if (ad === 'indirilen') indirilenYenile();
+  if (ad === 'cihaz') { cihazYaz(); cihazListeYenile(); bolmeyeIn($('#s-cihaz'), durum.cihazSecildi ? 1 : 0); }
+  if (ad === 'yetki') { yetkiYenile(); yetkiSekmeAc(yetkiSekme); }
+  if (ad === 'uyeler' || ad === 'yetki') uyeSekmeIsaretle();
+  if (ad === 'uyeler') uyelerYenile();
+  if (ad === 'gunluk') gunlukYenile();
+  if (ad === 'guncelleme') guncellemeYenile();
+  if (ad !== 'kayit') mzDuraklat();
+}
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('#sekmeler a, .topbar__mark, #guncellemeUyari a');
+  if (!a) return;
+  // Uyeler baglantisi: uye yonetimi izni yoksa ayni bolumun Yetki sekmesine acilir.
+  const ad = a.dataset.s === 'uyeler' && !izinli('uyeler') && izinli('yetki') ? 'yetki' : (a.dataset.s ?? 'canli');
+  if (a.dataset.s && !izinli(ad)) return;
+  e.preventDefault();
+  history.replaceState(null, '', `#${ad}`);
+  // Ana sayfa (Canlı): büyütülmüş kamera açıksa ızgaraya dön; her durumda sayfa başına kaydır
+  if (ad === 'canli' && durum.odak !== null) odakKapat();
+  sekmeAc(ad);
+  $(`#s-${ad}`)?.scrollTo({ top: 0, behavior: 'smooth' });
+});
+addEventListener('hashchange', () => { const s = location.hash.slice(1); if (izinli(s)) sekmeAc(s); });
+
+// ---------- cihaz ----------
+let bilgiZaman = null;
+async function bilgiAl() {
+  clearTimeout(bilgiZaman);
+  try {
+    const onceki = JSON.stringify(gorunur());
+    bilgi = await api('/api/bilgi');
+    if (bilgi && Object.keys(kareler).length && JSON.stringify(gorunur()) !== onceki) { for (const k of Object.keys(kareler)) canliDurdur(Number(k)); for (const k of Object.keys(kareler)) delete kareler[k]; canliKur(); canliGuncelle(); }
+    bilgiZaman = setTimeout(() => { if (!document.hidden) bilgiAl().then((b) => { if (b && !Object.keys(kareler).length) { canliKur(); canliGuncelle(); } }); else bilgiAl(); }, 30_000);
+    $('#cihazNokta').className = 'dot dot--green';
+    // Ust baslikta cihaz ayrintisi (model, adres, saat) yok: cok cihazda sigmaz; ayrinti Cihaz bolumunde.
+    $('#cihazYazi').textContent = 'Bağlı';
+    return bilgi;
+  } catch (e) {
+    $('#cihazNokta').className = 'dot dot--red';
+    $('#cihazYazi').textContent = 'Bağlantı yok';
+    bilgiZaman = setTimeout(() => bilgiAl().then((b) => { if (b && !Object.keys(kareler).length) { canliKur(); canliGuncelle(); } }), 5000);
+    return null;
+  }
+}
+const satirYap = (kap) => (a, b, hata) => kap.append(el('div', { class: 'facts__row' }, el('dt', { class: 'facts__key' }, a), el('dd', { class: `facts__value${hata ? ' hata-yazi' : ''}` }, b instanceof Node ? b : String(b ?? '—'))));
+/** Saat farki: [yazi, buyuk mu]. */
+const saatFarki = (saat) => {
+  const fark = saat && bilgi?.sunucuSaat ? Math.round((Date.parse(saat.replace(' ', 'T') + 'Z') - Date.parse(bilgi.sunucuSaat.replace(' ', 'T') + 'Z')) / 1000) : null;
+  return [fark === null ? '—' : Math.abs(fark) < 5 ? 'Eşit' : `${Math.abs(fark) >= 60 ? Math.round(Math.abs(fark) / 60) + ' dk' : Math.abs(fark) + ' sn'} ${fark > 0 ? 'ileride' : 'geride'}`, fark !== null && Math.abs(fark) >= 90];
+};
+/**
+ * Cihaz bolumu EYS uc bolme kaliminda: solda cihaz listesi, ortada secili cihazin kanallari ve diskleri,
+ * sagda cihaz bilgisi ve saat. Secim yoksa (genis ekranda) ilk cihaz gosterilir; telefonda liste acik kalir.
+ */
+const seciliCihaz = () => cihazAyarListe.find((c) => c.id === durum.cihaz) ?? cihazAyarListe[0] ?? null;
+function cihazYaz() {
+  cihazListeCiz();
+  const c = seciliCihaz(), b = (bilgi?.cihazlar ?? []).find((x) => x.id === c?.id);
+  $('#cihazDetay').hidden = !c;
+  $('#cihazBaslik2').textContent = c ? (c.ad || c.ana) : 'Cihaz';
+  $('#cihazKanalSay').textContent = c ? String(c.kanalSayisi) : '';
+  if (!c) { $('#cihazEylem').replaceChildren(); $('#cdEylem').replaceChildren(); $('#kanalListe').replaceChildren(bosYaz('Cihaz yok', '“Yeni cihaz” ile ekleyin.')); $('#diskListe').replaceChildren(); $('#diskNot').textContent = ''; return; }
+  const hata = c.hata ?? b?.hata;
+  $('#cdAd').textContent = c.ad || c.ana; $('#cdAlt').textContent = `${cihazTurler[c.tur]?.ad ?? c.tur} · ${c.ana}`;
+  const f = $('#cdBilgi'); f.replaceChildren(); const s = satirYap(f);
+  s('Durum', durumNokta(hata ? 'red' : b ? 'green' : 'gray', hata ? 'Ulaşılamıyor' : b ? 'Bağlı' : 'Bilinmiyor'));
+  if (hata) s('Hata', hata, true);
+  s('Model', b?.model); s('Adres', c.ana); s('Yazılım', b?.surum); s('Derleme', b?.derleme); s('Seri no', b?.seriNo);
+  s('Kanal', `${c.kanalSayisi} kanal (${c.etiket}1 – ${c.etiket}${c.kanalSayisi})`);
+  const sb = $('#saatBilgi'); sb.replaceChildren(); const ss = satirYap(sb);
+  const [farkYazi, buyuk] = saatFarki(b?.saat);
+  ss('Cihaz saati', b?.saat); ss('Fark', farkYazi, buyuk); ss('Sunucu saati', bilgi?.sunucuSaat);
+  // eylemler: orta basliktaki ve detay altligindaki dugmeler ayni isleri yapar (telefonda iki bolme ayri ekran)
+  const eylemler = () => [
+    ...(izinVar('cihaz.yonet') && cihazTurler[c.tur]?.kameraEkle ? [dugme('Kamera ekle', '', () => kamDialog(c))] : []),
+    ...(izinVar('cihaz.yonet') ? [dugme('Düzenle', '', () => cihazDialog(c))] : []),
+    ...(izinVar('cihaz.saat') && b && !hata ? [dugme('Saati eşitle', '', (e) => saatEsitle(c.id, e.currentTarget))] : []),
+    ...(izinVar('cihaz.yonet') ? [dugme('Kaldır', 'danger', () => cihazKaldir(c))] : []),
+  ];
+  $('#cihazEylem').replaceChildren(...eylemler());
+  $('#cdEylem').replaceChildren(...eylemler()); $('#cdEylem').hidden = !$('#cdEylem').children.length;
+  if (bilgi && kanalCizilen !== c.id) kanalYaz(c);
+  diskYaz(c);
+}
+async function cihazKaldir(c) {
+  if (!await onayIste(`“${c.ad || c.ana}” cihazı panelden kaldırılsın mı? (Cihazdaki kayıtlar etkilenmez.)`, 'sil', { baslik: 'Cihazı kaldır' })) return;
+  try { await api(`/api/cihazlar/${encodeURIComponent(c.id)}`, { method: 'DELETE' }); bildir('Cihaz kaldırıldı', 'success'); durum.cihaz = null; durum.cihazSecildi = false; await arayuzuYenile(); } catch (e) { bildir(e.message, 'danger'); }
+}
+/** Secili cihazin diskleri: cihazin verdigi durum, sicaklik, doluluk. */
+function diskYaz(c) {
+  const kap = $('#diskListe');
+  const dl = (bilgi?.diskler ?? []).filter((d) => !d.cihaz || d.cihaz === c.id);
+  $('#diskNot').textContent = '';
+  if (!dl.length) { kap.replaceChildren(bosYaz('Disk bilgisi yok', 'Cihaz disk bilgisi vermedi.')); $('#diskNot').hidden = true; return; }
+  const gb = (mb) => mb >= 1024 * 1024 ? `${(mb / 1024 / 1024).toFixed(2)} TB` : `${(mb / 1024).toFixed(1)} GB`;
+  kap.replaceChildren(tablo(['Disk', ['Kapasite', 'sag'], 'Doluluk', ['Sıcaklık', 'sag'], 'Durum', ['Çalışma', 'sag']], dl.map((d) => {
+    const dolu = d.toplamMB ? Math.round(((d.toplamMB - d.bosMB) / d.toplamMB) * 100) : 0;
+    const renk = { iyi: 'green', uyari: 'yellow', hata: 'red' }[d.durum] ?? 'gray';
+    const zaman = d.kayitBas && d.kayitSon ? `${d.kayitBas.slice(0, 16)} → ${d.kayitSon.slice(0, 16)}` : '';
+    return el('tr', {}, el('td', {}, `${d.ad.split(' · ').pop()}${d.uretici ? ' · ' + d.uretici : ''}`), el('td', { class: 'table__cell--mono text-right' }, gb(d.toplamMB)),
+      el('td', { class: 'table__cell--mono' }, `%${dolu} dolu${d.bosMB ? ' · ' + gb(d.bosMB) + ' boş' : ''}`), el('td', { class: 'table__cell--mono text-right' }, d.sicaklik === null || d.sicaklik === undefined ? '—' : `${d.sicaklik} °C`),
+      el('td', {}, el('span', { class: `badge badge--${renk}`, title: d.ayrinti || zaman }, d.durumYazi)), el('td', { class: 'table__cell--mono text-right' }, d.calismaGun === null || d.calismaGun === undefined ? 'Cihaz bildirmiyor' : `${d.calismaGun} gün`));
+  })));
+  const notlar = [];
+  if (bilgi.kayitGunTahmini) notlar.push(`Mevcut ayarla tahmini kayıt süresi: ${bilgi.kayitGunTahmini} gün.`);
+  if (dl.some((d) => d.durum !== 'iyi')) notlar.push('Durumu "Normal/Çalışıyor" dışında olan disk için cihazın kendi arayüzünü kontrol edin.');
+  notlar.push('Durum rozetinin üzerine gelince (ya da dokununca) SMART ayrıntısı görünür; Uniview yalnız durum ve sıcaklık bildirir. Kayıt diski dolu görünmesi normaldir (eski kayıtların üzerine yazılır).');
+  $('#diskNot').textContent = notlar.join(' '); $('#diskNot').hidden = false;
+}
+/** Secili cihazin kanallari: ad + gosterim (kanal.yonet varsa duzenlenir), cihazdaki durum, canli izleme. */
+const kanalForm = new Map();
+let kanalCizilen = null;
+function kanalYaz(c) {
+  const kap = $('#kanalListe'); kanalForm.clear(); kanalCizilen = c?.id ?? null;
+  $('#kanalKaydetYer').replaceChildren();
+  if (!bilgi || !c) { kap.replaceChildren(); return; }
+  const b = (bilgi.cihazlar ?? []).find((x) => x.id === c.id) ?? { baslangic: c.baslangic, kanal: c.kanalSayisi, model: bilgi.model, ad: c.ad };
+  const ayar = bilgi.kanalAyar ?? {}, yonetir = izinVar('kanal.yonet');
+  const satirlar = [];
+  for (let i = b.baslangic; i < b.baslangic + b.kanal && i < bilgi.kanalAdlari.length; i++) {
+    const kod = bilgi.kanalKodlar?.[i] ?? `K${i + 1}`, bos = bilgi.kanalOtomatikBos?.[i];
+    let adHucre = el('span', {}, ayar[i]?.ad || bilgi.kanalAdlari[i]), gorHucre = el('span', { class: 'text-muted' }, { otomatik: 'Otomatik', goster: 'Göster', gizle: 'Gizle' }[ayar[i]?.gorunum ?? 'otomatik']);
+    if (yonetir) {
+      const ad = el('input', { class: 'input', type: 'text', maxlength: '40', placeholder: bilgi.kanalCihazAdi?.[i] || '', value: ayar[i]?.ad ?? '', 'aria-label': `${kod} adı` });
+      const gor = el('select', { class: 'select', 'aria-label': 'Panelde göster' }, ...[['otomatik', 'Otomatik'], ['goster', 'Göster'], ['gizle', 'Gizle']].map(([d, y]) => el('option', { value: d }, y)));
+      gor.value = ayar[i]?.gorunum ?? 'otomatik';
+      kanalForm.set(i, { ad, gor }); adHucre = ad; gorHucre = gor;
+    }
+    const k = i;
+    satirlar.push(el('tr', {}, el('td', { class: 'table__cell--mono' }, kod), el('td', {}, adHucre),
+      el('td', {}, el('span', { class: 'kanal-cihazda' }, el('span', { class: `badge badge--${bos ? 'gray' : 'green'}` }, bos ? 'Görüntü yok' : 'Görüntü var'), bilgi.kanalKamera?.[i] ? el('span', { class: 'kanal-cihazda__bilgi text-sm text-muted' }, bilgi.kanalKamera[i]) : '')),
+      el('td', {}, gorHucre),
+      el('td', {}, satirEylem(gorunur().includes(k) && izinVar('canli.izle') ? dugme('İzle', '', () => { history.replaceState(null, '', '#canli'); sekmeAc('canli'); odakAc(k); }) : ''))));
+  }
+  kap.replaceChildren(tablo(['Kanal', 'Görünen ad', 'Cihazda', 'Panelde', ''], satirlar));
+  if (yonetir) {
+    const dur = el('span', { class: 'text-sm text-muted' });
+    const d = dugme('Kaydet', 'primary', async () => { if (await onayIste(`“${c.ad || b.model}” cihazının kanal ayarları kaydedilecek.`, 'kaydet', { baslik: 'Kanal ayarları' })) kanalKaydet({ ...b, ad: c.ad, model: b.model }, d, dur); });
+    $('#kanalKaydetYer').replaceChildren(dur, d);
+  }
+}
+/** Tek cihazın kanal ayarını kaydeder; diğer cihazların (kaydedilmemiş) düzenlemeleri etkilenmez, form yeniden çizilmez. */
+async function kanalKaydet(c, d, durumEl) {
+  d.disabled = true; durumEl.textContent = 'Kaydediliyor…';
+  try {
+    const ayar = {};
+    for (const [i, f] of kanalForm) if (i >= c.baslangic && i < c.baslangic + c.kanal) ayar[i] = { ad: f.ad.value.trim(), gorunum: f.gor.value };
+    await api('/api/kanallar', { method: 'PUT', body: JSON.stringify({ ayar, bas: c.baslangic, son: c.baslangic + c.kanal }) });
+    for (const k of Object.keys(kareler)) { canliDurdur(Number(k)); delete kareler[k]; }
+    for (const m of mz.m.values()) m.durdur(); mz.m.clear(); mz.tile.clear();
+    await bilgiAl(); mz.hazir = false; mz.sec = new Set(); canliKur(); canliGuncelle();
+    durumEl.textContent = ''; bildir(`${c.ad || c.model || 'Cihaz'}: kanal ayarları kaydedildi`, 'success');
+  } catch (e) { durumEl.textContent = e.message; } finally { d.disabled = false; }
+}
+async function saatEsitle(id, d) {
+  const c = bilgi?.cihazlar?.find((x) => x.id === id);
+  if (!await onayIste(`${c?.ad || c?.model || 'Cihaz'} saati sunucu saatine eşitlenecek.${c?.model && /DS-/.test(c.model) ? ' Hikvision cihazı NTP yerine elle (manual) saat moduna geçer.' : ''}`, 'eşitle')) return;
+  d.disabled = true;
+  try { const r = await api('/api/dvr/saat', { method: 'POST', body: JSON.stringify({ cihaz: id }) }); await bilgiAl(); cihazYaz(); bildir(`Cihaz saati eşitlendi: ${r.once} → ${r.sonra}`, 'success'); } catch (e) { bildir(e.message, 'danger'); } finally { d.disabled = false; }
+}
+
+// ---------- MJPEG okuyucu ----------
+// Tarayici kopan multipart akis icin hata olayi vermez (goruntu sessizce donar). Bu yuzden akisi fetch ile
+// kendimiz okuruz: kare gelmezse ya da akis biterse ustel geri cekilmeyle kendiliginden yeniden baglanir.
+/*
+ * Bekleme gorunumu: kare durum yazisi "Bağlanıyor…" / "Yeniden bağlanıyor…" iken donen gosterge ve yumusak zemin (css: kanal__durum--yukleniyor).
+ * Yazi bircok yerden yaziliyor (izgara, odak, oynatici); sinif tek yerden, yazi degisince verilir. Yeniden denenen hatalarda da gosterge var;
+ * denenmeyen bilgi yazilarinda ("Bu anda kayıt yok", "Kayıt sonu") yok.
+ */
+// "…, yeniden deneniyor (n)…" de bekleme: deneme surerken duz yazi kalmasin.
+const YUKLENIYOR = /bağlanıyor|deneniyor/i;
+const durumIsaretle = (d) => d.classList.toggle('kanal__durum--yukleniyor', YUKLENIYOR.test(d.textContent));
+new MutationObserver((olaylar) => {
+  for (const o of olaylar) {
+    const hedef = o.target.nodeType === 3 ? o.target.parentElement : o.target;
+    const d = hedef?.closest?.('.kanal__durum'); if (d) durumIsaretle(d);
+    for (const n of o.addedNodes) if (n.nodeType === 1) { if (n.matches('.kanal__durum')) durumIsaretle(n); for (const x of n.querySelectorAll('.kanal__durum')) durumIsaretle(x); }
+  }
+}).observe(document.body, { childList: true, subtree: true, characterData: true });
+class Mjpeg {
+  constructor(img, { url, durum, ilk, bitti, kopma = 6000 }) {
+    Object.assign(this, { img, url, durum, ilk, bitti, kopma });
+    this.deneme = 0; this.calisiyor = false; this.ctrl = null; this.sonUrl = null;
+    // Bekleme gostergesi kare GERCEKTEN cizilince kalkar; cozulemeyen kare (bozuk/yarim JPEG) kirik resim simgesi yerine gizlenir.
+    img.addEventListener('load', () => { img.style.visibility = ''; if (this.cizimBekle) { this.cizimBekle = false; this.ilk?.(); } });
+    img.addEventListener('error', () => { if (img.getAttribute('src')) img.style.visibility = 'hidden'; });
+  }
+  baslat(yeniden = false) {
+    this.durdur(true);
+    if (!yeniden) this.deneme = 0;
+    this.calisiyor = true;
+    const ctrl = (this.ctrl = new AbortController());
+    this.sonZ = performance.now(); this.kareVar = false; this.cizimBekle = false;
+    this.olcum = { bayt: 0, kare: 0, z: performance.now() }; this.hizSon = null;
+    this.bekci = setInterval(() => { if (performance.now() - this.sonZ > this.kopma) this.#kop(ctrl, 'Görüntü durdu', false); }, 1500);
+    this.#oku(ctrl);
+  }
+  async #oku(ctrl) {
+    this.durum?.(this.deneme ? `Yeniden bağlanıyor (${this.deneme})…` : 'Bağlanıyor…');
+    let r;
+    try {
+      const y = await fetch(this.url(), { signal: ctrl.signal, cache: 'no-store' });
+      if (y.status === 401) { location.reload(); return; }
+      if (!y.ok) throw new Error(`HTTP ${y.status}`);
+      r = y.body.getReader();
+    } catch (e) { if (!ctrl.signal.aborted) { this.son_hata = e?.message; this.#kop(ctrl, 'Bağlanamadı', false); } return; }
+    let tampon = new Uint8Array(0);
+    try {
+      for (;;) {
+        const { done, value } = await r.read();
+        if (done) break;
+        if (ctrl.signal.aborted) return;
+        this.olcum.bayt += value.length;
+        const yeni = new Uint8Array(tampon.length + value.length); yeni.set(tampon); yeni.set(value, tampon.length); tampon = yeni;
+        for (;;) {
+          let bas = -1;
+          for (let i = 0; i < tampon.length - 1; i++) if (tampon[i] === 0xff && tampon[i + 1] === 0xd8) { bas = i; break; }
+          if (bas < 0) { tampon = tampon.subarray(Math.max(0, tampon.length - 1)); break; }
+          let son = -1;
+          for (let i = bas + 2; i < tampon.length - 1; i++) if (tampon[i] === 0xff && tampon[i + 1] === 0xd9) { son = i + 2; break; }
+          if (son < 0) { tampon = tampon.subarray(bas); break; }
+          this.#goster(tampon.slice(bas, son));
+          tampon = tampon.subarray(son);
+        }
+      }
+    } catch (e) { if (ctrl.signal.aborted) return; this.son_hata = e?.message; this.#kop(ctrl, 'Bağlantı koptu', false); return; }
+    if (!ctrl.signal.aborted) this.#kop(ctrl, 'Akış bitti', true);
+  }
+  /** Son olcumden bu yana gelen veri hizi (bit/sn) ve kare/sn; en az 1 sn birikince yenilenir, arada son deger doner. */
+  hiz() {
+    const o = this.olcum, simdi = performance.now(), sn = (simdi - (o?.z ?? simdi)) / 1000;
+    if (!o || !this.calisiyor) return null;
+    if (sn >= 1) { this.hizSon = { bps: (o.bayt * 8) / sn, fps: o.kare / sn }; this.olcum = { bayt: 0, kare: 0, z: simdi }; }
+    return this.hizSon;
+  }
+  #goster(kare) {
+    if (this.olcum) this.olcum.kare++;
+    this.sonZ = performance.now();
+    if (!this.img.complete && this.img.src) return; // onceki kare cizilmedi: bu kareyi atla (gecikme birikmesin)
+    const url = URL.createObjectURL(new Blob([kare], { type: 'image/jpeg' }));
+    if (this.sonUrl) URL.revokeObjectURL(this.sonUrl);
+    this.sonUrl = url; this.img.src = url;
+    if (!this.kareVar) { this.kareVar = true; this.deneme = 0; this.cizimBekle = true; }
+  }
+  #kop(ctrl, neden, temiz) {
+    if (ctrl !== this.ctrl || !this.calisiyor) return;
+    clearInterval(this.bekci); ctrl.abort();
+    if (this.bitti?.(neden, temiz, this.kareVar)) { this.calisiyor = false; return; }
+    this.deneme++;
+    this.durum?.(`${neden}, yeniden deneniyor (${this.deneme})…`);
+    this.yeniden = setTimeout(() => { if (this.calisiyor) this.baslat(true); }, Math.min(10_000, 1000 * 2 ** Math.min(this.deneme, 4)));
+  }
+  /** sessiz=true: son kare ekranda kalir (duraklatma). */
+  durdur(sessiz = false) {
+    clearInterval(this.bekci); clearTimeout(this.yeniden);
+    this.ctrl?.abort(); this.ctrl = null; this.calisiyor = false;
+    if (!sessiz) { this.img.removeAttribute('src'); if (this.sonUrl) { URL.revokeObjectURL(this.sonUrl); this.sonUrl = null; } }
+  }
+}
+
+/**
+ * Parcali MP4 akisindan anahtar kare zamanlari (sn). Tampon yalniz bir anahtar kareye kadar kirpilabilir: MediaSource
+ * silinen karelere bagimli kareleri de (sonraki anahtar kareye kadar) siler, oynatma durur. Uniview NVR'da anahtar kare
+ * 4-8,4 sn'de bir. Cozumlenemeyen kutuda (64 bit boy) durur; kirpma yapilmaz.
+ */
+class Mp4Zaman {
+  constructor() { this.t = new Uint8Array(0); this.atla = 0; this.olcek = 0; this.anahtar = []; this.bozuk = false; }
+  ekle(v) {
+    if (this.bozuk) return;
+    if (this.atla) { const n = Math.min(this.atla, v.length); this.atla -= n; v = v.subarray(n); if (!v.length) return; }
+    const t = this.t.length ? Mp4Zaman.birlestir([this.t, v]) : v;
+    let i = 0;
+    while (t.length - i >= 8) {
+      const n = new DataView(t.buffer, t.byteOffset + i, 8).getUint32(0), tur = String.fromCharCode(...t.subarray(i + 4, i + 8));
+      if (n < 8) { this.bozuk = true; return; }
+      if (tur !== 'moov' && tur !== 'moof') { if (t.length - i >= n) { i += n; continue; } this.atla = n - (t.length - i); i = t.length; break; }
+      if (t.length - i < n) break;
+      const kutu = new DataView(t.buffer, t.byteOffset + i, n);
+      if (tur === 'moov') this.#moov(kutu); else this.#moof(kutu);
+      i += n;
+    }
+    this.t = t.slice(i);
+  }
+  /** Kutunun cocuklari arasinda yol (stsd yok, gerek de yok). */
+  static bul(d, yol, bas = 8, son = d.byteLength) {
+    for (let i = bas; i + 8 <= son;) {
+      const n = d.getUint32(i), tur = String.fromCharCode(d.getUint8(i + 4), d.getUint8(i + 5), d.getUint8(i + 6), d.getUint8(i + 7));
+      if (n < 8 || i + n > son) return null;
+      if (tur === yol[0]) return yol.length === 1 ? { ic: i + 8, son: i + n } : Mp4Zaman.bul(d, yol.slice(1), i + 8, i + n);
+      i += n;
+    }
+    return null;
+  }
+  #moov(d) {
+    const m = Mp4Zaman.bul(d, ['trak', 'mdia', 'mdhd']);
+    if (m) this.olcek = d.getUint32(m.ic + (d.getUint8(m.ic) === 1 ? 20 : 12));
+  }
+  #moof(d) {
+    const traf = Mp4Zaman.bul(d, ['traf']);
+    if (!traf || !this.olcek) return;
+    let varsayilan = null, ilk = null, zaman = null;
+    for (let i = traf.ic; i + 8 <= traf.son;) {
+      const n = d.getUint32(i), tur = String.fromCharCode(d.getUint8(i + 4), d.getUint8(i + 5), d.getUint8(i + 6), d.getUint8(i + 7)), ic = i + 8, bayrak = d.getUint32(ic) & 0xffffff;
+      if (n < 8) return;
+      if (tur === 'tfdt') zaman = d.getUint8(ic) === 1 ? Number(d.getBigUint64(ic + 4)) : d.getUint32(ic + 4);
+      if (tur === 'tfhd' && bayrak & 0x20) { let p = ic + 8; for (const [bit, uz] of [[1, 8], [2, 4], [8, 4], [0x10, 4]]) if (bayrak & bit) p += uz; varsayilan = d.getUint32(p); }
+      if (tur === 'trun') { const p = ic + 8 + (bayrak & 1 ? 4 : 0); if (bayrak & 4) ilk = d.getUint32(p); else if (bayrak & 0x400) ilk = d.getUint32(p + (bayrak & 0x100 ? 4 : 0) + (bayrak & 0x200 ? 4 : 0)); }
+      i += n;
+    }
+    const b = ilk ?? varsayilan;
+    if (zaman !== null && b !== null && !(b & 0x10000)) { this.anahtar.push(zaman / this.olcek); if (this.anahtar.length > 64) this.anahtar.shift(); }
+  }
+  /** t'den once ya da t'de olan son anahtar kare (yoksa null). */
+  kesme(t) { let k = null; for (const a of this.anahtar) if (a <= t) k = a; return k; }
+  static birlestir(parcalar) { const u = new Uint8Array(parcalar.reduce((a, p) => a + p.length, 0)); let i = 0; for (const p of parcalar) { u.set(p, i); i += p.length; } return u; }
+}
+const MSKaynak = window.ManagedMediaSource ?? window.MediaSource;
+/**
+ * Canli MP4: kameranin kendi videosu (yeniden kodlamasiz) MediaSource ile oynar; Mjpeg ile ayni arayuz (baslat, durdur, hiz, calisiyor, kareVar).
+ * Tarayici kodegi oynatamazsa ya da cihaz MP4 vermiyorsa (501) desteksiz() cagrilir; CanliAkis sunucuda cevirmeye gecer, o da olmazsa yeniden dener.
+ * Canli kenarda kalir: tamponun sonundan 1,5 sn geride kalinca sona atlar. Tampon 30 sn'yi asinca eski kisim bir anahtar kareye kadar silinir.
+ */
+class Mp4Akis {
+  constructor(video, { url, durum, ilk, desteksiz, kopma = 6000 }) {
+    Object.assign(this, { video, url, durum, ilk, desteksiz, kopma });
+    this.deneme = 0; this.calisiyor = false; this.ctrl = null; this.msUrl = null; this.kareVar = false;
+    video.muted = true; video.playsInline = true; video.disableRemotePlayback = true; video.disablePictureInPicture = true;
+    video.addEventListener('playing', () => { if (this.calisiyor && !this.kareVar) { this.kareVar = true; this.deneme = 0; this.ilk?.(); } });
+    // Kodek "destekleniyor" deyip cozemeyen tarayici: MJPEG'e gec
+    video.addEventListener('error', () => { if (this.calisiyor && this.ctrl) this.#desteksiz(this.ctrl); });
+  }
+  baslat(yeniden = false) {
+    this.durdur(true);
+    if (!yeniden) this.deneme = 0;
+    this.calisiyor = true; this.kareVar = false;
+    const ctrl = (this.ctrl = new AbortController());
+    this.sonZ = this.t0 = performance.now();
+    this.olcum = { bayt: 0, kare: this.#kareSay(), z: performance.now() }; this.hizSon = null;
+    this.bekci = setInterval(() => {
+      if (performance.now() - this.sonZ > this.kopma) this.#kop(ctrl, 'Görüntü durdu');
+      else if (!this.kareVar && performance.now() - this.t0 > 20_000) this.#desteksiz(ctrl);   // veri geliyor ama kare cizilmiyor
+    }, 1500);
+    this.#oku(ctrl);
+  }
+  #kareSay() { const q = this.video.getVideoPlaybackQuality?.(); return q ? q.totalVideoFrames : (this.video.webkitDecodedFrameCount ?? 0); }
+  async #oku(ctrl) {
+    this.durum?.(this.deneme ? `Yeniden bağlanıyor (${this.deneme})…` : 'Bağlanıyor…');
+    let y;
+    try { y = await fetch(this.url(), { signal: ctrl.signal, cache: 'no-store' }); }
+    catch { if (!ctrl.signal.aborted) this.#kop(ctrl, 'Bağlanamadı'); return; }
+    if (y.status === 401) { location.reload(); return; }
+    if (y.status === 501) return this.#desteksiz(ctrl);
+    if (!y.ok) return this.#kop(ctrl, 'Bağlanamadı');
+    const kodek = y.headers.get('X-Kodek'), tur = `video/mp4; codecs="${kodek}"`;
+    if (!kodek || !MSKaynak?.isTypeSupported(tur)) return this.#desteksiz(ctrl);
+    const ms = new MSKaynak();
+    if (this.msUrl) URL.revokeObjectURL(this.msUrl);
+    this.msUrl = URL.createObjectURL(ms); this.video.src = this.msUrl;
+    await new Promise((r) => ms.addEventListener('sourceopen', r, { once: true }));
+    if (ctrl.signal.aborted) return;
+    const sb = ms.addSourceBuffer(tur), zaman = new Mp4Zaman(), kuyruk = [];
+    let kuyrukBayt = 0;
+    const besle = () => {
+      if (sb.updating || ctrl.signal.aborted || ms.readyState !== 'open') return;
+      const b = sb.buffered, v = this.video;
+      if (b.length) {
+        const bas = b.start(b.length - 1), son = b.end(b.length - 1);
+        if (v.currentTime < bas || son - v.currentTime > 1.5) v.currentTime = Math.max(bas, son - 0.3);
+        const kes = zaman.kesme(v.currentTime - 10);
+        if (kes !== null && son - b.start(0) > 30 && kes > b.start(0) + 1) { sb.remove(0, kes); return; }
+      }
+      if (!kuyruk.length) return;
+      const p = kuyruk.length === 1 ? kuyruk[0] : Mp4Zaman.birlestir(kuyruk);
+      kuyruk.length = 0; kuyrukBayt = 0;
+      try { sb.appendBuffer(p); } catch { this.#kop(ctrl, 'Oynatıcı hatası'); }
+    };
+    sb.addEventListener('updateend', () => { besle(); if (this.video.paused && !ctrl.signal.aborted) this.video.play().catch(() => {}); });
+    try {
+      const r = y.body.getReader();
+      for (;;) {
+        const { done, value } = await r.read();
+        if (done || ctrl.signal.aborted) break;
+        this.olcum.bayt += value.length; this.sonZ = performance.now();
+        zaman.ekle(value); kuyruk.push(value); kuyrukBayt += value.length;
+        if (kuyrukBayt > 8e6) return this.#kop(ctrl, 'Oynatıcı yetişemiyor');
+        besle();
+      }
+    } catch { if (!ctrl.signal.aborted) this.#kop(ctrl, 'Bağlantı koptu'); return; }
+    if (!ctrl.signal.aborted) this.#kop(ctrl, 'Akış bitti');
+  }
+  hiz() {
+    const o = this.olcum, simdi = performance.now(), sn = (simdi - (o?.z ?? simdi)) / 1000;
+    if (!o || !this.calisiyor) return null;
+    if (sn >= 1) { const k = this.#kareSay(); this.hizSon = { bps: (o.bayt * 8) / sn, fps: Math.max(0, k - o.kare) / sn }; this.olcum = { bayt: 0, kare: k, z: simdi }; }
+    return this.hizSon;
+  }
+  /** desteksiz() true: baska yola (sunucuda cevirme) gecildi, bastan acilir. false: gececek yol yok; vazgecilmez, yeniden denenir. */
+  #desteksiz(ctrl) {
+    if (ctrl !== this.ctrl || !this.calisiyor) return;
+    if (this.desteksiz?.()) { this.durdur(); this.baslat(); } else this.#kop(ctrl, 'Görüntü açılamadı');
+  }
+  #kop(ctrl, neden) {
+    if (ctrl !== this.ctrl || !this.calisiyor) return;
+    clearInterval(this.bekci); ctrl.abort();
+    this.deneme++;
+    this.durum?.(`${neden}, yeniden deneniyor (${this.deneme})…`);
+    this.yeniden = setTimeout(() => { if (this.calisiyor) this.baslat(true); }, Math.min(10_000, 1000 * 2 ** Math.min(this.deneme, 4)));
+  }
+  /** sessiz=true: son kare ekranda kalir (duraklatma). */
+  durdur(sessiz = false) {
+    clearInterval(this.bekci); clearTimeout(this.yeniden);
+    this.ctrl?.abort(); this.ctrl = null; this.calisiyor = false;
+    if (sessiz) { this.video.pause(); return; }
+    this.video.removeAttribute('src'); this.video.load();
+    if (this.msUrl) { URL.revokeObjectURL(this.msUrl); this.msUrl = null; }
+  }
+}
+/**
+ * Canli kamera (MP4): once kameranin kendi videosu (yeniden kodlamasiz). Tarayici kodegi oynatamazsa (Chrome'da H.265) sunucu
+ * kaynak kalitede H.264'e cevirir (h264=1). Cevrilen cihaz+akis turu bu sayfada hatirlanir; bir daha kopya denenmez.
+ * MJPEG yedegi yok: canli goruntu her tarayicida MP4.
+ */
+const cevrilir = new Set();
+class CanliAkis {
+  constructor(video, { url, anahtar, durum, ilk }) {
+    this.anahtar = anahtar;
+    // Cevrilmis akista da hata olursa gecici sayilir (cevirici yeni basliyor, ag, cozucu hatasi): "oynatamiyor" deyip
+    // durmak yerine yeniden denenir.
+    this.m = new Mp4Akis(video, { url: () => url(this.cevir), durum, ilk, desteksiz: () => {
+      if (this.cevir) return false;
+      cevrilir.add(this.anahtar()); return true;
+    } });
+  }
+  /** Bu kamera sunucuda H.264'e cevrilerek mi geliyor. */
+  get cevir() { return cevrilir.has(this.anahtar()); }
+  get calisiyor() { return this.m.calisiyor; }
+  get kareVar() { return this.m.kareVar; }
+  baslat(yeniden = false) { this.m.baslat(yeniden); }
+  durdur(sessiz = false) { this.m.durdur(sessiz); }
+  hiz() { const h = this.m.hiz(); return h && { ...h, cevir: this.cevir }; }
+}
+
+// ---------- canli ----------
+const kareler = {};
+let odakM = null;
+// Cok kameralı cihazlarda (NVR) izgara sayfalanır: yalnız görünen sayfadaki kameralar akış açar (sunucu/ağ yükü).
+// Dar ekran / veri tasarrufu (mobil hat): izgara dusuk bantli 'Mini' akisi kullanir (320 px, 5 kare/sn)
+const kucukAkis = () => matchMedia('(max-width: 720px)').matches || !!navigator.connection?.saveData;
+// Masaustu (EYS bolme kurali 1100 px): cihaz sekmesinde 16, "Hepsi"de uyenin sectigi sayi (en cok ve varsayilan 16); izgara ekrana SIGDIRILIR.
+// 16: kayit cihazi ayni anda en cok 16 canli goruntu veriyor (17. kareden sonrasi "Bağlanamadı" der). Sunucu da 16'yi asan tercihi kirpar.
+// Dar ekranda eski duzen: sayfa basina 8.
+const masaustu = () => matchMedia('(min-width: 1101px)').matches;
+const AKIS_SINIRI = 16;
+const sayfaBoyu = () => (masaustu() ? AKIS_SINIRI : 8);
+const hepsiBoyu = () => (masaustu() ? tercih.hepsiSayi : 8);
+const HEPSI = -1;   // izgaraSayfa.cihaz: tum cihazlar
+/**
+ * Hepsi'nin SIRASI. Kaydedilmis sira (surukle-birak) once; onda olmayan kanallar varsayilan sirayla arkaya eklenir.
+ * Varsayilan sira her cihazdan esit pay alir: 20 kamerada iki cihaz icin 10 + 10, sonraki sayfada yine 10 + 10.
+ */
+function hepsiSirasi() {
+  const l = gorunur(), c = cokCihaz();
+  let varsayilan = l;
+  if (c) {
+    const gruplar = c.map((x) => cihazKanallari(x, l)), q = Math.max(1, Math.ceil(hepsiBoyu() / c.length));
+    varsayilan = [];
+    for (let p = 0; varsayilan.length < l.length; p++) for (const g of gruplar) varsayilan.push(...g.slice(p * q, (p + 1) * q));
+  }
+  const var_ = new Set(l), kayitli = tercih.hepsiSira.filter((k) => var_.has(k)), kayitliKume = new Set(kayitli);
+  return [...kayitli, ...varsayilan.filter((k) => !kayitliKume.has(k))];
+}
+const izgaraSayfa = { n: 0, cihaz: HEPSI };
+// Canli her acilista "Hepsi"de baslar; eski surumun hatirladigi secim silinir.
+try { localStorage.removeItem('kamera_cihaz'); } catch {}
+const cokCihaz = () => (bilgi?.cihazlar?.length > 1 ? bilgi.cihazlar : null);
+const cihazKanallari = (c, l = gorunur()) => l.filter((k) => k >= c.baslangic && k < c.baslangic + c.kanal);
+const hepsiMi = () => !!cokCihaz() && izgaraSayfa.cihaz === HEPSI;
+function cihazSec(i) {
+  izgaraSayfa.cihaz = i; izgaraSayfa.n = 0;
+  if (durum.odak !== null) odakKapat(); else { izgaraSayfaCiz(); kameraListeCiz(); canliGuncelle(); }
+}
+/** Sekmedeki kanallar: Hepsi'de tumu, cihaz sekmesinde yalniz o cihazinkiler. */
+const sekmeKanallari = () => {
+  const c = cokCihaz();
+  if (!c || izgaraSayfa.cihaz === HEPSI) return gorunur();
+  // TEK SIRA: cihaz sekmesi, kamera sirasinin (hepsiSirasi) o cihaza ait kismidir; sekmede surukleyerek yapilan tasima da ona yazilir.
+  const d = c[Math.min(izgaraSayfa.cihaz, c.length - 1)], kume = new Set(cihazKanallari(d));
+  return hepsiSirasi().filter((k) => kume.has(k));
+};
+/** Sayfa sayisi ve o sayfada gorunen kanallar (Hepsi'de hepsiSirasi() sirasiyla). */
+function izgaraDilim() {
+  const hepsi = hepsiMi() || !cokCihaz();
+  const l = hepsi ? hepsiSirasi() : sekmeKanallari(), q = hepsi ? hepsiBoyu() : sayfaBoyu();
+  // Bir fazlasi tek sayfada (tek kamera icin sayfa acilmasin) yalniz dar ekranda; masaustunde sayi kesindir (AKIS_SINIRI).
+  if (l.length <= q + (masaustu() ? 0 : 1)) return { sayfa: 1, n: 0, q, enUzun: l.length, gorunen: l };
+  const sayfa = Math.ceil(l.length / q), n = Math.min(izgaraSayfa.n, sayfa - 1);
+  return { sayfa, n, q, enUzun: l.length, gorunen: l.slice(n * q, (n + 1) * q) };
+}
+const sayfadaMi = (k) => izgaraDilim().gorunen.includes(k);
+function izgaraSayfaCiz() {
+  const cihazlar = cokCihaz();
+  if (cihazlar && izgaraSayfa.cihaz !== HEPSI) izgaraSayfa.cihaz = Math.min(Math.max(0, izgaraSayfa.cihaz), cihazlar.length - 1);
+  const l = sekmeKanallari(), kap = $('#izgSayfa'), d = izgaraDilim();
+  izgaraSayfa.n = d.n;
+  kap.replaceChildren(); kap.hidden = d.sayfa < 2 && !tercihVar;
+  // Cihaz secimi sol menude (Hepsi / cihazlar); baslikta yalniz sayfa dugmeleri ve Ayarlar.
+  if (d.sayfa > 1) for (let i = 0; i < d.sayfa; i++) {
+    const b = el('button', { type: 'button', class: 'btn btn--sm', 'aria-pressed': String(i === d.n), onclick: () => { izgaraSayfa.n = i; izgaraSayfaCiz(); canliGuncelle(); } }, `${i * d.q + 1}–${Math.min(d.enUzun, (i + 1) * d.q)}`);
+    // Kareyi (ya da listedeki kamerayi) sayfa dugmesine birakmak onu o sayfanin ILK kamerasiyla yer degistirir; o sayfa acilir.
+    if (surukleAcik()) {
+      b.addEventListener('dragover', (e) => { if (tasinan === null) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; b.classList.add('kanal--hedef'); });
+      b.addEventListener('dragleave', () => b.classList.remove('kanal--hedef'));
+      b.addEventListener('drop', (e) => {
+        e.preventDefault(); b.classList.remove('kanal--hedef');
+        // Sekmenin GORUNEN sirasi (Hepsi'de kayitli sira, cihaz sekmesinde onun o cihaza ait kismi); dogal sira degil.
+        const sekme = hepsiMi() || !cihazlar ? hepsiSirasi() : sekmeKanallari();
+        if (tasinan === null || !sekme.includes(tasinan)) return;   // baska cihazin kamerasi bu sekmeye tasinamaz
+        // Hedef: bu sekmenin i. sayfasinin ilk kamerasi; ikisi YER DEGISTIRIR, digerleri yerinde kalir.
+        const hedef = sekme[i * d.q];
+        if (hedef !== undefined && hedef !== tasinan) { const sira = yerDegistir(hepsiSirasi(), tasinan, hedef); tercih.hepsiSira = sira; tercihKaydet({ hepsiSira: sira }); }
+        izgaraSayfa.n = i; izgaraSayfaCiz(); kameraListeCiz(); canliGuncelle();
+      });
+    }
+    kap.append(b);
+  }
+  // Ayarlar dugmesi simge: dar ekranda sayfa dugmeleriyle ayni satira sigar (yazili hali alt satira dusuyordu).
+  if (tercihVar) { const b = el('button', { type: 'button', class: 'btn btn--sm btn--ghost btn--icon', title: 'Görünüm ayarları', 'aria-label': 'Görünüm ayarları', onclick: ayarAc }); b.innerHTML = DISLI; kap.append(b); }
+  // Karelerin DOM sirasi gorunen sirayla ayni (Hepsi'de kayitli sira). Dugum tasimak akisi kesmez; yalniz fark varsa tasinir.
+  const iz = $('#izgara'), sira = hepsiSirasi().map((k) => kareler[k]?.kap).filter(Boolean);
+  if (sira.some((b, i) => iz.children[i] !== b)) iz.append(...sira);
+  const gorunen = new Set(d.gorunen), tasinir = surukleAcik();
+  for (const k of gorunur()) if (kareler[k]) { kareler[k].kap.hidden = !gorunen.has(k); kareler[k].kap.draggable = tasinir; }
+  iz.classList.toggle('izgara--tasinir', tasinir);
+  if (durum.odak === null) { $('#canliBaslik').textContent = cihazlar && !hepsiMi() ? (cihazlar[izgaraSayfa.cihaz].ad || cihazlar[izgaraSayfa.cihaz].model) : 'Hepsi'; $('#canliSay').textContent = String(l.length); }
+  izgaraSigdir();
+}
+/**
+ * Masaustunde gorunen kareler kaydirmadan sigar: kutunun en/boyuna gore, 16:9 karenin en buyuk oldugu sutun sayisi secilir.
+ * Dar ekranda (ve odakta) bir sey yapilmaz; eski akan izgara gecerli.
+ */
+const IZGARA_GERILME = 1.2;   // goruntu en cok %20 gerilir (bkz. css .izgara--sigdir)
+function izgaraSigdir() {
+  const iz = $('#izgara'), govde = iz.parentElement;
+  const n = [...iz.children].filter((x) => !x.hidden).length;
+  if (!masaustu() || durum.odak !== null || n === 0) { iz.classList.remove('izgara--sigdir'); return; }
+  const st = getComputedStyle(govde), bosluk = parseFloat(getComputedStyle(iz).columnGap) || 0;
+  const W = govde.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight);
+  const H = govde.clientHeight - parseFloat(st.paddingTop) - parseFloat(st.paddingBottom);
+  if (W <= 0 || H <= 0) return;
+  let enIyi = { kol: 1, sat: n, alan: 0 };
+  for (let kol = 1; kol <= n; kol++) {
+    const sat = Math.ceil(n / kol), w = (W - bosluk * (kol - 1)) / kol, h = (H - bosluk * (sat - 1)) / sat;
+    const kw = Math.min(w, h * 16 / 9), alan = kw * kw * 9 / 16;
+    if (alan > enIyi.alan) enIyi = { kol, sat, alan };
+  }
+  // Kare hucreyi doldurur, goruntu kareye gerilir (css: object-fit fill); gerilme her iki yonde en cok IZGARA_GERILME.
+  const sw = (W - bosluk * (enIyi.kol - 1)) / enIyi.kol, sh = (H - bosluk * (enIyi.sat - 1)) / enIyi.sat;
+  const kw = Math.floor(Math.min(sw, sh * 16 / 9 * IZGARA_GERILME)), kh = Math.floor(Math.min(sh, sw * 9 / 16 * IZGARA_GERILME));
+  iz.style.setProperty('--izg-kol', String(enIyi.kol)); iz.style.setProperty('--izg-sat', String(enIyi.sat));
+  iz.style.setProperty('--izg-w', `${kw}px`); iz.style.setProperty('--izg-h', `${kh}px`);
+  iz.classList.add('izgara--sigdir');
+}
+/**
+ * KAMERA YERLESIMI — surukle-birak (yalniz masaustu, yalniz uye oturumu; Hepsi ve cihaz sekmelerinde: sira uyenin kaydina yazilir).
+ * Birakilan kare hedefle YER DEGISTIRIR; baska hicbir kamera yerinden oynamaz (araya sokmak
+ * aradakilerin hepsini kaydirir). Oynaticidaki ve /live'daki tasima da boyle.
+ */
+const surukleAcik = () => tercihVar && masaustu() && durum.odak === null;   // Hepsi ve cihaz sekmeleri
+let tasinan = null;
+const yerDegistir = (sira, a, b) => { const i = sira.indexOf(a), j = sira.indexOf(b); if (i >= 0 && j >= 0) [sira[i], sira[j]] = [sira[j], sira[i]]; return sira; };
+function surukleBagla(b, k) {
+  b.addEventListener('dragstart', (e) => { if (!b.draggable) { e.preventDefault(); return; } tasinan = k; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(k)); b.classList.add('kanal--tasiniyor'); });
+  b.addEventListener('dragend', () => { tasinan = null; for (const x of document.querySelectorAll('.kanal--tasiniyor, .kanal--hedef')) x.classList.remove('kanal--tasiniyor', 'kanal--hedef'); });
+  b.addEventListener('dragover', (e) => { if (tasinan === null || tasinan === k) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; b.classList.add('kanal--hedef'); });
+  b.addEventListener('dragleave', () => b.classList.remove('kanal--hedef'));
+  b.addEventListener('drop', (e) => {
+    e.preventDefault(); b.classList.remove('kanal--hedef');
+    if (tasinan === null || tasinan === k || !sekmeKanallari().includes(tasinan)) return;   // cihaz sekmesinde yalniz o cihazin kamerasi
+    const sira = yerDegistir(hepsiSirasi(), tasinan, k);
+    tercih.hepsiSira = sira; tercihKaydet({ hepsiSira: sira });
+    izgaraSayfaCiz(); canliGuncelle();
+  });
+}
+
+// ---------- gorunum tercihleri (uyenin kendi kaydinda; /api/ben/tercih) ----------
+const tercih = { hepsiSayi: AKIS_SINIRI, hepsiSira: [], arkaPlandaDurdur: true, izgaraAkis: 'alt' };
+// Izgara akisi (uye tercihi): alt akis (varsayilan; dar ekranda Mini) ya da ana akis (kare boyunda: masaustu 960, dar ekran 640).
+// Canli goruntu MP4: olcek/kare hizi yok (kameranin kendi akisi); alt akis tek (Extra1).
+const izgaraMp4Tur = () => (tercih.izgaraAkis === 'ana' ? 'Main' : 'Extra1');
+const cihazOf = (k) => bilgi?.cihazlar?.find((x) => k >= x.baslangic && k < x.baslangic + x.kanal)?.id ?? '';
+let tercihVar = false;
+const GOZ = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const DISLI = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';   // uye oturumu ve tercih okunabildi: ayarlar ve surukle-birak acik
+async function tercihAl() {
+  try { Object.assign(tercih, await api('/api/ben/tercih')); tercihVar = true; } catch { tercihVar = false; }
+}
+let tercihZaman = 0, tercihBekleyen = {};
+/** Ard arda degisiklikler birlestirilip yarim saniye sonra tek istekle yazilir. */
+function tercihKaydet(g) {
+  Object.assign(tercihBekleyen, g); clearTimeout(tercihZaman);
+  tercihZaman = setTimeout(async () => {
+    const govde = tercihBekleyen; tercihBekleyen = {};
+    try { Object.assign(tercih, await api('/api/ben/tercih', { method: 'PUT', body: JSON.stringify(govde) })); } catch (e) { bildir(`Yerleşim kaydedilemedi: ${e.message}`, 'danger'); }
+  }, 500);
+}
+/** Arka planda (baska sekme / simge durumunda) canli akislar dursun mu? Uyenin tercihi; varsayilan evet (ag ve cihaz yuku). */
+const arkaPlanda = () => document.hidden && tercih.arkaPlandaDurdur;
+function ayarAc() {
+  $('#ayHepsiSayi').value = String(tercih.hepsiSayi);
+  if (!$('#ayHepsiSayi').value) $('#ayHepsiSayi').append(el('option', { value: String(tercih.hepsiSayi), selected: '' }, String(tercih.hepsiSayi)));
+  $('#ayArkaPlan').checked = tercih.arkaPlandaDurdur;
+  $('#ayAkis').value = tercih.izgaraAkis;
+  $('#aySira').disabled = !tercih.hepsiSira.length;
+  pencereAc('ayarDlg');
+}
+$('#ayarForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const g = { hepsiSayi: Number($('#ayHepsiSayi').value), arkaPlandaDurdur: $('#ayArkaPlan').checked, izgaraAkis: $('#ayAkis').value };
+  const eskiAkis = tercih.izgaraAkis;
+  try {
+    Object.assign(tercih, await api('/api/ben/tercih', { method: 'PUT', body: JSON.stringify(g) })); pencereKapat('ayarDlg'); izgaraSayfa.n = 0;
+    if (tercih.izgaraAkis !== eskiAkis) for (const k of Object.keys(kareler)) canliDurdur(Number(k));   // yeni akis turuyle yeniden baglansin
+    izgaraSayfaCiz(); canliGuncelle(); bildir('Ayarlar kaydedildi', 'success');
+  }
+  catch (err) { bildir(err.message, 'danger'); }
+});
+$('#aySira').addEventListener('click', async () => {
+  try { Object.assign(tercih, await api('/api/ben/tercih', { method: 'PUT', body: JSON.stringify({ hepsiSira: [] }) })); $('#aySira').disabled = true; izgaraSayfaCiz(); canliGuncelle(); bildir('Varsayılan sıraya dönüldü', 'success'); }
+  catch (err) { bildir(err.message, 'danger'); }
+});
+
+let sigdirZaman = 0;
+new ResizeObserver(() => { cancelAnimationFrame(sigdirZaman); sigdirZaman = requestAnimationFrame(izgaraSigdir); }).observe($('#izgara').parentElement);
+// Pencere masaustu/dar sinirini gecince sayfa boyu degisir: sayfalar yeniden kurulur.
+matchMedia('(min-width: 1101px)').addEventListener('change', () => { if (bilgi && durum.odak === null) { izgaraSayfaCiz(); canliGuncelle(); } });
+function canliKur() {
+  const izgara = $('#izgara'); izgara.replaceChildren();
+  for (const k of gorunur()) {
+    const video = el('video', { 'aria-label': bilgi.kanalAdlari[k] });
+    const d = el('div', { class: 'kanal__durum' }, 'Bağlanıyor…');
+    const b = el('button', { type: 'button', class: 'kanal', 'aria-label': `${bilgi.kanalAdlari[k]} büyüt`, onclick: () => odakAc(k) }, video, el('span', { class: 'kanal__ad' }, bilgi.kanalAdlari[k]), d);
+    const m = new CanliAkis(video, { anahtar: () => `${cihazOf(k)}/${izgaraMp4Tur()}`, url: (cevir) => `/akis/canli-mp4?kanal=${k}&tur=${izgaraMp4Tur()}${cevir ? '&h264=1' : ''}&t=${Date.now()}`, durum: (t) => { d.textContent = t; }, ilk: () => { d.textContent = ''; kareler[k]?.hazirBekle?.(); } });
+    kareler[k] = { video, d, m, kap: b };
+    surukleBagla(b, k);
+    izgara.append(b);
+  }
+  izgaraSayfaCiz(); kameraListeCiz();
+  odakM ??= new CanliAkis($('#odakVideo'), { anahtar: () => `${cihazOf(durum.odak)}/Main`, url: (cevir) => `/akis/canli-mp4?kanal=${durum.odak}&tur=Main${cevir ? '&h264=1' : ''}&t=${Date.now()}`, durum: (t) => { $('#odakDurum').textContent = t; }, ilk: () => { $('#odakDurum').textContent = ''; } });
+}
+function canliBaslat(k) { kareler[k].m.baslat(); }
+/**
+ * Sol bolme (EYS credentials/index gruplar sutunu gibi): "Hepsi" (izgara), cihaz basina bolum basligi, kanal basina
+ * row-item ve durum noktasi (yesil: goruntu geliyor, sari: baglaniyor, gri: akis kapali, kirmizi: cihaza ulasilamiyor).
+ */
+function kanalRenk(k) {
+  const c = bilgi?.cihazlar?.find((x) => k >= x.baslangic && k < x.baslangic + x.kanal);
+  if (c?.hata) return 'red';
+  const m = durum.odak === k ? odakM : kareler[k]?.m;
+  return m?.calisiyor ? (m.kareVar ? 'green' : 'yellow') : 'gray';
+}
+const RENK_ANLAMI = { green: 'Görüntü geliyor', yellow: 'Bağlanıyor', gray: 'Akış kapalı (ızgarada görünmüyor)', red: 'Cihaza ulaşılamıyor' };
+// Cihaz bolumleri katlanir; masaustunde varsayilan KAPALI, dar ekranda acik. Acik olanlar yalniz bu sekmede hatirlanir.
+const acikBolum = new Set();
+function kameraListeCiz() {
+  const k = $('#kameraListe'), liste = gorunur();
+  $('#kameraSay').textContent = String(liste.length);
+  if (!bilgi) { k.replaceChildren(bosYaz('Kamera yok', 'Cihaza ulaşılamadı.')); return; }
+  const nokta = (kanal) => { const r = kanalRenk(kanal); return el('span', { class: `dot dot--${r}`, title: RENK_ANLAMI[r], 'aria-hidden': 'true' }); };
+  const tasinir = surukleAcik();
+  const satir = (kanal) => {
+    const a = el('a', { href: '#canli', class: 'row-item', 'data-kanal': String(kanal), draggable: tasinir ? 'true' : 'false', ...(durum.odak === kanal ? { 'aria-selected': 'true' } : {}), onclick: (e) => { e.preventDefault(); odakAc(kanal); } },
+      nokta(kanal), el('span', { class: 'row-item__label' }, bilgi.kanalAdlari[kanal]), el('span', { class: 'row-item__meta' }, bilgi.kanalKodlar?.[kanal] ?? ''));
+    // Listeden izgaraya: baska sayfadaki kamera da bir karenin uzerine birakilip yerine gecirilir (bkz. surukleBagla).
+    if (tasinir) { a.addEventListener('dragstart', (e) => { tasinan = kanal; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(kanal)); }); a.addEventListener('dragend', () => { tasinan = null; for (const x of document.querySelectorAll('.kanal--hedef')) x.classList.remove('kanal--hedef'); }); }
+    return a;
+  };
+  const cihazlar = cokCihaz();
+  const izgaraSecili = (i) => durum.odak === null && izgaraSayfa.cihaz === i;
+  const bolum = (c, i) => {
+    const ks = cihazKanallari(c, liste);
+    if (!ks.length) return [];
+    const ac = !masaustu() || acikBolum.has(i) || (durum.odak !== null && ks.includes(durum.odak));
+    // Tiklama: kapaliysa acar ve o cihazin izgarasini gosterir; acik ve seciliyse kapatir. Liste yeniden cizildigi icin
+    // tarayicinin kendi ac/kapa'si kullanilmaz (eski oge uzerinde kalirdi).
+    const tikla = (e) => {
+      e.preventDefault();
+      if (!ac) acikBolum.add(i); else if (izgaraSecili(i)) acikBolum.delete(i);
+      if (izgaraSecili(i)) kameraListeCiz(); else cihazSec(i);
+    };
+    return [el('details', { class: 'kamera-bolum', ...(ac ? { open: '' } : {}) },
+      el('summary', { class: 'kamera-bolum__baslik', ...(izgaraSecili(i) ? { 'aria-current': 'true' } : {}), onclick: tikla },
+        el('span', { class: 'kamera-bolum__ad' }, c.ad || c.model), el('span', { class: 'row-item__meta' }, String(ks.length))),
+      ...ks.map(satir))];
+  };
+  k.replaceChildren(
+    el('a', { href: '#canli', class: 'row-item', ...(durum.odak === null && (!cihazlar || izgaraSayfa.cihaz === HEPSI) ? { 'aria-selected': 'true' } : {}), onclick: (e) => { e.preventDefault(); if (cihazlar) cihazSec(HEPSI); else if (durum.odak !== null) odakKapat(); bolmeyeIn($('#s-canli'), 1); } },
+      el('span', { class: 'row-item__label' }, 'Hepsi'), el('span', { class: 'row-item__meta' }, String(liste.length))),
+    ...(cihazlar ? cihazlar.flatMap(bolum) : liste.map(satir)));
+}
+// Durum noktalari akisi izler: canli bolumu acikken saniyede bir tazelenir (yalniz sinif degisir).
+setInterval(() => { if (durum.sekme !== 'canli' || document.hidden) return; for (const a of document.querySelectorAll('#kameraListe [data-kanal]')) { const d = a.firstElementChild, r = kanalRenk(Number(a.dataset.kanal)), s = `dot dot--${r}`; if (d.className !== s) { d.className = s; d.title = RENK_ANLAMI[r]; } } }, 1000);
+/** Odaktaki kameranin bilgisi (detay bolmesi). */
+function kameraBilgiYaz(k) {
+  const c = bilgi?.cihazlar?.find((x) => k >= x.baslangic && k < x.baslangic + x.kanal);
+  $('#kamAd').textContent = bilgi.kanalAdlari[k];
+  // Cihaz IP'si varsayilan GIZLI: goz simgesiyle o an icin gosterilir, sayfa degisince yine gizlenir.
+  if (c) {
+    const ip = el('span', { class: 'ip-gizli', 'data-gizli': 'true' }, '•••.•••.•••.•••');
+    const goz = el('button', { type: 'button', class: 'btn btn--ghost btn--icon btn--sm ip-goz', title: 'IP adresini göster', 'aria-label': 'IP adresini göster', 'aria-pressed': 'false' });
+    goz.innerHTML = GOZ;
+    goz.addEventListener('click', () => { const ac = ip.dataset.gizli === 'true'; ip.dataset.gizli = String(!ac); ip.textContent = ac ? c.ana : '•••.•••.•••.•••'; goz.setAttribute('aria-pressed', String(ac)); goz.title = ac ? 'IP adresini gizle' : 'IP adresini göster'; goz.setAttribute('aria-label', goz.title); });
+    $('#kamCihaz').replaceChildren(`${c.ad || c.model} · `, ip, goz);
+  } else $('#kamCihaz').textContent = bilgi.model ?? '';
+  const f = $('#kamBilgi'); f.replaceChildren(); const s = satirYap(f);
+  s('Kanal', bilgi.kanalKodlar?.[k] ?? `K${k + 1}`); s('Cihaz', c ? (c.ad || c.model) : bilgi.model); s('Model', c?.model ?? bilgi.model);
+  s('Durum', c?.hata ? durumNokta('red', 'Ulaşılamıyor') : durumNokta('green', 'Bağlı')); s('Akış', 'Ana akış (tam çözünürlük)');
+  s('Aktarım', el('span', { id: 'kamHiz', title: 'Bu tarayıcıya gelen görüntü akışının hızı (panelden MJPEG). Kameranın kendi bit hızı değildir.' }, '—'));
+}
+const hizYaz = (bps) => (bps >= 1e6 ? `${(bps / 1e6).toFixed(2)} Mbps` : `${Math.round(bps / 1e3)} kbps`);
+// Odaktaki kameranin aktarim hizi saniyede bir yazilir (yalniz detay acikken).
+setInterval(() => { const h = $('#kamHiz'); if (!h || durum.odak === null || $('#canliDetay').hidden) return; const v = odakM?.hiz(); h.textContent = v ? `${hizYaz(v.bps)} · ${v.fps.toFixed(1)} kare/sn${v.cevir ? ' · sunucuda H.264’e çevriliyor' : ''}` : '—'; }, 1000);
+/** Kayitlar bolumune bu kanalla gecis. */
+function kayitlaraGit(k) {
+  history.replaceState(null, '', '#kayit'); sekmeAc('kayit');
+  if ($('#kKanal').options.length) kanalDegis(k);
+  if (mz.hazir && !mz.sec.has(k)) { mz.sec.add(k); mzSinirla(k); mzKur(); zamanCiz(); }
+}
+// Izgaradaki kameralar CANLI_PARALEL'lik kollarla açılır: her kol bir sonrakine, öncekinin ilk karesi gelince (en geç 1 sn sonra) geçer.
+// Hepsi birden yüklenmez (cihaz/sunucu birden yüklenmesin) ama tek tek de beklenmez: 16 kamera ~16 sn yerine ~4 sn'de açılır.
+const CANLI_PARALEL = 4;
+const canliSira = { kuyruk: [], calisiyor: 0 };
+const canliIstenir = (k) => durum.sekme === 'canli' && !arkaPlanda() && durum.odak === null && !!kareler[k] && sayfadaMi(k);
+function canliSiraEkle(k) { if (!canliSira.kuyruk.includes(k)) canliSira.kuyruk.push(k); while (canliSira.calisiyor < CANLI_PARALEL && canliSira.calisiyor < canliSira.kuyruk.length) canliSiraIsle(); }
+async function canliSiraIsle() {
+  canliSira.calisiyor++;
+  try {
+    while (canliSira.kuyruk.length) {
+      const k = canliSira.kuyruk.shift(), o = kareler[k];
+      if (!o || o.m.calisiyor || !canliIstenir(k)) continue;
+      canliBaslat(k);
+      await new Promise((coz) => { o.hazirBekle = coz; setTimeout(coz, 1000); });
+      o.hazirBekle = null;
+    }
+  } finally { canliSira.calisiyor--; }
+}
+function canliDurdur(k) { kareler[k]?.m.durdur(); }
+function canliGuncelle() {
+  if (!bilgi) return;
+  const izle = durum.sekme === 'canli' && !arkaPlanda();
+  for (const k of Object.keys(kareler).map(Number)) {
+    if (izle && durum.odak === null && sayfadaMi(k)) { if (!kareler[k].m.calisiyor) canliSiraEkle(k); } else { canliSira.kuyruk = canliSira.kuyruk.filter((x) => x !== k); canliDurdur(k); }
+  }
+  if (!odakM) return;
+  if (izle && durum.odak !== null) { if (!odakM.calisiyor) odakM.baslat(); } else odakM.durdur();
+}
+function odakAc(k) {
+  const yeni = durum.odak === null;
+  durum.odak = k;
+  $('#izgara').hidden = true; $('#izgSayfa').hidden = true; $('#odak').hidden = false; $('#canliArac').hidden = false; $('#canliDetay').hidden = false;
+  $('#canliBaslik').textContent = bilgi.kanalAdlari[k]; $('#canliSay').textContent = '';
+  kameraBilgiYaz(k); kameraListeCiz(); bolmeyeIn($('#s-canli'), 1);
+  odakM?.durdur(); $('#odakDurum').textContent = '';
+  canliGuncelle();
+}
+function odakKapat() {
+  durum.odak = null; odakM?.durdur();
+  $('#izgara').hidden = false; $('#odak').hidden = true; $('#canliArac').hidden = true; $('#canliDetay').hidden = true;
+  izgaraSayfaCiz(); kameraListeCiz();
+  canliGuncelle();
+}
+$('#geri').addEventListener('click', odakKapat);
+$('#tamEkran').addEventListener('click', () => { tamEkran($('#odak')); setTimeout(tamEtiket, 60); });
+$('#odak').addEventListener('click', (e) => { if (e.currentTarget.classList.contains('sahte-tam')) { e.currentTarget.classList.remove('sahte-tam'); tamEtiket(); } });
+$('#goruntuAl').addEventListener('click', (e) => goruntuAl(e.currentTarget));
+// Tam ekranda yalniz #odak gorunur; ustteki dugmeler disarida kalir. Bu cubuk yalniz tam ekranda gorunur (css: .odak__arac).
+$('#odakGoruntu').innerHTML = IKON.kamera; $('#odakTamCik').innerHTML = IKON.tamCik;
+$('#odakArac').addEventListener('click', (e) => e.stopPropagation());   // sayfa ici tam ekranda kutuya dokunmak kapatir; dugmeler kapatmasin
+$('#odakGoruntu').addEventListener('click', (e) => goruntuAl(e.currentTarget));
+$('#odakTamCik').addEventListener('click', () => { tamEkran($('#odak')); setTimeout(tamEtiket, 60); });
+$('#odakKayit').addEventListener('click', () => { if (durum.odak !== null) kayitlaraGit(durum.odak); });
+/** Odaktaki kameranin anlik goruntusu: telefonda paylasim menusu, degilse indirme. */
+async function goruntuAl(dugme) {
+  const k = durum.odak; if (k === null) return;
+  dugme.disabled = true;
+  try {
+    const y = await fetch(`/api/goruntu?kanal=${k}`, { cache: 'no-store' });
+    if (!y.ok) { const j = await y.json().catch(() => ({})); throw new Error(j.hata ?? `Görüntü alınamadı (HTTP ${y.status})`); }
+    const blob = await y.blob();
+    const n = new Date();
+    const ad = `${bilgi.kanalAdlari[k]}_${n.getFullYear()}-${iki(n.getMonth() + 1)}-${iki(n.getDate())}_${iki(n.getHours())}.${iki(n.getMinutes())}.${iki(n.getSeconds())}.jpg`;
+    const dosya = new File([blob], ad, { type: 'image/jpeg' });
+    // Telefon: paylaşım menüsü ("Görüntüyü Kaydet"); olmazsa ya da iptal edilirse bağlantıyla indir
+    if (/iPhone|iPad|Android/i.test(navigator.userAgent) && navigator.canShare?.({ files: [dosya] })) {
+      try { await navigator.share({ files: [dosya], title: ad }); return; } catch (e) { if (e?.name === 'AbortError') return; }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = el('a', { href: url, download: ad, style: 'display:none' }); document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  } catch (e) { bildir(e.message, 'danger'); } finally { dugme.disabled = false; }
+}
+// Sekmeye / uygulamaya donuldugunde elle yenilemeden kaldigi yerden devam: akislar yeniden acilir, veri tazelenir.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { mzDuraklat(); canliGuncelle(); return; }
+  bilgiAl().then(() => { canliGuncelle(); if (durum.sekme === 'kayit') kayitYukle(true); if (durum.sekme === 'indirilen') indirilenYenile(); });
+});
+addEventListener('online', () => { bilgiAl().then(canliGuncelle); });
+
+// ---------- sayfalama (EYS vendor/pagination: baglanti a, gecerli ve kapali span) ----------
+function sayfaCiz(kap, toplam, sayfa, boyut, git) {
+  kap.replaceChildren();
+  const n = Math.max(1, Math.ceil(toplam / boyut));
+  if (toplam <= boyut) return;
+  const bag = (ad, s, oz = {}) => el('a', { class: 'pagination__link', href: '#', ...oz, onclick: (e) => { e.preventDefault(); git(s); } }, ad);
+  const kapali = (ad) => el('span', { class: 'pagination__link', 'aria-disabled': 'true' }, ad);
+  const goster = new Set([1, n, sayfa - 1, sayfa, sayfa + 1]);
+  const nav = el('nav', { class: 'pagination', role: 'navigation', 'aria-label': 'Sayfalama' }, el('span', { class: 'pagination__summary' }, `${(sayfa - 1) * boyut + 1}–${Math.min(toplam, sayfa * boyut)} / ${toplam}`));
+  nav.append(sayfa === 1 ? kapali('‹') : bag('‹', sayfa - 1, { rel: 'prev', 'aria-label': 'Önceki sayfa' }));
+  let onceki = 0;
+  for (let i = 1; i <= n; i++) {
+    if (!goster.has(i)) continue;
+    if (i - onceki > 1) nav.append(kapali('…'));
+    nav.append(i === sayfa ? el('span', { class: 'pagination__link', 'aria-current': 'page' }, String(i)) : bag(String(i), i));
+    onceki = i;
+  }
+  nav.append(sayfa === n ? kapali('›') : bag('›', sayfa + 1, { rel: 'next', 'aria-label': 'Sonraki sayfa' }));
+  kap.append(nav);
+}
+
+// ---------- kayitlar ----------
+const kayit = { liste: [], oynBas: 0, oynuyor: false, sayfa: 1, oynGun: '', secili: new Set(), oynayan: null, derinlik: 0 };   // telefonda ilk giris kamera listesinden
+const TUR_AD = { R: 'Sürekli', M: 'Hareket', A: 'Alarm', H: 'Elle' };
+const TUR_ROZET = { R: 'gray', M: 'yellow', A: 'red', H: 'blue' };
+function bugunDvr() { return (bilgi?.saat ?? '').slice(0, 10) || new Date().toISOString().slice(0, 10); }
+function gunKaydir(n) {
+  if (mz.hazir) { const oynuyordu = mz.oynuyor; mz.merkez = mzSimdi() + n * 86400; mz.oynuyor = false; for (const m of mz.m.values()) m.durdur(true); if (oynuyordu) mzBasla(); else zamanCiz(); } const d = new Date($('#kGun').value + 'T12:00:00'); d.setDate(d.getDate() + n); $('#kGun').value = `${d.getFullYear()}-${iki(d.getMonth() + 1)}-${iki(d.getDate())}`; $('#kGun2').value = ''; kayitYukle(); }
+function kayitSekmesi() {
+  if (!bilgi) return;
+  const s = $('#kKanal');
+  if (!s.options.length) { gorunur().forEach((i) => s.append(el('option', { value: i }, bilgi.kanalAdlari[i]))); $('#kGun').value = bugunDvr(); kayitYukle(); }
+  mzBaslat(); kayitKanalCiz();
+  bolmeyeIn($('#s-kayit'), kayit.derinlik);
+}
+/** sessiz: kendiliginden tazeleme; ekrani silmez, sayfa/suzgec/oynatici bozulmaz. */
+async function kayitYukle(sessiz = false) {
+  const liste = $('#kListe');
+  if (!sessiz) liste.replaceChildren(bosYaz('Kayıtlar sorgulanıyor…'));
+  try {
+    const yeni = await api(`/api/kayitlar?kanal=${$('#kKanal').value}&gun=${$('#kGun').value}${$('#kGun2').value ? `&gun2=${$('#kGun2').value}` : ''}`);
+    if (sessiz && JSON.stringify(yeni) === JSON.stringify(kayit.liste)) return;
+    kayit.liste = yeni;
+    if (!sessiz) { kayit.sayfa = 1; kayit.secili.clear(); }     // farklı kanal/gün: seçim sıfırlanır
+  } catch (e) { if (!sessiz) { liste.replaceChildren(hataYaz(e.message)); kayit.liste = []; } return; }
+  listeCiz();
+}
+// Bugunun kayitlari surekli eklenir: kayit sekmesi acikken 20 sn'de bir sessizce yenile.
+setInterval(() => {
+  if (durum.sekme !== 'kayit' || document.hidden || !$('#kKanal').options.length) return;
+  const son = $('#kGun2').value || $('#kGun').value;
+  if (son >= bugunDvr()) kayitYukle(true);
+}, 20_000);
+const sureSn = (k) => (Date.parse(k.bit.replace(' ', 'T')) - Date.parse(k.bas.replace(' ', 'T'))) / 1000;
+function suzulmus() {
+  const t1 = $('#kSaat1').value, t2 = $('#kSaat2').value, tur = $('#kTur').value;
+  const a = t1 ? Number(t1.slice(0, 2)) * 3600 + Number(t1.slice(3, 5)) * 60 : 0;
+  const b = t2 ? Number(t2.slice(0, 2)) * 3600 + Number(t2.slice(3, 5)) * 60 + 59 : 86399;
+  return kayit.liste.filter((k) => (!tur || k.tur === tur) && sn(k.bas) <= b && sn(k.bit) >= a);
+}
+/** Gun basligi: tek gun ya da aralik (EYS eyebrow). */
+/** Suzgec katlamasinin basliginda etkin suzgecler (kapaliyken de gorunsun). */
+function suzgecOzet() {
+  const p = [$('#kTur').value ? TUR_AD[$('#kTur').value] : '', $('#kSaat1').value || $('#kSaat2').value ? `${$('#kSaat1').value || '00:00'}–${$('#kSaat2').value || '23:59'}` : '', $('#kGun2').value && $('#kGun2').value !== $('#kGun').value ? `→ ${$('#kGun2').value}` : ''].filter(Boolean);
+  $('#kSuzgecOzet').textContent = p.join(' · ');
+}
+function gunYazisi() {
+  const g = (x) => x ? `${x.slice(8, 10)}.${x.slice(5, 7)}.${x.slice(0, 4)}` : '';
+  const a = $('#kGun').value, b = $('#kGun2').value;
+  return b && b !== a ? `${g(a)} – ${g(b)}` : g(a) || 'Kayıtlar';
+}
+/**
+ * Orta bolme: secili kanalin kayitlari EYS grid-row satirlari olarak (saat araligi, tur, sure, boyut, kanal).
+ * Satira dokunmak oynatir; kutu toplu indirme icindir; satir sonundaki simge tek kaydi indirir.
+ */
+function listeCiz() {
+  const liste = $('#kListe');
+  const tum = suzulmus();
+  const boyut = Number($('#kBoyut').value);
+  const n = Math.max(1, Math.ceil(tum.length / boyut));
+  kayit.sayfa = Math.min(kayit.sayfa, n);
+  $('#kGunYazi').textContent = `${bilgi.kanalAdlari[Number($('#kKanal').value)] ?? ''} · ${gunYazisi()}`;
+  $('#kSay').textContent = kayit.liste.length ? String(tum.length) : '';
+  $('#kSay').title = kayit.liste.length ? `${tum.length} / ${kayit.liste.length} kayıt · ${boyutYaz(tum.reduce((a, k) => a + k.boyut, 0))}` : '';
+  $('#kTumu').onchange = () => { for (const k of tum) $('#kTumu').checked ? kayit.secili.add(k.ad) : kayit.secili.delete(k.ad); listeCiz(); };
+  if (!tum.length) { suzgecOzet(); liste.replaceChildren(bosYaz(kayit.liste.length ? 'Süzgece uyan kayıt yok.' : 'Bu aralık için kayıt yok.')); $('#kSayfa').replaceChildren(); topluGuncelle(tum); return; }
+  const cok = !!$('#kGun2').value && $('#kGun2').value !== $('#kGun').value;
+  const kanal = Number($('#kKanal').value);
+  const satirlar = tum.slice((kayit.sayfa - 1) * boyut, kayit.sayfa * boyut).map((k) => {
+    const cb = el('input', { type: 'checkbox', 'aria-label': `${k.bas.slice(11, 16)} kaydını seç` });
+    cb.checked = kayit.secili.has(k.ad);
+    cb.addEventListener('change', () => { cb.checked ? kayit.secili.add(k.ad) : kayit.secili.delete(k.ad); topluGuncelle(tum); });
+    return el('div', { class: 'grid-row kayit-satir', ...(kayit.oynayan === k.ad ? { 'aria-selected': 'true' } : {}) },
+      el('span', { class: 'kayit-satir__sec' }, cb),
+      el('a', { href: '#kayit', class: 'kayit-satir__saat kayit-satir__oynat mono', title: 'Oynat', onclick: (e) => { e.preventDefault(); mzOynat(k, kanal); } }, `${cok ? k.bas.slice(8, 10) + '.' + k.bas.slice(5, 7) + ' ' : ''}${k.bas.slice(11)} – ${k.bit.slice(11)}`),
+      el('span', { class: 'kayit-satir__tur' }, el('span', { class: `badge badge--${TUR_ROZET[k.tur] ?? 'gray'}` }, TUR_AD[k.tur] ?? k.tur)),
+      el('span', { class: 'kayit-satir__sure text-muted' }, sureYaz(Math.round(sureSn(k)))),
+      el('span', { class: 'kayit-satir__boyut mono text-muted' }, boyutYaz(k.boyut)),
+      el('span', { class: 'kayit-satir__eylem' }, el('button', { type: 'button', class: 'btn btn--ghost btn--icon btn--sm', title: 'İndir', 'aria-label': 'İndir', onclick: () => indirSirala([k], kanal) }, ikon(IKON.indir))));
+  });
+  liste.replaceChildren(...satirlar);
+  suzgecOzet();
+  sayfaCiz($('#kSayfa'), tum.length, kayit.sayfa, boyut, (s) => { kayit.sayfa = s; listeCiz(); });
+  topluGuncelle(tum);
+}
+const ikon = (svg) => { const t = document.createElement('template'); t.innerHTML = svg; return t.content.firstChild; };
+/** Toplu islemler: "Tumu" kutusu, secili sayisi ve boyutu, indirme dugmesi (EYS bulk seridi). */
+function topluGuncelle(tum = suzulmus()) {
+  const n = kayit.secili.size;
+  const boyut = kayit.liste.filter((k) => kayit.secili.has(k.ad)).reduce((a, k) => a + k.boyut, 0);
+  $('#kTumu').checked = tum.length > 0 && tum.every((k) => kayit.secili.has(k.ad));
+  $('#kTumu').disabled = !tum.length;
+  $('#kTopluSay').textContent = n ? `${n} kayıt seçili · ${boyutYaz(boyut)}` : `${tum.length} kayıt`;
+  $('#kTopluIndir').textContent = `Seçilenleri indir (${n})`;
+  $('#kTopluIndir').disabled = n === 0; $('#kTopluTemizle').hidden = n === 0;
+  $('#kIndirme').hidden = !$('#kIndirme').children.length;
+}
+/** Kayitlar sirayla cihazdan cekilir; her biri indirme seridinde kendi dugmesiyle ilerler. */
+function indirSirala(liste, kanal) {
+  for (const k of liste) {
+    const d = el('button', { type: 'button', class: 'btn btn--sm' }, '');
+    d.dataset.onek = `${bilgi.kanalAdlari[kanal]} ${k.bas.slice(5, 10)} ${k.bas.slice(11, 16)}-${k.bit.slice(11, 16)} · `;
+    $('#kIndirme').append(d);
+    indirBaslat({ ad: k.ad, bas: k.bas, bit: k.bit, boyut: k.boyut }, d, kanal);
+  }
+  $('#kIndirme').hidden = false;
+}
+/** Secili tum kayitlar indirilir (30'dan fazlaysa once sorulur). */
+async function topluIndir() {
+  const kanal = Number($('#kKanal').value);
+  const secilen = kayit.liste.filter((k) => kayit.secili.has(k.ad));
+  if (!secilen.length) return;
+  if (secilen.length > 30 && !await onayIste(`${secilen.length} kayıt indirilecek (${boyutYaz(secilen.reduce((a, k) => a + k.boyut, 0))}). Devam edilsin mi?`)) return;
+  indirSirala(secilen, kanal);
+  kayit.secili.clear(); listeCiz();
+}
+$('#kTopluIndir').addEventListener('click', topluIndir);
+$('#kTopluTemizle').addEventListener('click', () => { kayit.secili.clear(); listeCiz(); });
+const teslim = new Set();
+const benimIsler = new Set(); // yalniz bu sayfada baslatilan isler otomatik iner
+const benimDugme = new Map(); // is no -> 'İndir' dugmesi (ilerleme yazisi icin)
+let izleZaman = null;
+function dosyaIndir(ad) { el('a', { href: `/arsiv/${encodeURIComponent(ad)}?indir=1` }).click(); }
+async function isIzle() {
+  clearTimeout(izleZaman);
+  try {
+    const isler = await api('/api/isler');
+    for (const i of isler) {
+      const d = benimDugme.get(i.id);
+      if (d && i.durum !== 'bitti') d.textContent = (d.dataset.onek ?? '') + { bekliyor: 'Sırada…', iniyor: `İniyor %${i.boyut ? Math.min(99, Math.round((i.bayt / i.boyut) * 100)) : 0}`, donusturuluyor: 'Hazırlanıyor…', bitti: 'İndirildi', hata: 'Hata', iptal: 'İptal' }[i.durum] ?? i.durum;
+      if (i.durum === 'bitti' && d && !teslim.has(i.id)) { teslim.add(i.id); const a = el('a', { class: 'btn btn--sm btn--primary', href: `/arsiv/${encodeURIComponent(i.ad)}?indir=1`, download: i.ad }, `${d.dataset.onek ?? ''}Kaydet ⬇`); d.replaceWith(a); benimDugme.delete(i.id); }
+    }
+    const rozet = isler.filter((i) => ['bekliyor', 'iniyor', 'donusturuluyor'].includes(i.durum)).length;
+    $('[data-s=indirilen]').textContent = rozet ? `İndirmeler (${rozet})` : 'İndirmeler';
+    if (rozet) izleZaman = setTimeout(isIzle, 1500);
+  } catch { izleZaman = setTimeout(isIzle, 5000); }
+}
+/** İndirme: kayıt cihazdan çıkıp sunucudan geçerek doğrudan bu cihaza iner (sunucuda saklanmaz). İlerlemeyi tarayıcının indirme penceresi gösterir. */
+function indirBaslat(k, d, kanal = Number($('#kKanal').value)) {
+  const url = `/api/indir-akis?kanal=${kanal}&dosya=${encodeURIComponent(k.ad)}&bas=${encodeURIComponent(k.bas)}&bit=${encodeURIComponent(k.bit)}`;
+  const a = el('a', { href: url, download: '', style: 'display:none' }); document.body.append(a); a.click(); a.remove();
+  d.disabled = true; d.textContent = (d.dataset.onek ?? '') + 'indiriliyor ✓';
+}
+function kanalDegis(k) { $('#kKanal').value = String(k); kayitKanalCiz(); kayitYukle(); }
+$('#kKanal').addEventListener('change', () => kanalDegis(Number($('#kKanal').value)));
+$('#kGun').addEventListener('change', () => {
+  if ($('#kGun2').value && $('#kGun2').value < $('#kGun').value) $('#kGun2').value = '';
+  kayitYukle();
+  // zaman penceresi de o güne gider (aynı saat)
+  if (mz.hazir && $('#kGun').value) { const oynuyordu = mz.oynuyor; mz.merkez = epoch(`${$('#kGun').value} ${dizge(mzSimdi()).slice(11)}`); mz.oynuyor = false; for (const m of mz.m.values()) m.durdur(true); if (oynuyordu) mzBasla(); else zamanCiz(); }
+});
+$('#kGun2').addEventListener('change', () => kayitYukle());
+$('#kSuzgec').addEventListener('submit', (e) => e.preventDefault());
+for (const id of ['kSaat1', 'kSaat2', 'kTur', 'kBoyut']) $('#' + id).addEventListener('change', () => { kayit.sayfa = 1; listeCiz(); });
+$('#kTemizle').addEventListener('click', () => { $('#kSaat1').value = ''; $('#kSaat2').value = ''; $('#kTur').value = ''; $('#kGun2').value = ''; kayit.sayfa = 1; kayitYukle(); });
+$('#kYukle').addEventListener('click', () => kayitYukle());
+$('#kDun').addEventListener('click', () => gunKaydir(-1));
+$('#kYarin').addEventListener('click', () => gunKaydir(1));
+
+// ---------- eşzamanlı izleme + zaman penceresi ----------
+// Seçili kameralar aynı anda ve aynı andan oynatılır. Zaman çizelgesi, oynatma kafası ortada sabit olacak şekilde
+// (varsayılan) 5 dakikalık bir pencere gösterir; sürükleyince / tekerlekle kaydırınca TÜM kameralar birlikte kayar.
+const epoch = (z) => Date.parse(z.replace(' ', 'T') + 'Z') / 1000;               // DVR yerel saati: UTC gibi ele alınır (yalnız fark/dizge için)
+const dizge = (t) => new Date(t * 1000).toISOString().slice(0, 19).replace('T', ' ');
+const gunDizge = (t) => dizge(t).slice(0, 10);
+const mz = { pencere: 300, merkez: 0, oynuyor: false, t0: 0, merkezBas: 0, sec: new Set(), kayit: new Map(), hareket: new Map(), yuklu: new Set(), m: new Map(), tile: new Map(), biten: new Set(), hazir: false };
+// Aynı anda en çok bu kadar kamera eşzamanlı oynar (sunucu/cihaz yükü, ekrana sığma); fazlası seçilirse en eski seçim çıkar.
+const MZ_MAX = 4;
+const mzSinirla = (k) => { while (mz.sec.size > MZ_MAX) { const ilk = [...mz.sec].find((x) => x !== k); mz.sec.delete(ilk); } };
+// Oynaticidaki kare sirasi: surukle-birakla degisir (mzSira), yeni secilen kamera sona eklenir. Zaman cubugu da ayni sirayi izler.
+let mzSira = [];
+const mzKanallar = () => {
+  const l = gorunur().filter((k) => mz.sec.has(k)), yer = (k) => { const i = mzSira.indexOf(k); return i < 0 ? 1e6 + l.indexOf(k) : i; };
+  return l.sort((a, b) => yer(a) - yer(b));
+};
+let mzTasinan = null;
+/** Birakilan kare hedefle YER DEGISTIRIR. Dugumler tasinir: akislar kesilmez, yeniden baglanmaz. */
+function mzSurukleBagla(kap, k) {
+  kap.addEventListener('dragstart', (e) => { mzTasinan = k; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(k)); kap.classList.add('kanal--tasiniyor'); });
+  kap.addEventListener('dragend', () => { mzTasinan = null; for (const x of document.querySelectorAll('#mzIzgara .kanal--tasiniyor, #mzIzgara .kanal--hedef')) x.classList.remove('kanal--tasiniyor', 'kanal--hedef'); });
+  kap.addEventListener('dragover', (e) => { if (mzTasinan === null || mzTasinan === k) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; kap.classList.add('kanal--hedef'); });
+  kap.addEventListener('dragleave', () => kap.classList.remove('kanal--hedef'));
+  kap.addEventListener('drop', (e) => {
+    e.preventDefault(); kap.classList.remove('kanal--hedef');
+    if (mzTasinan === null || mzTasinan === k) return;
+    const sira = mzKanallar(), i = sira.indexOf(mzTasinan), j = sira.indexOf(k);
+    [sira[i], sira[j]] = [sira[j], sira[i]];
+    mzSira = sira;
+    $('#mzIzgara').append(...sira.map((x) => mz.tile.get(x)?.kap).filter(Boolean));
+    $('#oynBaslik').textContent = sira.map((x) => bilgi.kanalAdlari[x]).join(' · ');
+    zamanCiz();
+  });
+}
+function mzSimdi() { return mz.oynuyor && mz.t0 ? mz.merkezBas + (performance.now() - mz.t0) / 1000 : mz.merkez; }
+
+function mzKur() {
+  for (const m of mz.m.values()) m.durdur();
+  mz.m.clear(); mz.tile.clear();
+  const kanallar = mzKanallar();
+  const izgara = $('#mzIzgara'); izgara.replaceChildren();
+  if (!kanallar.length) izgara.append(el('div', { class: 'mz-bos text-sm text-muted' }, 'İzlemek için kamera listesinden kamera seçin.')); izgara.style.setProperty('--mz-n', String(Math.max(1, kanallar.length))); izgara.style.setProperty('--mz-r', String(Math.max(1, Math.ceil(kanallar.length / 2)))); $('#oynatici').dataset.n = String(kanallar.length);
+  for (const k of kanallar) {
+    const img = el('img', { alt: bilgi.kanalAdlari[k] });
+    const dur = el('div', { class: 'kanal__durum' }, mz.oynuyor ? 'Bağlanıyor…' : 'Başlatmak için ▶');
+    const kap = el('div', { class: 'mz-kare', draggable: kanallar.length > 1 ? 'true' : 'false', title: kanallar.length > 1 ? 'Yerini değiştirmek için sürükleyin' : '' }, img, el('span', { class: 'kanal__ad' }, bilgi.kanalAdlari[k]), dur);
+    mzSurukleBagla(kap, k); izgara.append(kap);
+    mz.tile.set(k, { img, dur, kap });
+    mz.m.set(k, new Mjpeg(img, {
+      url: () => mzUrl(k), kopma: 12_000,
+      durum: (t) => { dur.textContent = t; },
+      ilk: () => { dur.textContent = ''; if (!mz.t0) mz.t0 = performance.now(); },
+      bitti: (neden, temiz, kareVar) => {
+        if (!kareVar) { dur.textContent = 'Bu anda kayıt yok'; mzBitti(k); return true; }   // hiç kare yok: kayıt yok, yeniden deneme
+        if (temiz) { dur.textContent = 'Kayıt sonu'; mzBitti(k); return true; }
+        return false;                                                                       // ağ kopması: otomatik yeniden dene
+      },
+    }));
+  }
+  $('#oynBaslik').textContent = kanallar.map((k) => bilgi.kanalAdlari[k]).join(' · ') || 'Oynatıcı';
+  mzChipler();
+}
+function mzUrl(k) {
+  const s = Math.floor(mz.t0 ? mzSimdi() : mz.merkez);           // yeniden bağlanmada saat akmaya devam eder, kaldığı yerden
+  // Kayit cihazda ana akistir; genislik ekrandaki kare boyuna gore: tek kamera tam (1920), 2-4 kamera 960, dar ekran 640.
+  const g = kucukAkis() ? 640 : mz.m.size <= 1 ? 1920 : 960;
+  return `/akis/oynat?kanal=${k}&bas=${encodeURIComponent(dizge(s))}&bit=${encodeURIComponent(dizge(s + 7200))}&g=${g}&ham=1&t=${Date.now()}`;
+}
+function mzBitti(k) {
+  mz.biten.add(k);
+  if (mz.biten.size >= mz.m.size) { mz.merkez = mzSimdi(); mz.oynuyor = false; mz.t0 = 0; oynIkon(false); }
+}
+function mzBasla() {
+  for (const m of mz.m.values()) m.durdur(true);
+  mz.oynuyor = true; mz.t0 = 0; mz.merkezBas = mz.merkez; mz.biten.clear();
+  oynIkon(true);
+  for (const [k, m] of mz.m) { mz.tile.get(k).dur.textContent = 'Bağlanıyor…'; m.baslat(); }
+  zamanCiz();
+}
+function mzDuraklat() {
+  if (!mz.oynuyor) return;
+  mz.merkez = mzSimdi(); mz.oynuyor = false; mz.t0 = 0;
+  for (const m of mz.m.values()) m.durdur(true);                 // son kareler ekranda kalır
+  oynIkon(false); zamanCiz();
+}
+/** Oynaticidaki kameralar soldaki kutulardan secilir (en az 1, en cok MZ_MAX); kanal listesini de o bolme cizer. */
+function mzChipler() { kayitKanalCiz(); }
+function mzSecDegis(k, acik) {
+  acik ? (mz.sec.add(k), mzSinirla(k)) : mz.sec.delete(k);
+  const oynuyordu = mz.oynuyor; if (oynuyordu) mz.merkez = mzSimdi();
+  mz.oynuyor = false; mzKur(); if (oynuyordu) mzBasla(); else zamanCiz();
+}
+/**
+ * Sol bolme: kanal basina row-item. Satira dokunmak o kanalin kayitlarini listeler (aria-selected);
+ * kutu o kanali oynaticiya ekler/cikarir. Birden cok cihazda acilir/kapanir cihaz basligi (kamera-bolum, Canli ile ayni).
+ */
+function kayitKanalCiz() {
+  const kap = $('#kayitKanallar'); if (!kap || !bilgi) return;
+  const liste = gorunur(), secili = Number($('#kKanal').value);
+  $('#kayitKanalSay').textContent = String(liste.length);
+  const satir = (k) => {
+    const cb = el('input', { type: 'checkbox', title: 'Oynatıcıda göster', 'aria-label': `${bilgi.kanalAdlari[k]} oynatıcıda` });
+    cb.checked = mz.sec.has(k);
+    cb.addEventListener('change', () => mzSecDegis(k, cb.checked));
+    // Kutu genis bir dokunma alaninin (label) icinde: yanina dokunmak satira gidip kayit listesini acmasin (telefonda tik kaldirmak zordu).
+    const kutu = el('label', { class: 'kayit-kutu', title: 'Oynatıcıda göster' }, cb);
+    kutu.addEventListener('click', (e) => e.stopPropagation());
+    return el('div', { class: 'row-item', role: 'button', tabindex: '0', ...(k === secili && $('#kKanal').options.length ? { 'aria-selected': 'true' } : {}),
+      onclick: () => { kanalDegis(k); kayit.derinlik = 2; bolmeyeIn($('#s-kayit'), 2); }, onkeydown: (e) => { if (e.key === 'Enter') e.currentTarget.click(); } },
+      kutu, el('span', { class: 'row-item__label' }, bilgi.kanalAdlari[k]), el('span', { class: 'row-item__meta' }, bilgi.kanalKodlar?.[k] ?? ''));
+  };
+  const cihazlar = bilgi.cihazlar?.length > 1 ? bilgi.cihazlar : null;
+  // Cihaz basligi Canli listesiyle AYNI bilesen (kamera-bolum): acilir/kapanir; masaustunde varsayilan kapali,
+  // yalniz oynaticida kamerasi olan bolum acik gelir. Secili kanalin bolumu baslikta isaretlidir.
+  const bolum = (c, i) => {
+    const ks = liste.filter((x) => x >= c.baslangic && x < c.baslangic + c.kanal);
+    if (!ks.length) return [];
+    const ac = kayitAcikBolum.has(i);
+    const tikla = (e) => { e.preventDefault(); if (ac) kayitAcikBolum.delete(i); else kayitAcikBolum.add(i); kayitKanalCiz(); };
+    return [el('details', { class: 'kamera-bolum', ...(ac ? { open: '' } : {}) },
+      el('summary', { class: 'kamera-bolum__baslik', ...(ks.includes(secili) && $('#kKanal').options.length ? { 'aria-current': 'true' } : {}), onclick: tikla },
+        el('span', { class: 'kamera-bolum__ad' }, c.ad || c.model), el('span', { class: 'row-item__meta' }, String(ks.length))),
+      ...ks.map(satir))];
+  };
+  if (cihazlar && !kayitBolumKuruldu) {
+    kayitBolumKuruldu = true;
+    cihazlar.forEach((c, i) => { const ks = liste.filter((x) => x >= c.baslangic && x < c.baslangic + c.kanal); if (!masaustu() || ks.some((x) => mz.sec.has(x))) kayitAcikBolum.add(i); });
+  }
+  kap.replaceChildren(...(cihazlar ? cihazlar.flatMap(bolum) : liste.map(satir)));
+}
+const kayitAcikBolum = new Set();
+let kayitBolumKuruldu = false;
+
+// kayıt aralıkları (zaman çizelgesi için), gün gün yüklenir
+async function mzYukle(gun) {
+  for (const k of mzKanallar()) {
+    const a = `${k}|${gun}`; if (mz.yuklu.has(a)) continue;
+    mz.yuklu.add(a);
+    try { mz.kayit.set(a, (await api(`/api/kayitlar?kanal=${k}&gun=${gun}`)).map((x) => ({ b: epoch(x.bas), e: epoch(x.bit), tur: x.tur, ad: x.ad, bas: x.bas, bit: x.bit, boyut: x.boyut }))); zamanCiz(); }
+    catch { mz.yuklu.delete(a); continue; }
+    // Hareket isaretleri (NVR'in kendi oynaticisindaki gibi): alinamazsa cizelge isaretsiz kalir, kayit etkilenmez
+    api(`/api/hareketler?kanal=${k}&gun=${gun}`).then((l) => { mz.hareket.set(a, l.map((x) => ({ b: epoch(x.bas), e: epoch(x.bit) }))); zamanCiz(); }).catch(() => {});
+  }
+}
+const MZ_ADIM = { 60: [10, 'sn'], 300: [60, 'sn'], 1800: [300, 'dk'], 7200: [900, 'dk'], 86400: [10800, 'dk'] };
+function zamanCiz() {
+  if (!bilgi || !mz.hazir || durum.sekme !== 'kayit') return;
+  const w0 = mz.merkez - mz.pencere / 2, w1 = mz.merkez + mz.pencere / 2;
+  const kanallar = mzKanallar(), z = $('#zaman');
+  z.style.setProperty('--mz-sat', String(Math.max(1, kanallar.length)));
+  const gunler = [...new Set([gunDizge(w0), gunDizge(w1)])];
+  for (const g of gunler) mzYukle(g);
+  const [adim, birim] = MZ_ADIM[mz.pencere] ?? [mz.pencere / 5, 'sn'];
+  const ogeler = [];
+  for (let t = Math.ceil(w0 / adim) * adim; t <= w1; t += adim) ogeler.push(el('i', { class: 'cetvel', style: `left:${((t - w0) / mz.pencere) * 100}%` }));
+  kanallar.forEach((k, i) => {
+    const sat = el('div', { class: 'zaman__sat', style: `top:${i * 26 + 4}px` }, el('span', { class: 'zaman__ad' }, bilgi.kanalAdlari[k]));
+    for (const g of gunler) for (const s of mz.kayit.get(`${k}|${g}`) ?? []) {
+      if (s.e < w0 || s.b > w1) continue;
+      const sol = Math.max(0, ((s.b - w0) / mz.pencere) * 100), sag = Math.min(100, ((s.e - w0) / mz.pencere) * 100);
+      sat.append(el('div', { class: `parca ${s.tur}`, style: `left:${sol}%;width:${Math.max(0.3, sag - sol)}%` }));
+    }
+    for (const g of gunler) for (const s of mz.hareket.get(`${k}|${g}`) ?? []) {
+      if (s.e < w0 || s.b > w1) continue;
+      const sol = Math.max(0, ((s.b - w0) / mz.pencere) * 100), sag = Math.min(100, ((s.e - w0) / mz.pencere) * 100);
+      // Gercek genislik (en az 2 px, css): %0,3 alt siniri 24 saatte 4 dk demekti, kisa hareket uzun gorunuyordu
+      sat.append(el('div', { class: 'parca M', style: `left:${sol}%;width:${sag - sol}%` }));
+    }
+    ogeler.push(sat);
+  });
+  ogeler.push(el('div', { class: 'kafa' }));
+  z.replaceChildren(...ogeler);
+  const ek = $('#saatler'); ek.replaceChildren();
+  for (let t = Math.ceil(w0 / adim) * adim; t <= w1; t += adim) {
+    const s = dizge(t).slice(11);
+    ek.append(el('span', { style: `left:${((t - w0) / mz.pencere) * 100}%` }, mz.pencere >= 1800 ? s.slice(0, 5) : s));
+  }
+  if (document.activeElement !== $('#mzTarih')) { $('#mzTarih').value = gunDizge(mz.merkez); $('#mzTarih').max = (bilgi.sunucuSaat ?? bilgi.saat).slice(0, 10); }
+  $('#oynSaat').textContent = dizge(mz.merkez).slice(5);      // AA-GG SS:DD:SS (yıl tarih penceresinde)
+  $('#oynAlt').textContent = dizge(mz.merkez);
+}
+// saat akarken çizelge kayar
+setInterval(() => { if (mz.oynuyor && mz.t0) { mz.merkez = mzSimdi(); zamanCiz(); } }, 250);
+
+// sürükle: çizelge parmağı/fareyi izler, bırakınca TÜM kameralar o andan oynar. Dokunuş (sürüklemeden): tıklanan ana git.
+let surukle = null;
+const zamanW = () => $('#zaman').getBoundingClientRect().width;
+function ipucuGoster(goster) { const i = $('#ipucu'); i.hidden = !goster; if (goster) { i.textContent = dizge(mz.merkez); i.style.left = `${zamanW() / 2 - i.offsetWidth / 2}px`; } }
+$('#zaman').addEventListener('pointerdown', (e) => {
+  if (e.button > 0) return;
+  $('#zaman').setPointerCapture(e.pointerId);
+  surukle = { x0: e.clientX, m0: mzSimdi(), oynuyordu: mz.oynuyor, tasti: false };
+});
+$('#zaman').addEventListener('pointermove', (e) => {
+  if (!surukle) return;
+  const dx = e.clientX - surukle.x0;
+  if (!surukle.tasti && Math.abs(dx) < 4) return;
+  if (!surukle.tasti) { surukle.tasti = true; if (mz.oynuyor) { mz.merkez = surukle.m0; mzDuraklat(); } }
+  mz.merkez = surukle.m0 - (dx / zamanW()) * mz.pencere;          // sola sürükle = ileri sar
+  zamanCiz(); ipucuGoster(true);
+});
+function surukleBitir(e, iptal) {
+  if (!surukle) return;
+  const s = surukle; surukle = null; ipucuGoster(false);
+  if (iptal) return;
+  if (!s.tasti) { const r = $('#zaman').getBoundingClientRect(); mz.merkez = s.m0 + ((e.clientX - r.left) / r.width - 0.5) * mz.pencere; }   // dokunulan ana git
+  mzBasla();
+}
+$('#zaman').addEventListener('pointerup', (e) => surukleBitir(e, false));
+$('#zaman').addEventListener('pointercancel', (e) => surukleBitir(e, true));
+let tekerZaman = null;
+$('#zaman').addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if (mz.oynuyor) mzDuraklat();
+  const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  mz.merkez += (d / zamanW()) * mz.pencere; zamanCiz(); ipucuGoster(true);
+  clearTimeout(tekerZaman); tekerZaman = setTimeout(() => { ipucuGoster(false); mzBasla(); }, 450);
+}, { passive: false });
+
+for (const b of document.querySelectorAll('#mzSegment button')) b.addEventListener('click', () => {
+  mz.pencere = Number(b.dataset.p);
+  for (const x of document.querySelectorAll('#mzSegment button')) x.setAttribute('aria-pressed', String(x === b));
+  zamanCiz();
+});
+$('#oynat').addEventListener('click', () => { mz.oynuyor ? mzDuraklat() : mzBasla(); });
+// Tarih seçimi (modal): saat korunur
+function mzTarihSec() {
+  const g = $('#mzTarih').value; if (!g) return;
+  const saat = dizge(mzSimdi()).slice(11);
+  let t = epoch(`${g} ${saat}`);
+  const simdi = epoch(bilgi.sunucuSaat ?? bilgi.saat); if (t > simdi) t = simdi - 5;     // gelecek yok
+  mz.merkez = t;
+  if ($('#kGun').value !== g) { $('#kGun').value = g; if ($('#kGun2').value && $('#kGun2').value < g) $('#kGun2').value = ''; kayitYukle(); }
+  mzBasla();
+}
+// Tarih: düğmeye dokununca yerel seçici açılır, seçilince tüm kameralar o güne gider (saat korunur)
+{
+  const gir = $('#mzTarih');
+  gir.addEventListener('click', () => { try { gir.showPicker?.(); } catch {} });
+  gir.addEventListener('change', () => { if (gir.value) mzTarihSec(); });
+}
+
+/** Şu an izlenen kayıt: playhead'in düştüğü dosya, seçili her kamera için indirilir (cihazdan bir kez çekilir, sunucuda saklanır). */
+async function mzIndir() {
+  const t = mzSimdi(), kap = $('#mzIndirme'), bulunan = [];
+  for (const k of mzKanallar()) {
+    const dosya = [gunDizge(t - 86400), gunDizge(t), gunDizge(t + 86400)].flatMap((g) => mz.kayit.get(`${k}|${g}`) ?? []).find((s) => s.b <= t && t <= s.e);
+    if (dosya) bulunan.push([k, dosya]);
+  }
+  if (!bulunan.length) { bildir('Bu anda indirilecek kayıt yok.', 'info'); return; }
+  kap.hidden = false;
+  for (const [k, dosya] of bulunan) {
+    const d = el('button', { type: 'button', class: 'btn btn--sm', 'data-onek': '' }, '');
+    d.dataset.onek = `${bilgi.kanalAdlari[k]} ${dosya.bas.slice(11, 16)}-${dosya.bit.slice(11, 16)} · `;
+    kap.append(d);
+    indirBaslat({ ad: dosya.ad, bas: dosya.bas, bit: dosya.bit, boyut: dosya.boyut }, d, k);
+  }
+}
+$('#mzIndir').addEventListener('click', mzIndir);
+$('#oynTam').addEventListener('click', () => { tamEkran($('#oynatici')); setTimeout(tamEtiket, 60); });
+
+/** Listeden: seçilen kaydın başından, tüm seçili kameralar oynar. */
+function mzOynat(k, kanal) {
+  mz.sec.add(kanal); mzSinirla(kanal); mz.oynuyor = false;
+  mz.merkez = epoch(k.bas); mzKur(); mzBasla();
+  kayit.oynayan = k.ad; kayit.derinlik = 1; listeCiz(); bolmeyeIn($('#s-kayit'), 1);
+}
+function mzBaslat() {
+  if (mz.hazir || !bilgi) return;
+  mz.hazir = true; mz.sec = new Set();   // başlangıçta seçili kamera yok: kullanıcı seçer
+  mz.merkez = epoch(bilgi.saat ?? dizge(Date.now() / 1000)) - 330;     // varsayılan: son 5 dakika
+  mzKur(); zamanCiz();
+}
+// bugünün kayıtları sürekli eklenir: 20 sn'de bir bugünü yeniden yükle
+setInterval(() => { if (!mz.hazir || durum.sekme !== 'kayit' || document.hidden) return; const bugun = bugunDvr(); for (const a of [...mz.yuklu]) if (a.endsWith(`|${bugun}`)) mz.yuklu.delete(a); zamanCiz(); }, 20_000);
+
+
+// ---------- indirmeler ----------
+let isZaman = null;
+const durumAd = { bekliyor: 'Sırada', iniyor: 'İniyor', donusturuluyor: 'mp4’e çevriliyor', bitti: 'Bitti', hata: 'Hata', iptal: 'İptal' };
+const durumRozet = { bekliyor: 'gray', iniyor: 'blue', donusturuluyor: 'purple', bitti: 'green', hata: 'red', iptal: 'gray' };
+async function indirilenYenile() {
+  clearTimeout(isZaman);
+  try {
+    const [isler, arsiv] = await Promise.all([api('/api/isler'), api('/api/arsiv')]);
+    isCiz(isler); arsivCiz(arsiv);
+    if (durum.sekme === 'indirilen') isZaman = setTimeout(indirilenYenile, isler.some((i) => ['bekliyor', 'iniyor', 'donusturuluyor'].includes(i.durum)) ? 1000 : 5000);
+  } catch (e) { $('#isListe').replaceChildren(hataYaz(e.message)); }
+}
+// Is satiri: dosya, durum noktasi, EYS ilerleme cubugu (yalniz calisirken; yuzde bilinmiyorsa dolu ve parildayan), sahip, eylem.
+const ISDURUM = { bekliyor: ['gray', 'Sırada'], iniyor: ['blue', 'İniyor'], donusturuluyor: ['blue', 'mp4’e çevriliyor'], bitti: ['green', 'Bitti'], hata: ['red', 'Hata'], iptal: ['yellow', 'İptal edildi'] };
+function isCiz(isler) {
+  const k = $('#isListe');
+  if (!isler.length) { k.replaceChildren(bosYaz('İşlem yok', 'Kayıtlar sekmesinden “İndir”e basın.')); return; }
+  const satirlar = isler.map((i) => {
+    const aktif = i.durum === 'iniyor' || i.durum === 'donusturuluyor';
+    const [renk, ad] = ISDURUM[i.durum] ?? ['gray', i.durum];
+    const yuzde = i.boyut ? Math.min(99, Math.round((i.bayt / i.boyut) * 100)) : 0;
+    const asama = i.hata ?? ({ iniyor: `${boyutYaz(i.bayt)} / ${boyutYaz(i.boyut)}`, donusturuluyor: 'Cihazdan inen kayıt mp4’e çevriliyor', bitti: boyutYaz(i.boyut), bekliyor: 'Sırada bekliyor', iptal: '' }[i.durum] ?? '');
+    const belli = i.durum === 'iniyor' && yuzde > 0;
+    const ilerleme = aktif ? el('div', { class: 'ilerleme' },
+      el('div', { class: 'ilerleme__ust' }, el('span', { class: 'ilerleme__metin' }, asama), el('span', { class: 'ilerleme__adim' }, belli ? `%${yuzde}` : '')),
+      el('div', { class: 'ilerleme__yol', role: 'progressbar', 'aria-label': 'İlerleme', 'aria-valuemin': '0', 'aria-valuemax': '100', ...(belli ? { 'aria-valuenow': String(yuzde) } : {}) },
+        el('div', { class: 'ilerleme__cubuk', style: `width:${belli ? yuzde : 100}%` })))
+      : el('span', { class: i.hata ? 'text-sm hata-yazi' : 'text-sm text-muted' }, asama);
+    const eylem = ['bekliyor', 'iniyor'].includes(i.durum) ? dugme('İptal', 'danger', () => api(`/api/isler/${i.id}/iptal`, { method: 'POST' }).then(indirilenYenile))
+      : i.durum === 'bitti' ? el('a', { class: 'btn btn--sm btn--primary', href: `/arsiv/${encodeURIComponent(i.ad)}?indir=1` }, 'Tekrar kaydet') : '';
+    return el('tr', {}, el('td', { class: 'table__cell--mono' }, el('span', { class: 'truncate', title: i.ad }, i.ad)), el('td', {}, durumNokta(renk, ad)), el('td', {}, ilerleme),
+      ...(yonetici() ? [el('td', { class: 'table__cell--mono text-muted' }, i.sahip ?? '')] : []), el('td', {}, satirEylem(eylem)));
+  });
+  k.replaceChildren(tablo(['Dosya', 'Durum', 'İlerleme', ...(yonetici() ? ['Sahip'] : []), ''], satirlar));
+}
+const arsiv = { liste: [], sayfa: 1 };
+function arsivCiz(tum) {
+  arsiv.liste = tum;
+  const k = $('#arsivListe');
+  const n = Math.max(1, Math.ceil(tum.length / 10)); arsiv.sayfa = Math.min(arsiv.sayfa, n);
+  const liste = tum.slice((arsiv.sayfa - 1) * 10, arsiv.sayfa * 10);
+  sayfaCiz($('#aSayfa'), tum.length, arsiv.sayfa, 10, (s) => { arsiv.sayfa = s; arsivCiz(arsiv.liste); });
+  if (!liste.length) { k.replaceChildren(bosYaz('Sunucuda bekleyen dosya yok')); return; }
+  k.replaceChildren(tablo(['Dosya', ['Boyut', 'sag'], ''], liste.map((a) => el('tr', {}, el('td', { class: 'table__cell--mono' }, a.ad), el('td', { class: 'table__cell--mono text-right' }, boyutYaz(a.boyut)),
+    el('td', {}, satirEylem(
+      dugme('Oynat', 'primary', () => kopyaOynat(a.ad)),
+      el('a', { class: 'btn btn--sm', href: `/arsiv/${encodeURIComponent(a.ad)}?indir=1` }, 'İndir'),
+      dugme('Sil', 'danger', async () => { if (await onayIste(`“${a.ad}” sunucudan silinsin mi? (Cihazdaki kayıt etkilenmez.)`, 'sil')) { await api(`/api/arsiv/${encodeURIComponent(a.ad)}`, { method: 'DELETE' }); indirilenYenile(); } })))))));
+}
+function kopyaOynat(ad) { $('#dlgAd').textContent = ad; $('#dlgVideo').src = `/arsiv/${encodeURIComponent(ad)}`; pencereAc('dlg'); $('#dlgVideo').play().catch(() => {}); }
+kapaninca('dlg', () => { const v = $('#dlgVideo'); v.pause(); v.removeAttribute('src'); v.load(); });
+$('#isTemizle').addEventListener('click', () => api('/api/isler/temizle', { method: 'POST' }).then(indirilenYenile));
+
+// ---------- yazili onay (EYS onay penceresi) ----------
+/**
+ * Promise doner: onaylanirsa true. kelime verilirse yazili dogrulama istenir (buyuk/kucuk harf duyarsiz, tr).
+ * Tehlikeli islemlerde (sil, iptal, kaldir) onay dugmesi kirmizi, EYS'deki data-confirm-variant="danger" gibi.
+ */
+let onayBekleyen = null;
+function onayIste(metin, kelime = '', { baslik = 'Onay gerekiyor', tehlike = /sil|iptal|kaldır/i.test(kelime) } = {}) {
+  onayBekleyen?.(false);
+  return new Promise((coz) => {
+    const d = $('#onayDlg'), g = $('#onayGirdi'), t = $('#onayTamam');
+    $('[data-confirm-title]', d).textContent = baslik;
+    $('#onayMetin').textContent = metin;
+    $('[data-confirm-expected]', d).textContent = kelime;
+    $('[data-confirm-verify-field]', d).hidden = !kelime;
+    t.className = `btn btn--${tehlike ? 'danger' : 'primary'}`;
+    const tazele = () => { t.disabled = !!kelime && g.value.trim().toLocaleLowerCase('tr') !== kelime.toLocaleLowerCase('tr'); };
+    g.value = ''; g.oninput = tazele; tazele();
+    onayBekleyen = (sonuc) => { onayBekleyen = null; d.hidden = true; coz(sonuc); };
+    d.hidden = false; ilkAlan(kelime ? g : t);
+  });
+}
+document.addEventListener('click', (e) => {
+  if (!onayBekleyen) return;
+  if (e.target.closest('[data-confirm-accept]')) onayBekleyen(true);
+  else if (e.target.closest('[data-confirm-cancel]') || e.target === $('#onayDlg')) onayBekleyen(false);
+});
+document.addEventListener('keydown', (e) => {
+  if (!onayBekleyen) return;
+  if (e.key === 'Escape') onayBekleyen(false);
+  else if (e.key === 'Enter' && e.target === $('#onayGirdi') && !$('#onayTamam').disabled) { e.preventDefault(); onayBekleyen(true); }
+});
+$('#tumSil').addEventListener('click', async () => {
+  if (!await onayIste('Cihazdaki TÜM kamera kayıtları kalıcı olarak silinecek.', 'TÜM KAYITLARI SİL')) return;
+  try { const y = await api('/api/dvr/temizle', { method: 'POST', body: JSON.stringify({ onay: 'TÜM KAYITLARI SİL' }) }); bildir(y.Ret === 100 ? 'Cihaz kayıtları sildi.' : `Cihaz yanıtı: Ret ${y.Ret}`, y.Ret === 100 ? 'success' : 'danger'); }
+  catch (e) { bildir(e.message, 'danger'); }
+});
+
+// ---------- uyeler (admin) ----------
+let roller = [];                                     // /api/yetki/roller
+const rolAdi = (id) => { const r = roller.find((x) => x.id === id); return r ? (r.ad?.[dil] ?? r.ad?.tr ?? id) : ({ admin: 'Yönetici', network: 'Network', teknik: 'Teknik', muhasebe: 'Muhasebe' }[id] ?? id); };
+const ROL_AD = new Proxy({}, { get: (_, k) => rolAdi(k) });
+const OLAY_AD = { 'saat-ayari': ['yellow', 'Saat ayarı'], giris: ['green', 'Giriş'], 'giris-hata': ['red', 'Hatalı giriş'], oynatma: ['blue', 'Oynatma'], 'indirme-istek': ['blue', 'İndirme isteği'], 'indirme-teslim': ['purple', 'İndirildi'], 'indirme-yarim': ['yellow', 'İndirme yarım'] };
+const gunluk = { sayfa: 1, zaman: null };
+async function gunlukYenile() {
+  const k = $('#gunlukListe');
+  const p = new URLSearchParams({ sayfa: String(gunluk.sayfa), boyut: $('#gBoyut').value });
+  for (const [anahtar, id] of [['olay', 'gOlay'], ['kullanici', 'gKullanici'], ['ip', 'gIp'], ['gun', 'gGun']]) if ($('#' + id).value.trim()) p.set(anahtar, $('#' + id).value.trim());
+  try {
+    const s = await api(`/api/gunluk?${p}`);
+    const boyut = s.boyut, n = Math.max(1, Math.ceil(s.toplam / boyut));
+    if (gunluk.sayfa > n) { gunluk.sayfa = n; return gunlukYenile(); }
+    $('#gOzet').textContent = `${s.toplam} kayıt`;
+    if (!s.kayitlar.length) { k.replaceChildren(bosYaz('Kayıt yok')); $('#gunlukSayfa').replaceChildren(); return; }
+    k.replaceChildren(tablo(['Zaman', 'Olay', 'Kullanıcı', 'IP', 'Ayrıntı'], s.kayitlar.map((g) => {
+      const [renk, ad] = OLAY_AD[g.olay] ?? ['gray', g.olay];
+      const ayrinti = g.dosya ?? g.neden ?? (g.once ? `${g.once} → ${g.sonra}${g.otomatik ? ' (otomatik)' : ''}` : (g.kanal !== undefined ? `kanal ${g.kanal + 1}${g.bas ? ' · ' + g.bas : ''}` : ''));
+      const bayt = g.bayt ? ` · ${boyutYaz(g.bayt)}` : '';
+      const vekil = g.ileri?.['cf-connecting-ip'] ?? g.ileri?.['x-forwarded-for'];
+      const ip = `${g.ip ?? ''}${g.port ? ':' + g.port : ''}${vekil ? ' · vekil: ' + vekil : ''}`;
+      return el('tr', {}, el('td', { class: 'mono text-muted', title: g.z }, g.yerel ?? new Date(g.z).toLocaleString('tr-TR')), el('td', {}, el('span', { class: `badge badge--${renk}` }, ad)),
+        el('td', {}, g.kullanici ?? ''), el('td', { class: 'mono text-muted' }, ip), el('td', { class: 'table__cell--mono gunluk-ayrinti' }, ayrinti + bayt));
+    })));
+    sayfaCiz($('#gunlukSayfa'), s.toplam, gunluk.sayfa, boyut, (x) => { gunluk.sayfa = x; gunlukYenile(); });
+  } catch (e) { k.replaceChildren(hataYaz(e.message)); }
+}
+// Günlük kendiliğinden güncellenir: sekme açıkken ve ilk sayfadayken 5 sn'de bir (süzgeç ve sayfa korunur)
+setInterval(() => { if (durum.sekme === 'gunluk' && !document.hidden && gunluk.sayfa === 1) gunlukYenile(); }, 5000);
+for (const id of ['gOlay', 'gGun', 'gBoyut']) $('#' + id).addEventListener('change', () => { gunluk.sayfa = 1; gunlukYenile(); });
+for (const id of ['gKullanici', 'gIp']) $('#' + id).addEventListener('input', () => { clearTimeout(gunluk.zaman); gunluk.zaman = setTimeout(() => { gunluk.sayfa = 1; gunlukYenile(); }, 400); });
+$('#gSuzgec').addEventListener('submit', (e) => e.preventDefault());
+$('#gTemizle').addEventListener('click', () => { for (const id of ['gOlay', 'gKullanici', 'gIp', 'gGun']) $('#' + id).value = ''; gunluk.sayfa = 1; gunlukYenile(); });
+$('#gunlukDogrula').addEventListener('click', async () => {
+  const d = $('#gunlukDogrula'); d.disabled = true;
+  const serit = $('#gunlukZincir'), yazi = $('#gunlukZincirYazi');
+  d.textContent = 'Doğrulanıyor…';
+  try {
+    const s = await api('/api/gunluk/dogrula');
+    serit.className = `chain chain--${s.tamam ? 'ok' : 'broken'}`;
+    yazi.className = ''; yazi.replaceChildren(el('strong', {}, s.tamam ? 'Zincir bütün.' : 'Zincir KIRIK.'), ' ', s.tamam ? `${s.kayit} satır doğrulandı.` : String(s.hata ?? ''));
+    bildir(s.tamam ? `Günlük bütünlüğü doğrulandı: ${s.kayit} kayıt, zincir sağlam.` : `DİKKAT: günlük zinciri bozuk — ${s.hata}`, s.tamam ? 'success' : 'danger');
+  } catch (e) { bildir(e.message, 'danger'); } finally { d.disabled = false; d.textContent = 'Zinciri doğrula'; }
+});
+// ---------- cihaz yönetimi (admin) ----------
+let cihazTurler = {};
+/** Cihaz eklenince/değişince/silinince tüm arayüzü yeni kanal listesiyle yeniden kurar. */
+async function arayuzuYenile() {
+  for (const k of Object.keys(kareler)) { canliDurdur(Number(k)); delete kareler[k]; }
+  for (const m of mz.m.values()) m.durdur(); mz.m.clear(); mz.tile.clear();
+  await bilgiAl(); mz.hazir = false; mz.sec = new Set(); canliKur(); canliGuncelle(); kanalCizilen = null; cihazYaz(); cihazListeYenile();
+}
+let cihazAyarListe = [];
+/** Sol bolme: cihazlar (EYS row-item), durum noktasi ve kanal sayisi; secili olan aria-selected. */
+function cihazListeCiz() {
+  const k = $('#cihazListe');
+  $('#cihazSay').textContent = String(cihazAyarListe.length);
+  if (!cihazAyarListe.length) { k.replaceChildren(bosYaz('Cihaz yok', 'Henüz cihaz yok. “Yeni cihaz” ile ekleyin.')); return; }
+  const by = new Map((bilgi?.cihazlar ?? []).map((c) => [c.id, c])), secili = seciliCihaz();
+  k.replaceChildren(...cihazAyarListe.map((c) => {
+    const b = by.get(c.id), hata = c.hata ?? b?.hata;
+    return el('a', { href: '#cihaz', class: 'row-item', ...(c.id === secili?.id ? { 'aria-selected': 'true' } : {}), title: hata ?? '', onclick: (e) => { e.preventDefault(); durum.cihaz = c.id; durum.cihazSecildi = true; cihazYaz(); bolmeyeIn($('#s-cihaz'), 1); } },
+      el('span', { class: `dot dot--${hata ? 'red' : b ? 'green' : 'gray'}`, 'aria-hidden': 'true' }), el('span', { class: 'row-item__label' }, c.ad || c.ana), el('span', { class: 'row-item__meta' }, String(c.kanalSayisi)));
+  }));
+}
+async function cihazListeYenile() {
+  try { const y = await api('/api/cihazlar'); cihazTurler = y.turler; cihazAyarListe = y.cihazlar; cihazYaz(); }
+  catch (e) { $('#cihazListe').replaceChildren(hataYaz(e.message)); }
+}
+/** NVR'a kamera kaydet (kayıt NVR'da yapılır). Göndermeden önce onay istenir. */
+function kamDialog(c) {
+  const d = $('#kamDlg');
+  $('#kamBaslik').textContent = `${c.ad || c.ana} — kamera ekle`;
+  for (const k of ['#kmAd', '#kmIp', '#kmPar', '#kmPort']) $(k).value = ''; $('#kmKul').value = 'admin'; $('#kmProto').value = 'HIKVISION';
+  $('#kmHata').hidden = true; d.dataset.cihaz = c.id; d.dataset.ad = c.ad || c.ana; pencereAc('kamDlg'); ilkAlan($('#kmAd'));
+}
+$('#kamForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const dlg = $('#kamDlg'), d = $('#kmKaydet'), y = $('#kmHata');
+  const g = { ad: $('#kmAd').value.trim(), ip: $('#kmIp').value.trim(), kullanici: $('#kmKul').value.trim(), parola: $('#kmPar').value, protokol: $('#kmProto').value };
+  if ($('#kmPort').value) g.port = $('#kmPort').value;
+  if (!g.ad || !g.ip || !g.kullanici || !g.parola) { y.textContent = 'Ad, IP, kullanıcı adı ve parola gerekli'; y.hidden = false; return; }
+  pencereKapat('kamDlg');
+  if (!await onayIste(`“${dlg.dataset.ad}” NVR'ına ${g.ip} adresli “${g.ad}” kamerası kaydedilecek (NVR'ın boş bir kanalı kullanılır).`, 'ekle')) { pencereAc('kamDlg'); return; }
+  d.disabled = true;
+  try {
+    const r = await api(`/api/cihazlar/${encodeURIComponent(dlg.dataset.cihaz)}/kamera`, { method: 'POST', body: JSON.stringify(g) });
+    bildir(r.cevrimici ? 'Kamera NVR’a eklendi, bağlandı' : 'Kamera NVR’a eklendi ama henüz bağlanamadı (IP/parola kontrol edin)', r.cevrimici ? 'success' : 'danger');
+    await arayuzuYenile();
+  } catch (err) { bildir(err.message, 'danger'); pencereAc('kamDlg'); y.textContent = err.message; y.hidden = false; } finally { d.disabled = false; }
+});
+async function cihazDialog(c = null) {
+  if (!Object.keys(cihazTurler).length) { try { cihazTurler = (await api('/api/cihazlar')).turler; } catch {} }
+  const d = $('#cihazDlg');
+  $('#cTur').replaceChildren(...Object.entries(cihazTurler).map(([k, t]) => el('option', { value: k }, t.ad)));
+  $('#cihazBaslik').textContent = c ? `${c.ad || c.ana} — düzenle` : 'Cihaz ekle';
+  $('#cAd').value = c?.ad ?? ''; $('#cTur').value = c?.tur ?? Object.keys(cihazTurler)[0]; $('#cTur').disabled = !!c;
+  $('#cAna').value = c?.ana ?? ''; $('#cKul').value = c?.kullanici ?? 'admin'; $('#cPar').value = ''; $('#cParNot').textContent = c ? 'boş bırakılırsa değişmez; adres ya da port değişirse yeniden girilmeli' : '';
+  $('#cKanal').value = c?.kanalSayisi ?? ''; $('#cEtiket').value = c?.etiket ?? ''; $('#cSablon').value = c?.sablon ?? 'hikvision'; $('#cYol').value = c?.yol ?? ''; $('#cHttp').value = c?.httpPort ?? ''; $('#cRtsp').value = c?.rtspPort ?? ''; $('#cPort').value = c?.port ?? '';
+  const oner = () => {
+    const tur = $('#cTur').value, t = cihazTurler[tur];
+    if (t && !c) { $('#cKanal').placeholder = t.kanal; $('#cEtiket').placeholder = t.etiket; }
+    const goster = (sinif, acik) => document.querySelectorAll(sinif).forEach((x) => { x.hidden = !acik; });
+    goster('.cPortSatir', tur === 'xiongmai'); goster('.cHttpSatir', tur === 'uniview' || tur === 'hikvision'); goster('.cRtspSatir', tur !== 'xiongmai'); goster('.cKamSatir', tur === 'kamera'); goster('.cKanalSatir', tur !== 'kamera');
+    $('#cYolSatir').hidden = tur !== 'kamera' || $('#cSablon').value !== 'ozel';
+  };
+  $('#cTur').onchange = oner; $('#cSablon').onchange = oner; oner();
+  $('#cHata').hidden = true; d.dataset.mevcut = c?.id ?? '';
+  d.querySelector('details').open = false; $('.modal__body', d).scrollTop = 0;     // her açılışta Gelişmiş kapalı, form başta
+  pencereAc('cihazDlg'); ilkAlan($('#cAd'));
+}
+$('#cihazEkle').addEventListener('click', () => cihazDialog());
+$('#cihazForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = $('#cihazDlg').dataset.mevcut, d = $('#cKaydet'), y = $('#cHata');
+  const g = { ad: $('#cAd').value.trim(), ana: $('#cAna').value.trim(), kullanici: $('#cKul').value.trim() };
+  if (!id) g.tur = $('#cTur').value;
+  if ($('#cPar').value) g.parola = $('#cPar').value;
+  for (const [alan, kutu] of [['kanalSayisi', '#cKanal'], ['etiket', '#cEtiket'], ['httpPort', '#cHttp'], ['rtspPort', '#cRtsp'], ['port', '#cPort'], ['sablon', '#cSablon'], ['yol', '#cYol']]) if ($(kutu).value !== '') g[alan] = $(kutu).value;
+  d.disabled = true; d.textContent = 'Bağlanılıyor…'; y.hidden = true;
+  try {
+    await api(id ? `/api/cihazlar/${encodeURIComponent(id)}` : '/api/cihazlar', { method: id ? 'PATCH' : 'POST', body: JSON.stringify(g) });
+    pencereKapat('cihazDlg'); bildir(id ? 'Cihaz güncellendi' : 'Cihaz eklendi', 'success'); await arayuzuYenile();
+  } catch (err) { y.textContent = err.message; y.hidden = false; } finally { d.disabled = false; d.textContent = 'Kaydet'; }
+});
+let uyeListesi = [];
+async function uyelerYenile() {
+  try { uyeListesi = await api('/api/uyeler'); uyeCiz(); } catch (e) { $('#uyeListe').replaceChildren(hataYaz(e.message)); }
+}
+/** EYS users/index: ad, rol rozeti, durum noktasi, erisim, olusturma; satir eylemleri sagda (uzerine gelince). */
+function uyeCiz() {
+  const k = $('#uyeListe'), ara = $('#uyeAra').value.trim().toLocaleLowerCase('tr');
+  const liste = uyeListesi.filter((u) => !ara || u.ad.toLocaleLowerCase('tr').includes(ara));
+  if (!liste.length) { k.replaceChildren(bosYaz(ara ? 'Eşleşen üye yok' : 'Üye yok', ara ? 'Başka bir arama deneyin.' : '')); return; }
+  const bugun = new Date().toISOString().slice(0, 10);
+  k.replaceChildren(tablo(['Kullanıcı', 'Rol', 'Durum', 'Erişim', 'Oluşturma', ''], liste.map((u) => {
+    const ben_mi = u.ad === ben.ad, bitti = !!u.bitis && u.bitis.slice(0, 10) < bugun;
+    return el('tr', {}, el('td', { class: 'mono' }, el('span', {}, u.ad, ben_mi ? el('span', { class: 'text-muted' }, ' (siz)') : '')),
+      el('td', {}, el('span', { class: `badge badge--${u.rol === 'admin' ? 'purple' : 'gray'}` }, rolAdi(u.rol))),
+      el('td', {}, durumNokta(bitti ? 'gray' : 'green', bitti ? 'Süresi doldu' : 'Aktif')),
+      el('td', { class: 'text-sm' }, el('span', {}, ...parcalar([kapsamOzet(u.kapsam), u.bitis ? `bitiş ${u.bitis.slice(0, 10)}` : '', u.ipler?.length ? `${u.ipler.length} IP` : '']))),
+      el('td', { class: 'mono text-muted' }, (u.olusturma ?? '').slice(0, 10) || '—'),
+      el('td', {}, satirEylem(dugme('Düzenle', '', () => uyeDialog(u)),
+        ben_mi ? '' : dugme('Sil', 'danger', async () => { if (await onayIste(`“${u.ad}” üyeliği silinsin mi?`, 'sil', { baslik: 'Üyeyi sil' })) { try { await api(`/api/uyeler/${encodeURIComponent(u.ad)}`, { method: 'DELETE' }); } catch (e) { bildir(e.message, 'danger'); } uyelerYenile(); } }))));
+  })));
+}
+$('#uyeAra').addEventListener('input', uyeCiz);
+$('#uyeAraForm').addEventListener('submit', (e) => e.preventDefault());
+/** Kapsam seçici: cihaz başına onay kutusu + kanal kutuları. Verilmezse (boş) kapsam = kısıtsız. */
+function kapsamSecici(kap, kapsam) {
+  kap.replaceChildren();
+  const cihazlar = bilgi?.cihazlar ?? [];
+  for (const c of cihazlar) {
+    const cihazKutu = el('input', { type: 'checkbox' }); cihazKutu.checked = !!kapsam?.cihazlar?.includes(c.id);
+    const kanallar = el('div', { class: 'kapsam-kanallar' });
+    for (let i = 0; i < c.kanal; i++) {
+      const k = c.baslangic + i, kutu = el('input', { type: 'checkbox', value: String(k) }); kutu.checked = !!kapsam?.kanallar?.includes(k);
+      kanallar.append(el('label', { class: 'kapsam-kanal' }, kutu, el('span', {}, bilgi.kanalAdlari?.[k] ?? `K${k + 1}`)));
+    }
+    cihazKutu.addEventListener('change', () => { kanallar.hidden = cihazKutu.checked; });
+    kanallar.hidden = cihazKutu.checked;
+    kap.append(el('div', { class: 'kapsam-cihaz' }, el('label', { class: 'kapsam-baslik' }, cihazKutu, el('strong', {}, `${c.ad || c.model} (tüm kanallar)`)), kanallar));
+  }
+  kap.dataset.cihazlar = JSON.stringify(cihazlar.map((c) => c.id));
+}
+function kapsamOku(kap) {
+  const cihazlar = [...kap.querySelectorAll('.kapsam-baslik input:checked')].map((_, i) => null);
+  const secilenCihaz = [...kap.querySelectorAll('.kapsam-cihaz')].filter((d) => d.querySelector('.kapsam-baslik input').checked).map((d, i) => JSON.parse(kap.dataset.cihazlar)[[...kap.querySelectorAll('.kapsam-cihaz')].indexOf(d)]);
+  const kanallar = [...kap.querySelectorAll('.kapsam-kanallar:not([hidden]) input:checked')].map((k) => Number(k.value));
+  return secilenCihaz.length || kanallar.length ? { cihazlar: secilenCihaz, kanallar } : null;
+}
+/** Birleşik özet: her parça ayrı span (dil sözlüğü/kuralları parça başına çalışır), aralarına ' · '. */
+const parcalar = (l) => l.filter(Boolean).flatMap((p, i) => (i ? [' · ', el('span', {}, p)] : [el('span', {}, p)]));
+const kapsamOzet = (k) => !k ? 'Tümü' : [k.cihazlar?.length ? `${k.cihazlar.length} cihaz` : '', k.kanallar?.length ? `${k.kanallar.length} kanal` : ''].filter(Boolean).join(' + ') || 'Hiçbiri';
+const iplerOku = (metin) => metin.split(',').map((x) => x.trim()).filter(Boolean);
+function rolSecenekleri(sel, secili) {
+  sel.replaceChildren(...roller.map((r) => el('option', { value: r.id }, `${r.ad?.[dil] ?? r.ad?.tr ?? r.id}${r.yerlesik ? '' : ' (özel)'}`)));
+  if (secili && roller.some((r) => r.id === secili)) sel.value = secili;
+  const not = () => { const r = roller.find((x) => x.id === sel.value); $('#uyeRolNot').textContent = r ? (r.aciklama?.[dil] ?? r.aciklama?.tr ?? '') : ''; };
+  sel.onchange = not; not();
+}
+async function uyeDialog(u = null) {
+  const d = $('#uyeDlg');
+  if (!roller.length) { try { roller = await api('/api/yetki/roller'); } catch {} }
+  $('#uyeBaslik').textContent = u ? `${u.ad} — düzenle` : 'Üye ekle';
+  $('#uyeAd').value = u?.ad ?? ''; $('#uyeAd').disabled = !!u;
+  $('#uyeParola').value = ''; $('#uyeParolaNot').textContent = u ? 'boş bırakılırsa değişmez' : '';
+  rolSecenekleri($('#uyeRol'), u?.rol ?? 'teknik'); $('#uyeHata').hidden = true;
+  kapsamSecici($('#uyeKapsam'), u?.kapsam ?? null); $('#uyeBitis').value = (u?.bitis ?? '').slice(0, 10); $('#uyeIpler').value = (u?.ipler ?? []).join(', ');
+  d.querySelector('details').open = !!(u?.kapsam || u?.bitis || u?.ipler?.length);
+  d.dataset.mevcut = u?.ad ?? ''; pencereAc('uyeDlg'); ilkAlan(u ? $('#uyeParola') : $('#uyeAd'));
+}
+$('#uyeEkle').addEventListener('click', () => uyeDialog());
+$('#uyeForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const mevcut = $('#uyeDlg').dataset.mevcut;
+  const g = { rol: $('#uyeRol').value, kapsam: kapsamOku($('#uyeKapsam')), bitis: $('#uyeBitis').value || null, ipler: iplerOku($('#uyeIpler').value) };
+  if ($('#uyeParola').value) g.parola = $('#uyeParola').value;
+  try {
+    if (mevcut) await api(`/api/uyeler/${encodeURIComponent(mevcut)}`, { method: 'PATCH', body: JSON.stringify(g) });
+    else await api('/api/uyeler', { method: 'POST', body: JSON.stringify({ ad: $('#uyeAd').value.trim(), ...g }) });
+    pencereKapat('uyeDlg'); bildir(mevcut ? 'Üye güncellendi' : 'Üye eklendi', 'success'); uyelerYenile();
+  } catch (err) { $('#uyeHata').textContent = err.message; $('#uyeHata').hidden = false; }
+});
+// ---------- yetki: izin katalogu, roller, API anahtarlari ----------
+let izinKatalog = null;
+async function izinKatalogAl() { if (!izinKatalog) izinKatalog = await api('/api/yetki/izinler'); return izinKatalog; }
+/** Izin onay kutulari (gruplu). secili: dizi; kisit: yalniz bu izinler secilebilir (sahip olunanlar). */
+function izinKutulari(kap, secili = [], kisit = null) {
+  kap.replaceChildren();
+  const gruplar = izinKatalog.gruplar, izinler = izinKatalog.izinler;
+  for (const [gid, g] of Object.entries(gruplar)) {
+    kap.append(el('div', { class: 'izin-grup' }, g[dil] ?? g.tr));
+    for (const i of izinler.filter((x) => x.grup === gid)) {
+      const kutu = el('input', { type: 'checkbox', value: i.id }); kutu.checked = secili.includes(i.id) || secili.includes('*') || secili.includes(gid + '.*');
+      if (kisit && !kisit.includes(i.id)) { kutu.disabled = true; kutu.checked = false; }
+      kap.append(el('label', {}, kutu, el('span', {}, el('code', { class: 'text-sm' }, i.id), el('small', {}, i[dil] ?? i.tr))));
+    }
+  }
+}
+const izinOku = (kap) => [...kap.querySelectorAll('input:checked')].map((k) => k.value);
+let uyeSayilari = {};
+async function yetkiYenile() {
+  await izinKatalogAl();
+  try { roller = await api('/api/yetki/roller'); } catch {}
+  uyeSayilari = {};
+  if (izinVar('uye.yonet')) { try { for (const u of await api('/api/uyeler')) uyeSayilari[u.rol] = (uyeSayilari[u.rol] ?? 0) + 1; } catch {} }
+  rolListeCiz(); await anahtarListeYenile();
+}
+/** Sekmeler (EYS .tabs): Roller | API anahtarlari. Secim sayfa icinde kalir. */
+let yetkiSekme = 'roller';
+function yetkiSekmeAc(ad) {
+  yetkiSekme = ad;
+  uyeSekmeIsaretle();
+  for (const k of document.querySelectorAll('[data-yetki-icerik]')) k.hidden = k.dataset.yetkiIcerik !== ad;
+  $('#rolEkle').hidden = ad !== 'roller' || !izinVar('yetki.yonet');
+  $('#anahtarEkle').hidden = ad !== 'anahtarlar' || !(izinVar('yetki.yonet') || izinVar('api.anahtar'));
+}
+/**
+ * Uyeler bolumunun ortak sekmeleri: Uyeler | Roller | API anahtarlari (yetki yonetimi uyeler menusunun icinde).
+ * Uyeler ve Yetki ayri sayfalar olarak kalir (#uyeler, #yetki); ust menude tek "Uyeler" baglantisi ikisini de acar. Her sekme izne gore gorunur.
+ */
+function uyeSekmeIsaretle() {
+  const secili = durum.sekme === 'uyeler' ? 'uyeler' : yetkiSekme;
+  for (const a of document.querySelectorAll('.uye-sekmeleri [data-uye-sekme]')) {
+    a.hidden = a.dataset.uyeSekme === 'uyeler' ? !izinli('uyeler') : !izinli('yetki');
+    if (a.dataset.uyeSekme === secili) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  }
+}
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('.uye-sekmeleri [data-uye-sekme]'); if (!a) return;
+  e.preventDefault();
+  const ad = a.dataset.uyeSekme === 'uyeler' ? 'uyeler' : 'yetki';
+  if (!izinli(ad)) return;
+  if (ad === 'yetki') yetkiSekme = a.dataset.uyeSekme;
+  history.replaceState(null, '', `#${ad}`);
+  if (durum.sekme !== ad) sekmeAc(ad); else yetkiSekmeAc(yetkiSekme);
+});
+/** Roller EYS groups/index gibi katlanir bolumler: baslik rolu anlatir, govdede eylemler (sagda) ve izin rozetleri. */
+function rolListeCiz() {
+  const k = $('#rolListe');
+  if (!roller.length) { k.replaceChildren(el('section', { class: 'panel' }, el('div', { class: 'panel__body' }, bosYaz('Rol yok')))); return; }
+  const izinAd = (id) => izinKatalog?.izinler?.find((x) => x.id === id);
+  k.replaceChildren(...roller.map((r) => {
+    // Eylemler: ozel rol Duzenle + Sil; DC rolleri (network/teknik/muhasebe, izinDuzenlenir) yalniz izin listesi; admin hicbiri.
+    const yonetir = izinVar('yetki.yonet'), duzenlenir = yonetir && !r.yerlesik, izinDuzenlenir = yonetir && !!r.izinDuzenlenir;
+    const uye = uyeSayilari[r.id];
+    const ek = [r.id, r.izinler.includes('*') ? 'tüm izinler' : r.izinler.length ? `${r.izinler.length} izin` : 'izin yok', ...(uye !== undefined || izinVar('uye.yonet') ? [`${uye ?? 0} üye`] : []), r.yerlesik ? 'yerleşik' : 'özel'];
+    const rozetler = r.izinler.includes('*') ? [el('span', { class: 'badge badge--purple' }, 'Tüm izinler')]
+      : !r.izinler.length ? [el('span', { class: 'text-sm text-muted' }, 'İzin yok')]
+      : r.izinler.map((i) => el('span', { class: 'badge badge--gray', title: izinAd(i)?.[dil] ?? izinAd(i)?.tr ?? '' }, i));
+    return el('details', { class: 'katlanir' },
+      el('summary', { class: 'katlanir__baslik' }, el('span', { class: 'katlanir__ad' }, r.ad?.[dil] ?? r.ad?.tr ?? r.id), el('span', { class: 'katlanir__ek text-sm text-muted' }, ...parcalar(ek))),
+      el('div', { class: 'katlanir__govde' },
+        ...(izinDuzenlenir ? [el('div', { class: 'panel__body row row--wrap row--end' }, dugme('İzinleri düzenle', '', () => rolDialog(r)))] : []),
+        ...(duzenlenir ? [el('div', { class: 'panel__body row row--wrap row--end' }, dugme('Düzenle', '', () => rolDialog(r)),
+          dugme('Sil', 'danger', async () => { if (!await onayIste(`“${r.id}” rolü silinsin mi?`, 'sil', { baslik: 'Rolü sil' })) return; try { await api(`/api/yetki/roller/${encodeURIComponent(r.id)}`, { method: 'DELETE' }); bildir('Rol silindi', 'success'); yetkiYenile(); } catch (e) { bildir(e.message, 'danger'); } }))] : []),
+        el('div', { class: 'panel__body rol-izinler' }, ...(r.aciklama?.[dil] ?? r.aciklama?.tr ? [el('p', { class: 'text-sm text-muted' }, r.aciklama?.[dil] ?? r.aciklama?.tr)] : []), el('div', { class: 'row row--wrap row--tight' }, ...rozetler))));
+  }));
+}
+async function rolDialog(r = null) {
+  await izinKatalogAl();
+  const d = $('#rolDlg');
+  $('#rolBaslik').textContent = r ? `${r.id} — düzenle` : 'Rol ekle';
+  $('#rolId').value = r?.id ?? ''; $('#rolId').disabled = !!r; $('#rolAdTr').value = r?.ad?.tr ?? ''; $('#rolAdEn').value = r?.ad?.en ?? ''; $('#rolAciklama').value = r?.aciklama?.[dil] ?? r?.aciklama?.tr ?? '';
+  for (const id of ['#rolAdTr', '#rolAdEn', '#rolAciklama']) $(id).disabled = !!r?.yerlesik;   // DC rolunun adi sabit
+  izinKutulari($('#rolIzinler'), r?.izinler ?? [], izinKatalog.benim); $('#rolHata').hidden = true;
+  d.dataset.mevcut = r?.id ?? ''; d.dataset.yerlesik = r?.yerlesik ? '1' : ''; pencereAc('rolDlg'); (r?.yerlesik ? $('#rolIzinler input:not(:disabled)') : r ? $('#rolAdTr') : $('#rolId'))?.focus?.();
+}
+$('#rolEkle').addEventListener('click', () => rolDialog());
+$('#rolForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const mevcut = $('#rolDlg').dataset.mevcut;
+  const g = $('#rolDlg').dataset.yerlesik ? { izinler: izinOku($('#rolIzinler')) }
+    : { ad: { tr: $('#rolAdTr').value.trim(), en: $('#rolAdEn').value.trim() || $('#rolAdTr').value.trim() }, aciklama: $('#rolAciklama').value.trim(), izinler: izinOku($('#rolIzinler')) };
+  try {
+    if (mevcut) await api(`/api/yetki/roller/${encodeURIComponent(mevcut)}`, { method: 'PATCH', body: JSON.stringify(g) });
+    else await api('/api/yetki/roller', { method: 'POST', body: JSON.stringify({ id: $('#rolId').value.trim(), ...g }) });
+    pencereKapat('rolDlg'); bildir(mevcut ? 'Rol güncellendi' : 'Rol eklendi', 'success'); yetkiYenile();
+  } catch (err) { $('#rolHata').textContent = err.message; $('#rolHata').hidden = false; }
+});
+/** API anahtarlari: EYS panel flush tablo; ayrintilar (kapsam, sinirlar, son kullanim) tek sutunda, eylemler satir sonunda. */
+async function anahtarListeYenile() {
+  const k = $('#anahtarListe');
+  try {
+    const liste = await api('/api/yetki/anahtarlar');
+    if (!liste.length) { k.replaceChildren(bosYaz('Henüz API anahtarı yok.')); return; }
+    k.replaceChildren(tablo(['Ad', 'Durum', 'Rol', 'Ayrıntı', 'Son kullanım', ''], liste.map((a) => {
+      const durum = a.iptal ? ['red', 'İptal'] : !a.aktif ? ['yellow', 'Süresi doldu'] : ['green', 'Aktif'];
+      return el('tr', {},
+        el('td', {}, el('div', { class: 'anahtar-ad' }, el('span', {}, a.ad), el('code', { class: 'text-sm text-muted' }, a.onek))),
+        el('td', {}, durumNokta(durum[0], durum[1])),
+        el('td', {}, a.rol ? el('span', { class: 'badge badge--gray' }, rolAdi(a.rol)) : el('span', { class: 'text-muted' }, '—')),
+        el('td', { class: 'text-sm text-muted' }, el('span', {}, ...parcalar([a.izinler?.length ? `+${a.izinler.length} izin` : '', `kapsam: ${kapsamOzet(a.kapsam)}`, a.bitis ? `bitiş ${a.bitis.slice(0, 10)}` : '', a.ipler?.length ? `IP: ${a.ipler.join(', ')}` : '', `${a.hizLimiti}/dk`, `${a.eszamanliAkis} akış`, `sahip: ${a.sahip}`, `${a.sayac ?? 0} istek`]))),
+        el('td', { class: 'mono text-muted' }, a.sonKullanim ? `${a.sonKullanim.z.slice(0, 16).replace('T', ' ')} (${a.sonKullanim.ip})` : 'hiç kullanılmadı'),
+        el('td', {}, satirEylem(...(a.iptal ? [] : [dugme('Düzenle', '', () => anahtarDialog(a)),
+          dugme('Yenile', '', async () => { if (!await onayIste(`“${a.ad}” anahtarının gizlisi yenilenecek; eski değer geçersiz olur.`, 'yenile', { baslik: 'Gizliyi yenile' })) return; try { const r = await api(`/api/yetki/anahtarlar/${a.id}/yenile`, { method: 'POST' }); gizliGoster('Yeni API anahtarı', r.anahtar); anahtarListeYenile(); } catch (e) { bildir(e.message, 'danger'); } }),
+          dugme('İptal et', 'danger', async () => { if (!await onayIste(`“${a.ad}” anahtarı kalıcı olarak iptal edilecek.`, 'iptal', { baslik: 'Anahtarı iptal et' })) return; try { await api(`/api/yetki/anahtarlar/${a.id}/iptal`, { method: 'POST' }); bildir('Anahtar iptal edildi', 'success'); anahtarListeYenile(); } catch (e) { bildir(e.message, 'danger'); } })]),
+          dugme('Sil', 'ghost', async () => { if (!await onayIste(`“${a.ad}” anahtar kaydı silinecek.`, 'sil', { baslik: 'Anahtar kaydını sil' })) return; try { await api(`/api/yetki/anahtarlar/${a.id}`, { method: 'DELETE' }); anahtarListeYenile(); } catch (e) { bildir(e.message, 'danger'); } }))));
+    })));
+  } catch (e) { k.replaceChildren(hataYaz(e.message)); }
+}
+function gizliGoster(baslik, deger) { $('#gizliBaslik').textContent = baslik; $('#gizliDeger').textContent = deger; pencereAc('gizliDlg'); }
+$('#gizliKopyala').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('#gizliDeger').textContent); bildir('Panoya kopyalandı', 'success'); } catch { bildir('Kopyalanamadı; metni seçip kopyalayın', 'danger'); } });
+$('#gizliKapat').addEventListener('click', () => pencereKapat('gizliDlg'));
+kapaninca('gizliDlg', () => { $('#gizliDeger').textContent = ''; });
+async function anahtarDialog(a = null) {
+  await izinKatalogAl();
+  const d = $('#anahtarDlg');
+  $('#anahtarBaslik').textContent = a ? `${a.ad} — düzenle` : 'API anahtarı oluştur';
+  $('#akAd').value = a?.ad ?? '';
+  const sel = $('#akRol'); sel.replaceChildren(el('option', { value: '' }, '— rol yok, yalnız seçili izinler —'), ...roller.map((r) => el('option', { value: r.id }, r.ad?.[dil] ?? r.ad?.tr ?? r.id))); sel.value = a?.rol ?? '';
+  izinKutulari($('#akIzinler'), a?.izinler ?? [], izinKatalog.benim);
+  kapsamSecici($('#akKapsam'), a?.kapsam ?? null);
+  $('#akBitis').value = (a?.bitis ?? '').slice(0, 10); $('#akIpler').value = (a?.ipler ?? []).join(', '); $('#akHiz').value = a?.hizLimiti ?? 120; $('#akAkis').value = a?.eszamanliAkis ?? 4; $('#akNot').value = a?.notlar ?? '';
+  d.querySelector('details').open = false; $('#akHata').hidden = true;
+  d.dataset.mevcut = a?.id ?? ''; pencereAc('anahtarDlg'); ilkAlan($('#akAd'));
+}
+$('#anahtarEkle').addEventListener('click', () => anahtarDialog());
+$('#anahtarForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const mevcut = $('#anahtarDlg').dataset.mevcut;
+  const g = { ad: $('#akAd').value.trim(), rol: $('#akRol').value || null, izinler: izinOku($('#akIzinler')), kapsam: kapsamOku($('#akKapsam')), bitis: $('#akBitis').value || null, ipler: iplerOku($('#akIpler').value), hizLimiti: Number($('#akHiz').value), eszamanliAkis: Number($('#akAkis').value), notlar: $('#akNot').value.trim() };
+  try {
+    if (mevcut) { await api(`/api/yetki/anahtarlar/${mevcut}`, { method: 'PATCH', body: JSON.stringify(g) }); bildir('Anahtar güncellendi', 'success'); }
+    else { const r = await api('/api/yetki/anahtarlar', { method: 'POST', body: JSON.stringify(g) }); pencereKapat('anahtarDlg'); gizliGoster(`API anahtarı: ${r.kayit.ad}`, r.anahtar); }
+    pencereKapat('anahtarDlg'); anahtarListeYenile();
+  } catch (err) { $('#akHata').textContent = err.message; $('#akHata').hidden = false; }
+});
+$('#cikis').addEventListener('click', async () => { try { await api('/api/cikis', { method: 'POST' }); } catch {} location.reload(); });
+/** Avatar: adin bas harfleri (EYS topbar__avatar). "ali.veli" / "Ali Veli" -> AV, "admin" -> AD. */
+const basHarfler = (ad) => { const p = String(ad ?? '').split(/[\s._@-]+/).filter(Boolean); return (p.length > 1 ? p[0][0] + p[1][0] : (p[0] ?? '?').slice(0, 2)).toLocaleUpperCase('tr'); };
+// Dil: hesap menusundeki tek oge diger dile gecer (TR -> "English", EN -> "Türkçe"); metin dil.js cevirisine girmez.
+{ const d = $('#dilDegis'), ote = dil === 'en' ? 'tr' : 'en'; d.textContent = ote === 'en' ? 'English' : 'Türkçe'; d.lang = ote; d.translate = false; d.addEventListener('click', () => window.DIL?.degistir(ote)); }
+function rolUygula() {
+  $('#kimlik').textContent = ben.ad; $('#kimlik').title = rolAdi(ben.rol);
+  $('#kimlikBas').textContent = basHarfler(ben.ad);
+  $('[data-s=indirilen]').hidden = true;                                       // indirme kuyruğu/önbellek yok: doğrudan akar
+  for (const s of ['cihaz', 'gunluk', 'guncelleme']) $(`#sekmeler [data-s=${s}]`).hidden = !izinli(s);
+  $('[data-s=uyeler]').hidden = !izinli('uyeler') && !izinli('yetki');          // Yetki de bu menunun icinde
+  if (!izinVar('*') && !izinVar('cihaz.yonet')) document.body.dataset.rol = 'kullanici';
+  $('#tumSil').closest('.panel').hidden = true;   // NVR'larda kayit silme panelden yapilmaz (bolum yalniz eski XM surumu icin)
+  $('#arsivListe').closest('.panel').hidden = !izinVar('cihaz.yonet'); $('#aSayfa').hidden = !izinVar('cihaz.yonet');
+  $('#cihazEkle').hidden = !izinVar('cihaz.yonet');
+  yetkiSekmeAc(yetkiSekme);
+  liveBagGoster();
+}
+/** /live (gecici, ayri site) bağlantısı: yalnız admin; site kaldırılınca (yanıt yok) kendiliğinden gizli kalır. */
+async function liveBagGoster() {
+  if (!yonetici()) return;
+  try { $('#liveBag').hidden = !(await fetch('/live/kameralar.json', { method: 'HEAD', cache: 'no-store' })).ok; } catch {}
+}
+
+// ---------- guncelleme (yalnizca bakar) ----------
+const GUNCELLEME_DURUM = {
+  guncel: ['güncel', 'green'], yeni: ['yeni sürüm var', 'blue'], ileride: ['son derlemeden ileride', 'yellow'],
+  ayrisik: ['main dalında değil', 'yellow'], bilinmiyor: ['çalışan sürüm bilinmiyor', 'yellow'], hata: ['kontrol edilemedi', 'red'],
+};
+const kisaSha = (s) => (s ? String(s).slice(0, 7) : '—');
+const tarihYaz = (iso) => (iso ? new Date(iso).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+function guncellemeCiz(g) {
+  const son = g.son, uyari = $('#guncellemeUyari');
+  uyari.hidden = !g.yeniVar;
+  if (g.yeniVar) $('#guncellemeUyariYazi').textContent = `Çalışan sürüm ${son.geride ?? 0} commit geride.`;
+  const k = $('#guncellemeBilgi'); k.replaceChildren(); const satir = satirYap(k);
+  satir('Çalışan sürüm', el('span', { class: 'mono', title: g.calisan ?? '' }, g.calisan ? kisaSha(g.calisan) : 'bilinmiyor'));
+  satir('Depo', el('span', { class: 'mono' }, g.depo));
+  if (!son) { satir('Son kontrol', 'henüz yapılmadı'); $('#guncellemeCommitPanel').hidden = true; return; }
+  const [etiket, renk] = GUNCELLEME_DURUM[son.durum] ?? [son.durum, 'gray'];
+  satir('Durum', el('span', {}, el('span', { class: `badge badge--${renk}` }, etiket), son.aciklama ? el('span', { class: 'text-sm text-muted' }, ` · ${son.aciklama}`) : ''), son.durum === 'hata');
+  if (son.calisan !== g.calisan) satir('', 'Bu sonuç önceki sürümle alınmış; panel o zamandan beri güncellendi. Yeniden kontrol edin.');
+  if (son.son) satir('Son başarılı derleme', el('span', {}, el('span', { class: 'mono', title: son.son }, kisaSha(son.son)), ` · ${tarihYaz(son.son_tarih)}`));
+  satir('Son kontrol', `${tarihYaz(son.zaman)} · ${son.tetikleyen ?? '—'}`);
+  const c = son.commitler ?? [];
+  $('#guncellemeCommitPanel').hidden = !c.length;
+  const daha = Math.max(0, (son.geride ?? 0) - c.length);
+  $('#guncellemeCommitler').replaceChildren(tablo(['Commit', 'Başlık', 'Tarih'], c.map((x) => el('tr', {}, el('td', { class: 'mono' }, kisaSha(x.sha)), el('td', {}, x.baslik), el('td', { class: 'text-sm' }, tarihYaz(x.tarih))))),
+    ...(daha ? [el('p', { class: 'text-sm text-muted panel__body' }, `ve ${daha} commit daha.`)] : []));
+}
+async function guncellemeYenile() {
+  try { guncellemeCiz(await api('/api/guncelleme')); } catch (err) { $('#guncellemeBilgi').replaceChildren(hataYaz(err.message)); }
+}
+$('#guncellemeDenetle').addEventListener('click', async () => {
+  const d = $('#guncellemeDenetle'); d.disabled = true;
+  try {
+    const g = await api('/api/guncelleme/denetle', { method: 'POST' }); guncellemeCiz(g);
+    const s = g.son?.durum;
+    bildir(s === 'hata' ? `Kontrol edilemedi: ${g.son.aciklama ?? ''}` : s === 'guncel' ? 'Kontrol edildi: panel son sürümde.' : `Kontrol edildi: ${g.son?.aciklama ?? ''}`, s === 'hata' ? 'danger' : 'success');
+  } catch (err) { bildir(err.message, 'danger'); } finally { d.disabled = false; }
+});
+
+// ---------- acilis ----------
+(async () => {
+  try { ben = await api('/api/ben'); } catch { return; }
+  try { if (izinVar('uye.yonet') || izinVar('yetki.yonet') || izinVar('api.anahtar')) roller = await api('/api/yetki/roller'); } catch {}
+  rolUygula();
+  // Gorunum tercihleri canli izgaradan ONCE: Hepsi sirasi ve sayisi ilk cizimde dogru olsun.
+  await Promise.all([bilgiAl(), ben?.tur === 'uye' && izinVar('canli.izle') ? tercihAl() : null]);
+  if (bilgi) canliKur(); else { $('#izgara').replaceChildren(hataYaz('Cihaza ulaşılamadı. Adres/parola: kamera\\ayar.json ya da KAMERA_* ortam değişkenleri')); kameraListeCiz(); }
+  const s = location.hash.slice(1); sekmeAc(izinli(s) ? s : 'canli');
+  isIzle();
+  if (izinli('guncelleme')) guncellemeYenile();
+  // Cihaz baglantisi koptuysa kendiliginden toparlanir (sayfa yenilemek gerekmez).
+})();
+</script>
+</body>
+</html>

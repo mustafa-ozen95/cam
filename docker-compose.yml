@@ -1,0 +1,82 @@
+# =============================================================================
+#  Kamera paneli — Compose (compose-spec.io)
+# =============================================================================
+#  Her ortamda aynı dosya: `docker compose up -d --build`, NineDeploy, Coolify,
+#  Dokploy, Portainer... Ayarların hepsi ortamdan gelir (.env ya da platformun
+#  değişken ekranı); liste .env.example'da.
+#
+#  HTTP portu dışarı AÇILMAZ: alan adını ve TLS'i önündeki vekil (platformun
+#  kendisi) verir, panele konteyner ağından 80'den ulaşır. Vekilsiz, doğrudan
+#  porttan kullanmak için docker-compose.override.example.yml.
+#
+#  /live: görüntüyü kamera-rtc (mediamtx) verir. Tarayıcının bağlantı isteği
+#  panele gelir, panel onu mediamtx'e geçirir; vekilde ayrı kural gerekmez.
+#  Görüntünün kendisi tarayıcıyla mediamtx arasında 8189/udp'den akar.
+#
+#  Aynı sunucuda ikinci kurulum: ayrı klasör ve ayrı .env (KAMERA_KONTEYNER,
+#  KAMERA_RTC_KONTEYNER, KAMERA_VERI_VOLUME, KAMERA_RTC_PORT, KAMERA_CEREZ).
+# =============================================================================
+
+services:
+  cam:
+    build: .
+    container_name: ${KAMERA_KONTEYNER:-cam}
+    restart: unless-stopped
+    stop_grace_period: 1m
+    expose: ["80"]
+    environment:
+      KAMERA_BASLIK: ${KAMERA_BASLIK:-Kamera Paneli · NVR}
+      KAMERA_CEREZ: ${KAMERA_CEREZ:-nvr_oturum}
+      KAMERA_CIHAZLAR: ${KAMERA_CIHAZLAR:-}
+      KAMERA_ADMIN_PAROLA: ${KAMERA_ADMIN_PAROLA:-}
+      # Vekilin gerçek istemci adresini yazdığı başlık (NineDeploy/Traefik, Caddy, nginx: X-Real-IP).
+      KAMERA_IP_BASLIGI: ${KAMERA_IP_BASLIGI:-X-Real-IP}
+      # Boş = /live yalnız panelin içinde gömülebilir; tanımsızsa her yer (harici izleme panosu).
+      KAMERA_LIVE_CERCEVE: ${KAMERA_LIVE_CERCEVE-*}
+      # /live kayıtlı düzen yokken: virgülle kanal no (1'den), sırayla. Boş = ilk 12 kamera.
+      KAMERA_LIVE_VARSAYILAN: ${KAMERA_LIVE_VARSAYILAN:-}
+      # Boş bırakılırsa /live kapanır; kamera-rtc servisi o zaman gereksizdir.
+      KAMERA_RTC_API: ${KAMERA_RTC_API-http://kamera-rtc:9997}
+      KAMERA_KIMLIK_ADRES: ${KAMERA_KIMLIK_ADRES:-}
+      KAMERA_KIMLIK_ISTEMCI: ${KAMERA_KIMLIK_ISTEMCI:-}
+      KAMERA_KIMLIK_SIR: ${KAMERA_KIMLIK_SIR:-}
+      KAMERA_KIMLIK_DONUS: ${KAMERA_KIMLIK_DONUS:-}
+      KAMERA_KIMLIK_BILDIRIM_SIR: ${KAMERA_KIMLIK_BILDIRIM_SIR:-}
+      KAMERA_KIMLIK_AD: ${KAMERA_KIMLIK_AD:-}
+      KAMERA_KIMLIK_DOGRULAMA_DAKIKA: ${KAMERA_KIMLIK_DOGRULAMA_DAKIKA:-}
+      KAMERA_KIMLIK_ROL_ESLEME: ${KAMERA_KIMLIK_ROL_ESLEME:-}
+      KAMERA_KIMLIK_VARSAYILAN_ROL: ${KAMERA_KIMLIK_VARSAYILAN_ROL:-}
+      GUNCELLEME_JETONU: ${GUNCELLEME_JETONU:-}
+    volumes:
+      - veri:/app/veri
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1/api/v1/saglik').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  kamera-rtc:
+    build:
+      context: .
+      dockerfile: docker/rtc.Dockerfile
+    container_name: ${KAMERA_RTC_KONTEYNER:-cam-rtc}
+    restart: unless-stopped
+    environment:
+      # Tarayıcıya verilecek sunucu adresi (IP ya da ad, virgülle birden çok).
+      # Boşsa mediamtx konteynerin kendi adresini verir ve dışarıdan görüntü gelmez.
+      MTX_WEBRTCADDITIONALHOSTS: ${KAMERA_RTC_ADRES:-}
+    ports:
+      # WebRTC medyası; HTTP değil, vekil taşımaz.
+      - "${KAMERA_RTC_PORT:-8189}:8189/udp"
+
+networks:
+  default:
+    # Ağ yalıtımı: true iken konteynerler NVR'lara ve dışarıya bağlanamaz
+    # (taşıma ya da deneme kurulumunda canlı cihazlara dokunmamak için).
+    internal: ${AG_YALITIMI:-false}
+
+volumes:
+  veri:
+    # Üye, günlük, kanal ve cihaz verisi; mevcut bir kurulumun verisi için adını verin.
+    name: ${KAMERA_VERI_VOLUME:-cam_veri}

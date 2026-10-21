@@ -1,0 +1,646 @@
+/*
+ * Sütun yerleşimi.
+ *
+ * Ekran bir üst çubuk ve yatay bir sütun şeridinden oluşur. Her sütun bir
+ * daralma adımıdır (ör. Grup → Kayıt); son sütun esner, en sağda
+ * isteğe bağlı detay paneli durur. Sayfa kavramı yoktur.
+ */
+
+.shell {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+}
+
+/* ── Üst çubuk ── */
+
+.topbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    height: var(--topbar-height);
+    padding: 0 var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+    background: var(--color-column);
+    flex-shrink: 0;
+}
+
+.topbar__mark {
+    font-size: var(--text-md);
+    font-weight: var(--weight-bold);
+    letter-spacing: -0.01em;
+}
+
+.topbar__spacer {
+    flex: 1;
+}
+
+.topbar__counts {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+}
+
+.topbar__user {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding-left: var(--space-3);
+    border-left: 1px solid var(--color-line);
+}
+
+.topbar__name {
+    font-size: var(--text-base);
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.topbar__avatar {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-full);
+    background: var(--color-selected);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semibold);
+}
+
+/* ── Sütun şeridi ── */
+
+.columns {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    overflow-x: auto;
+}
+
+.column {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    min-height: 0;
+    width: var(--column-medium);
+    background: var(--color-column);
+    border-right: 1px solid var(--color-line);
+}
+
+.column--narrow { width: var(--column-narrow); }
+.column--wide { width: var(--column-wide); }
+
+/* Esneyen sütun: seçili nesnenin kayıtları. Zemini bir ton koyu. */
+.column--fill {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+    background: var(--color-column-alt);
+}
+
+.column__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+    flex-shrink: 0;
+}
+
+.column__count {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+}
+
+.column__hint {
+    margin-left: auto;
+    display: flex;
+    gap: var(--space-2);
+}
+
+/* Sütun başlığındaki filtre kutusu, sayaçtan sonra gelir. */
+.column__filter {
+    margin-left: var(--space-4);
+}
+
+.column__body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    /* Dikey boşluk satırların kendi dolgusundan gelir: gövdeye boşluk
+       verilirse yapışkan başlığın üstünden satır sızıyor. */
+    padding: 0;
+
+    /*
+     * ALTTA NEFES PAYI.
+     *
+     * Son satır pencerenin en dibine yapışıyordu: tarayıcı bağlantı
+     * adresini tam oraya basıyor ve satırın üstünü kapatıyor. Boşluk
+     * yalnızca kaydırmanın sonunda görünür, satır aralarına karışmaz.
+     */
+    padding-bottom: var(--space-7);
+}
+
+.column__body--padded {
+    padding: var(--space-5);
+}
+
+/* ── Detay paneli ── */
+
+.detail {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    width: var(--detail-width);
+    min-height: 0;
+    background: var(--color-column);
+    border-left: 1px solid var(--color-line);
+}
+
+.detail__head {
+    padding: var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+    flex-shrink: 0;
+}
+
+.detail__title {
+    font-family: var(--font-mono);
+    font-size: var(--text-md);
+    font-weight: var(--weight-medium);
+}
+
+.detail__subtitle {
+    margin-top: 2px;
+    color: var(--color-text-secondary);
+    font-size: var(--text-base);
+}
+
+.detail__title--plain {
+    font-family: var(--font-sans);
+}
+
+/* Detay panelinde bölüm içi ikinci blok. */
+.detail__block {
+    margin-top: var(--space-3);
+}
+
+.detail__body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* Kaydırma çubuğu belirince içerik genişliği değişmesin. */
+    scrollbar-gutter: stable;
+
+    /* Son bölüm alt kenara yapışmasın; bkz. .column__body. */
+    padding-bottom: var(--space-5);
+}
+
+.detail__section {
+    padding: var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+}
+
+.detail__foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    border-top: 1px solid var(--color-line);
+    flex-shrink: 0;
+}
+
+/* Panel dibindeki eylemler yan yana durur ve alanı paylaşır. */
+.detail__foot > .btn,
+.detail__foot > form > .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+}
+
+.detail__foot > form {
+    flex: 1 1 auto;
+    display: flex;
+}
+
+/* ── Tek sütunlu (form / yönetim) sayfalar ── */
+
+.page {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.page__inner {
+    max-width: 880px;
+    padding: var(--space-6) var(--space-5);
+}
+
+.page__inner--wide {
+    max-width: none;
+}
+
+/*
+ * Sayfa blokları birbirine yapışmaz.
+ *
+ * Paneller, formlar ve şeritler ardışık kardeşlerdir ve hiçbirinin dış
+ * boşluğu yoktu: iki kart yan yana geldiğinde aralarında yalnızca iki
+ * çizgi kalıyor, tek bir kutuymuş gibi görünüyorlardı.
+ *
+ * Dikey boşluklar çöktüğü için başlığın ve sekme şeridinin kendi alt
+ * boşluğuyla çakışmaz; en büyüğü geçerli olur.
+ */
+.page__inner > * + * {
+    margin-top: var(--space-5);
+}
+
+.page-head {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-4);
+    padding-bottom: var(--space-5);
+    margin-bottom: var(--space-5);
+    border-bottom: 1px solid var(--color-line);
+}
+
+.page-head__text {
+    flex: 1;
+    min-width: 0;
+}
+
+.page-head__subtitle {
+    margin-top: var(--space-1);
+    color: var(--color-text-muted);
+    font-size: var(--text-base);
+}
+
+.page-head__actions {
+    display: flex;
+    gap: var(--space-3);
+}
+
+/* ── Giriş ekranı ── */
+
+/*
+ * Tema düğmesi giriş ekranında SAĞ ÜSTTE durur: panel içindeki yeriyle aynı
+ * köşe, böylece giren kişi onu aradığı yerde bulur.
+ */
+.gate__tema {
+    position: fixed;
+    top: var(--space-4);
+    right: var(--space-4);
+    z-index: var(--z-sticky);
+}
+
+.gate {
+    display: grid;
+    place-items: center;
+    height: 100dvh;
+    padding: var(--space-5);
+    background: var(--color-page);
+}
+
+.gate__panel {
+    width: 100%;
+    max-width: 330px;
+}
+
+.gate__mark {
+    font-size: var(--text-xl);
+    font-weight: var(--weight-bold);
+    letter-spacing: -0.02em;
+    margin-bottom: var(--space-2);
+}
+
+.gate__lead {
+    color: var(--color-text-muted);
+    font-size: var(--text-base);
+    margin-bottom: var(--space-6);
+}
+
+.gate__alert {
+    margin-bottom: var(--space-5);
+}
+
+/*
+ * "veya" ayracı: iki giriş yolunu birbirinden ayırır.
+ *
+ * Çizgi metnin ARDINDAN geçmez; iki yanına ayrı iki parça olarak konur, yoksa
+ * arka planı boyayan bir sözcük kutusu gerekirdi ve tema değiştiğinde o kutu
+ * zeminden ayrı düşerdi.
+ */
+.gate__ayrac {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: var(--space-3);
+    margin: var(--space-5) 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+}
+
+.gate__ayrac::before,
+.gate__ayrac::after {
+    content: '';
+    height: 1px;
+    background: var(--color-line);
+}
+
+/*
+ * Katlanmış parola formu.
+ *
+ * Merkez açıkken ikinci yol görünmez ama YOK DEĞİL: başlığa tıklayınca
+ * açılır. Ok işaretini kendimiz çiziyoruz — tarayıcının varsayılan üçgeni
+ * her platformda farklı boyda ve hizası şeridin geri kalanıyla tutmuyor.
+ */
+.gate__katlanir-baslik {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    cursor: pointer;
+    list-style: none;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    user-select: none;
+}
+
+.gate__katlanir-baslik::-webkit-details-marker {
+    display: none;
+}
+
+.gate__katlanir-baslik::before {
+    content: '';
+    width: 0;
+    height: 0;
+    border-left: 4px solid currentColor;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    transition: transform var(--transition-fast);
+}
+
+.gate__katlanir[open] > .gate__katlanir-baslik::before {
+    transform: rotate(90deg);
+}
+
+.gate__katlanir-baslik:hover {
+    color: var(--color-text);
+}
+
+/* Açıldığında form başlığa yapışmasın. */
+.gate__katlanir[open] > form {
+    margin-top: var(--space-4);
+}
+
+.gate__foot {
+    margin-top: var(--space-5);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-line);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+}
+
+/* ── Duyarlılık ──
+   Dar ekranda sütunlar yan yana durmaz: yalnızca en derin sütun gösterilir,
+   üsttekilere kırıntı yolundan dönülür. */
+
+/*
+ * Dar ekranda sütunlar gizlenmez, şerit yatay kayar. Gizlemek gezinmeyi
+ * koparıyordu: bir sütundan sonrakine geçilemiyor, tablette en sağdaki
+ * panele hiç ulaşılamıyordu.
+ */
+@media (max-width: 1100px) {
+    .columns {
+        scroll-snap-type: x proximity;
+        overscroll-behavior-x: contain;
+    }
+
+    .column {
+        width: 200px;
+        scroll-snap-align: start;
+    }
+
+    .column--fill {
+        flex: none;
+        width: 620px;
+        min-width: 620px;
+    }
+
+    .detail {
+        width: 300px;
+        min-width: 300px;
+    }
+}
+
+@media (max-width: 820px) {
+    .topbar {
+        height: auto;
+        min-height: var(--topbar-height);
+        flex-wrap: wrap;
+        padding: var(--space-2) var(--space-3);
+        gap: var(--space-2) var(--space-3);
+    }
+
+    /*
+     * Bölüm menüsü kendi satırına iner ve SARMALAR.
+     *
+     * Önce yatay kayıyordu: sığmayan bölümler sağda kesik kalıyor, oraya
+     * ulaşmak için şeridi parmakla kaydırmak gerekiyordu; gizli kalan bir
+     * bölüm, olmayan bir bölümdür. Artık hepsi alt alta görünüyor; menü bir iki
+     * satır daha yer kaplıyor ama hiçbir bölüm saklanmıyor.
+     */
+    .topbar__nav {
+        order: 3;
+        width: 100%;
+        flex-wrap: wrap;
+        row-gap: var(--space-1);
+        overflow-x: visible;
+        padding-bottom: 2px;
+    }
+
+    .topbar__counts,
+    /* Dar ekranda ad yerine yalnızca baş harfler kalır. */
+    .topbar__name {
+        display: none;
+    }
+
+    /*
+     * Telefonda her bölme TAM ekran kaplar ve bir parmak hareketi bir bölme
+     * ilerletir.
+     *
+     * Bölmeler ekrandan darken tek geçiş 3-4 hareket sürüyordu: kaydırma
+     * bölmenin ortasında kalıyor, hangi bölmede olunduğu da belirsizleşiyordu.
+     *
+     * Hizalama KESİN (mandatory): yavaş ya da kısa bir hareket de bölmeyi
+     * tamamlar, yarım kalmaz. Bölmelerin hepsi tam ekran olduğu için hizalama
+     * noktaları bölme kenarlarıyla çakışır — daha önce bölmeler farklı
+     * genişlikteyken "mandatory" programlı kaydırmayı geri itip tıklamayı
+     * bozuyordu, artık öyle bir uyuşmazlık yok.
+     *
+     * scroll-snap-stop: always — hızlı bir hareket bölmeleri atlamaz, her
+     * seferinde bir sayfa ilerlenir.
+     */
+    .columns {
+        scroll-snap-type: x mandatory;
+    }
+
+    .column,
+    .column--fill,
+    .detail {
+        width: 100vw;
+        min-width: 100vw;
+        max-width: none;
+        scroll-snap-align: start;
+        scroll-snap-stop: always;
+    }
+
+    .column__head {
+        flex-wrap: wrap;
+        gap: var(--space-2) var(--space-3);
+    }
+
+    .column__head .filter {
+        order: 3;
+        width: 100%;
+        margin-left: 0 !important;
+    }
+
+    .page__inner {
+        padding: var(--space-4) var(--space-3);
+    }
+
+    .page-head {
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 480px) {
+    .form-actions {
+        flex-direction: column;
+    }
+
+    .form-actions .btn {
+        width: 100%;
+    }
+
+    /* Yönetim tabloları dar ekranda yatay kayar, satırlar bozulmaz. */
+    .table {
+        min-width: 560px;
+    }
+}
+
+/* Üst çubuktaki bölüm bağlantıları */
+.topbar__nav {
+    display: flex;
+    gap: var(--space-1);
+}
+
+/*
+ * Yatay kayan şeritlerde çubuk GİZLENİR.
+ *
+ * Bölüm menüsü, kırıntı yolu, sekme şeridi ve sütun şeridi dar ekranda kayar;
+ * tarayıcının çizdiği çubuk hem yer kaplıyor hem de arayüzün içinde bir kutu
+ * varmış gibi duruyordu. Kaydırma çalışmaya devam eder, yalnızca çubuk
+ * çizilmez.
+ *
+ * Yatay kayan HER şerit bu listede olmalı: biri eksik kalırsa aynı arayüzde
+ * kimi şeritte çubuk çıkar kimisinde çıkmaz.
+ */
+.topbar__nav,
+.tabs,
+.pagination,
+.columns {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.topbar__nav::-webkit-scrollbar,
+.tabs::-webkit-scrollbar,
+.pagination::-webkit-scrollbar,
+.columns::-webkit-scrollbar {
+    display: none;
+}
+
+.topbar__link {
+    /*
+     * Bağlantı DARALMAZ ve metni kırılmaz: dar ekranda iki sözcüklü bölüm
+     * adları iki satıra düşüyor, "Kullanıcılar" ortadan kesiliyordu. Şerit yatay kayar,
+     * yazı bölünmez.
+     */
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-base);
+    font-weight: var(--weight-medium);
+    color: var(--color-text-muted);
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.topbar__link:hover {
+    background: var(--color-hover);
+    color: var(--color-text);
+}
+
+.topbar__link[aria-current='page'] {
+    background: var(--color-selected);
+    color: var(--color-text);
+}
+
+/* İki sütunlu sayfa: solda ana içerik, sağda yardımcı panel. */
+.split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-5);
+}
+
+.split__side {
+    position: sticky;
+    top: var(--space-5);
+}
+
+@media (max-width: 1024px) {
+    .split {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .split__side {
+        position: static;
+    }
+}
+
+/*
+ * 403 — yetkisiz erişim denemesi.
+ *
+ * 404 ile aynı kalıpta gösterilince yetki reddi sıradan bir hata gibi
+ * görünüyordu. Ayrım renkle değil ANLAMLA kuruluyor: kalkan simgesi ve
+ * denenen yol. Renk yalnızca destekliyor; tek başına taşımıyor, çünkü
+ * renk körlüğünde ve yüksek karşıtlık kipinde kaybolur.
+ */
+.gate__mark--uyari {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--color-red-fg);
+}
+
+.gate__mark--uyari svg {
+    width: 1.1em;
+    height: 1.1em;
+    flex: none;
+}
+
+/* Denenen yol: kullanıcı yanlış bağlantıya tıkladıysa hangisi olduğunu görsün. */
+.gate__yol {
+    background: var(--color-red-bg);
+    border-radius: var(--radius-sm);
+    color: var(--color-red-fg);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-5);
+    overflow-wrap: anywhere;
+    padding: var(--space-2) var(--space-3);
+}
+
+.gate__lead--kucuk {
+    font-size: var(--text-sm);
+}

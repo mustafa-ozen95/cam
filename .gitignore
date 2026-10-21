@@ -1,0 +1,6 @@
+veri/
+ayar.json
+.env
+docker-compose.override.yml
+# Imajda derlemede yazilir (Dockerfile); depoya girmez.
+/SURUM

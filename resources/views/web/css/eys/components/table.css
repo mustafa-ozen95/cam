@@ -1,0 +1,222 @@
+/*
+ * Yönetim ekranlarının tablosu. Sütun şeridi kullanmayan sayfalarda
+ * (kullanıcılar, kayıtlar) kullanılır; sütun satırlarıyla aynı ritmi korur.
+ */
+
+.table-wrap {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table th {
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    text-align: left;
+    white-space: nowrap;
+}
+
+/*
+ * Hizalama yardımcısı BAŞLIKTA da geçerli olmalı.
+ *
+ * `.table th` sola hizalıyor ve seçici olarak `.text-right`ten baskın;
+ * sayı sütununda değer sağa, başlığı sola kayıyordu.
+ */
+.table th.text-right { text-align: right; }
+
+.table td {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+    font-size: var(--text-md);
+    vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.table tbody tr:hover td {
+    background: var(--color-hover);
+}
+
+.table__cell--mono {
+    font-family: var(--font-mono);
+    font-size: var(--text-base);
+}
+
+.table__cell--right { text-align: right; }
+.table__cell--tight { width: 1%; white-space: nowrap; }
+
+.table__row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-1);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.table tbody tr:hover .table__row-actions,
+.table__row-actions:focus-within {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    .table__row-actions { opacity: 1; }
+}
+
+/*
+ * Dar ekranda tablo yatay kaydırılmaz: her satır kendi bloğuna dönüşür ve
+ * sütun başlıkları hücrelerin önüne etiket olarak iner. Yatay kaydırma
+ * telefonda sütunların yarısını görünmez yapıyordu.
+ *
+ * Etiketler <td data-label="..."> ile verilir.
+ */
+@media (max-width: 720px) {
+    .table {
+        min-width: 0;
+    }
+
+    .table thead {
+        display: none;
+    }
+
+    .table,
+    .table tbody,
+    .table tr {
+        display: block;
+        width: 100%;
+    }
+
+    .table tr {
+        padding: var(--space-3) var(--space-4);
+        border-bottom: 1px solid var(--color-line);
+    }
+
+    .table tbody tr:hover td {
+        background: transparent;
+    }
+
+    /*
+ * Hizalama yardımcısı BAŞLIKTA da geçerli olmalı.
+ *
+ * `.table th` sola hizalıyor ve seçici olarak `.text-right`ten baskın;
+ * sayı sütununda değer sağa, başlığı sola kayıyordu.
+ */
+.table th.text-right { text-align: right; }
+
+.table td {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--space-4);
+        width: 100%;
+        padding: 2px 0;
+        border: 0;
+    }
+
+    .table td::before {
+        content: attr(data-label);
+        flex: 0 0 auto;
+
+        /*
+         * Etiketler ortak bir genişlikten başlar: aksi hâlde her satırda
+         * değer/kutu farklı yerden başlıyor ve blok tırtıklı görünüyordu.
+         * min-width, uzun etiketin taşmasına izin verir.
+         */
+        min-width: 6.5rem;
+        font-size: var(--text-sm);
+        color: var(--color-text-muted);
+
+        /*
+         * Etiket HER ZAMAN sola yaslanır.
+         *
+         * Sayı sütunları .text-right taşıyor ve hizalama etikete de geçiyordu:
+         * "Kayıt", "Görebilen", "Sıra" etiketleri kendi şeritlerinin sağına
+         * kaçıp "Ad", "Tür", "Açıklama" ile aynı hizada durmuyordu — etiket
+         * sütunu tırtıklı görünüyordu. Değerin sağa yaslanması doğru; etiketin
+         * değil.
+         */
+        text-align: left;
+    }
+
+    /*
+     * ETİKETSİZ HÜCRE: satır eylemleri.
+     *
+     * İki şey birden gerekiyor ve ikisi de TEK yerde durmalı — bu kural bir
+     * kez kopyalandı ve kopya "sola yasla" derken aslı "sağa yasla" diyordu;
+     * sonra gelen kazanıyordu.
+     *
+     * 1. Şerit AÇILMAZ. `content: attr(data-label)` özniteliği olmayan
+     *    hücrede boş dizeye dönüşüyor ama kutu yine çiziliyor ve 6,5rem'lik
+     *    etiket şeridini ayırıyordu: satırın solunda sahipsiz bir boşluk
+     *    kalıyordu.
+     * 2. Eylemler SAĞA yaslanır. Değerler sağda hizalanırken düğmelerin sola
+     *    kaçması satırı iki ayrı hizaya bölüyordu.
+     */
+    .table td:not([data-label]) {
+        justify-content: flex-end;
+        padding-top: var(--space-3);
+    }
+
+    .table td:not([data-label])::before {
+        display: none;
+    }
+
+    .table__cell--right,
+    .table__cell--tight {
+        width: 100%;
+        text-align: left;
+        white-space: normal;
+    }
+
+    .table__row-actions {
+        justify-content: flex-end;
+        flex-wrap: wrap;
+    }
+}
+
+/* Yetki matrisi */
+.permission-wildcards {
+    gap: var(--space-5);
+}
+
+.permission-records {
+    margin-top: var(--space-5);
+}
+
+/* Kayıt bütünlüğü şeridi: tablonun üstünde, tablonun boşluğuyla hizalı. */
+.log-integrity {
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+}
+
+/*
+ * Özet + ayrıntı düğmesi: düğme metnin taban çizgisine değil ortasına
+ * oturur ve metinden ayrı durur; taban çizgisi hizası düğmeyi aşağı itiyordu.
+ */
+.log-ozet {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    vertical-align: middle;
+}
+
+.log-ozet > .btn {
+    flex: 0 0 auto;
+    color: var(--color-text-muted);
+}
+
+.log-ozet > .btn:hover {
+    color: var(--color-text);
+}

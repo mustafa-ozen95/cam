@@ -1,0 +1,175 @@
+/*
+ * Toplu işlem şeridi: "tümü" kutusu ve düğme.
+ *
+ * Liste başlığının içinde durur; dar ekranda kendi satırına iner (başlık
+ * zaten sarmalanıyor).
+ */
+
+.bulk {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+
+    /*
+     * ŞERİT SARMALAR, TAŞMAZ.
+     *
+     * Dar ekranda `.bulk__all` bütün satırı alıyor (aşağıdaki 820px kuralı).
+     * Sarmalama yoksa düğme kutunun DIŞINA taşıyor ve kutu bir yere
+     * kırpılmıyorsa komşu içeriğin üstüne biniyor: 390 piksel genişlikte
+     * düğme komşu bölmenin üstünde durabiliyor — kendi bölmesi ekranın
+     * dışındayken bile.
+     */
+    flex-wrap: wrap;
+}
+
+.bulk__all {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.bulk__all:hover {
+    color: var(--color-text);
+}
+
+/* "kaçı hazır" — şeritte küçük ve sessiz durur, düğmeyle yarışmaz. */
+.bulk__ready {
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+}
+
+/* Seçilecek kayıt yokken şerit sessizleşir: tıklanacak bir şey olmadığını göstersin. */
+.bulk__all--empty {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/*
+ * DAR EKRANDA ŞERİT DÜZENİ.
+ *
+ * Başlık satırı telefonda sarmalanıyor ve şeridin parçaları kendi başlarına
+ * kalan boşluğa dağılıyordu: "Tümü 12/31 hazır" üç satıra bölünüyor, iki
+ * güncelleme düğmesi farklı genişliklerde duruyor ve "Yeni kayıt" tek başına
+ * sola düşüyordu.
+ *
+ * Düzen artık satır satır kuruluyor: sayaç kendi satırında ve TEK PARÇA,
+ * güncelleme düğmeleri genişliği eşit paylaşıyor, "Yeni kayıt" en altta tam
+ * genişlikte duruyor.
+ */
+/*
+ * SEÇİCİLER TORUNU DA KAPSAR: şeritler telefonda `.toplu-araclar` sarmalının
+ * içinde (display: contents). Sarmal yerleşimde görünmez ama DOM'da durur;
+ * "doğrudan çocuk" (>) seçicisi eşleşmeyince şeritler genişliksiz kalıp
+ * düğmenin yanına diziliyordu.
+ */
+@media (max-width: 820px) {
+    .column__head .bulk {
+        flex-wrap: wrap;
+        width: 100%;
+        gap: var(--space-2);
+    }
+
+    /*
+     * Sayaç kendi satırını alır ve KIRILMAZ: "12/31 hazır" ile "Tümü" ayrı
+     * satırlara düşünce cümle okunmuyordu.
+     */
+    .bulk__all {
+        flex: 1 0 100%;
+        white-space: nowrap;
+    }
+
+    /* İki güncelleme düğmesi genişliği eşit paylaşır. */
+    .column__head .bulk > .btn {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    /*
+     * "Yeni kayıt" kendi satırında ve tam genişlikte: başka düğmelerle aynı
+     * satırı paylaşmaya çalışınca yarım kalıp sola yapışıyordu.
+     */
+    .column__head > .btn--primary {
+        width: 100%;
+    }
+
+    /* Boşluk itici dar ekranda hizalayacak bir şey bulamıyor. */
+    .column__head > .spacer {
+        display: none;
+    }
+
+    /*
+     * ÇIKTI DÜĞMELERİ YAN YANA.
+     *
+     * "Excel çıktısı" ve "Tüm kasanın çıktısı" ayrı formlar ve her biri
+     * yukarıdaki kuralla tam satır alıyordu: başlık telefonda ekranın
+     * yarısını kaplıyordu. Tek düğmelik şeritler genişliği paylaşır; yalnızca
+     * seçim kutulu toplu güncelleme şeridi tam satır kalır.
+     */
+    .column__head .bulk:not([data-bulk-form]) {
+        width: auto;
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .column__head .bulk:not([data-bulk-form]) > .btn {
+        width: 100%;
+        min-width: 0;
+    }
+
+    /* Satırlar arası boşluk bir kademe azalır; şerit zaten dört satır. */
+    .column__head {
+        row-gap: var(--space-2);
+    }
+}
+
+/*
+ * TOPLU ARAÇLAR SARMALI.
+ *
+ * Geniş ekranda sarmal yoktur: `display: contents` içindekileri başlığın
+ * doğrudan çocuğu gibi dizer, düğme görünmez. Dar ekranda araçlar katlı
+ * gelir; "Toplu işlemler" düğmesi onay kutusunu değiştirir, kutu da
+ * araçları açar. Betik gerekmez ve yerinde yenilemede de çalışır.
+ */
+.toplu-araclar {
+    display: contents;
+}
+
+.toplu-araclar__dugme {
+    display: none;
+}
+
+@media (max-width: 820px) {
+    .toplu-araclar {
+        display: none;
+    }
+
+    .toplu-araclar__kutu:checked ~ .toplu-araclar {
+        display: contents;
+    }
+
+    /* Düğme ile "Yeni kayıt" aynı satırı paylaşır; araçlar açılınca altına iner. */
+    .toplu-araclar__dugme {
+        display: inline-flex;
+        order: 1;
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .toplu-araclar__kutu:checked ~ .toplu-araclar__dugme {
+        background: var(--color-selected);
+    }
+
+    .column__head > .btn--primary {
+        order: 1;
+        width: auto;
+        flex: 1 1 0;
+    }
+
+    .toplu-araclar > * {
+        order: 2;
+    }
+}

@@ -1,0 +1,75 @@
+/*
+ * KATLANIR PANEL — grup listesi.
+ *
+ * Hepsi birden açık olunca ekran, birkaç kayıtta bile okunamaz bir yığına
+ * dönüşür. Günlük iş "neler var" sorusudur; ayrıntı nadiren gerekir.
+ *
+ * Panel kabuğunu taklit eder ki liste, sayfanın geri kalanıyla aynı dilde
+ * dursun.
+ */
+.katlanir {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+}
+
+.katlanir + .katlanir {
+    margin-top: var(--space-4);
+}
+
+.katlanir__baslik {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    cursor: pointer;
+    list-style: none;
+}
+
+.katlanir__baslik::-webkit-details-marker {
+    display: none;
+}
+
+/* Oku kendimiz çiziyoruz: tarayıcının üçgeni her platformda farklı boyda. */
+.katlanir__baslik::before {
+    content: '';
+    flex-shrink: 0;
+    width: 0;
+    height: 0;
+    border-left: 4px solid var(--color-text-muted);
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    transition: transform var(--transition-fast);
+}
+
+.katlanir[open] > .katlanir__baslik::before {
+    transform: rotate(90deg);
+}
+
+.katlanir__ad {
+    font-weight: var(--weight-semibold);
+}
+
+.katlanir__ek {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* Başlıktaki eylemler sağa yaslanır; tıklanınca panel açılıp kapanmaz. */
+.katlanir__eylemler {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.katlanir__govde {
+    border-top: 1px solid var(--color-line);
+}
+
+.katlanir__govde .table {
+    width: 100%;
+}

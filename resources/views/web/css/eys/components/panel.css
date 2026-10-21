@@ -1,0 +1,175 @@
+/*
+ * Panel — kart değil. Gölgesiz, yalnızca çizgiyle ayrılmış bölüm.
+ */
+
+.panel {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+
+    /*
+     * Grid/flex çocuğunun en küçük genişliği varsayılan olarak İÇERİĞİ
+     * kadardır: içeride sarmalanmayan geniş bir metin (uzun bir mono satır)
+     * panelin kendisini gerer ve sayfa yatay kayar. Sıfırlanınca
+     * taşan içerik kendi kutusunda kayar, sayfa kaymaz.
+     */
+    min-width: 0;
+}
+
+/*
+ * Ardışık paneller birbirine yapışmaz.
+ *
+ * Dış boşluk olmazsa iki kart yan yana geldiğinde aralarında yalnızca iki
+ * çizgi kalır ve tek bir kutuymuş gibi görünürler. Aynı form içindeki
+ * paneller de bu kurala girer.
+ */
+.panel + .panel {
+    margin-top: var(--space-5);
+}
+
+/*
+ * Yan yana panel ızgarası.
+ *
+ * Aralığı KAP verir (gap); kardeş boşluğu burada geçersizdir. Aksi hâlde
+ * ızgaradaki ilk karttan sonraki her kart bir boşluk kadar aşağı kayar ve
+ * aynı satırdaki kartlar farklı yükseklikte görünür.
+ */
+.panel-izgara {
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+}
+
+.panel-izgara > .panel + .panel,
+.panel-izgara > .panel {
+    margin-top: 0;
+}
+
+
+.panel__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+}
+
+.panel__title {
+    font-size: var(--text-md);
+    font-weight: var(--weight-semibold);
+}
+
+.panel__actions {
+    margin-left: auto;
+    display: flex;
+    gap: var(--space-2);
+}
+
+.panel__body {
+    padding: var(--space-4);
+}
+
+.panel__body--flush {
+    padding: 0;
+}
+
+/*
+ * Flush panelde kendi yatay boşluğunu taşıyan bölüm.
+ *
+ * Tablo hücreleri kendi boşluklarını taşıdığı için tabloyla aynı panelde
+ * duran bir metin bloğu, panelin gövde boşluğuna bırakılırsa tablodan
+ * içeride başlar ve iki blok hizasız görünür. Boşluk tablo hücresiyle
+ * BİREBİR aynıdır; ikisi aynı yerde başlayıp aynı yerde biter.
+ */
+.panel__block {
+    padding: var(--space-3) var(--space-4);
+}
+
+.panel__block:not(:last-child) {
+    border-bottom: 1px solid var(--color-line);
+}
+
+/* Anahtar/değer listesi — detay panelinin omurgası. */
+.facts {
+    display: flex;
+    flex-direction: column;
+}
+
+.facts__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--color-line);
+}
+
+.facts__row:last-child {
+    border-bottom: 0;
+}
+
+.facts__key {
+    color: var(--color-text-muted);
+    font-size: var(--text-base);
+
+    /* Etiket kısalmaz; daralacak olan değer sütunudur. */
+    flex: 0 0 auto;
+}
+
+/*
+ * Değer, satırın KALAN yerine sığar ve gerekirse kırılır.
+ *
+ * Boşluksuz uzun bir adres (bir lisans portalının bağlantısı) paneli aşıp
+ * kenardan kesiliyordu: esnek öğenin varsayılan `min-width: auto` değeri
+ * içeriğinden daha dar olmasına izin vermiyor. `min-width: 0` bu kilidi
+ * açar, `overflow-wrap: anywhere` de içinde kırılacak boşluk olmayan
+ * metnin sarılmasını sağlar — ikisi birlikte gerekiyor, biri tek başına
+ * yetmiyor.
+ */
+.facts__value {
+    font-family: var(--font-mono);
+    font-size: var(--text-base);
+    text-align: right;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+/* Rakam — kartsız istatistik. */
+.figure__value {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-medium);
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+/* Rakamın tonu bir durum bilgisidir; sınıf olarak verilir. */
+.figure__value--green  { color: var(--color-green-fg); }
+.figure__value--red    { color: var(--color-red-fg); }
+.figure__value--yellow { color: var(--color-yellow-fg); }
+.figure__value--blue   { color: var(--color-blue-fg); }
+.figure__value--gray   { color: var(--color-gray-fg); }
+
+.figure__label {
+    margin-top: var(--space-2);
+    font-size: var(--text-sm);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+.figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: var(--space-5);
+}
+
+/* Detay panelinde üç rakam yan yana sığmalı. */
+.figures--tight {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-4);
+}
+
+.figures--tight .figure__value {
+    font-size: var(--text-xl);
+}

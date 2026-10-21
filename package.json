@@ -1,0 +1,17 @@
+{
+  "name": "cam",
+  "version": "2.0.0",
+  "description": "Kamera paneli: NVR/DVR/IP kameralar için canlı izleme, kayıt, indirme; rol/izin tabanlı API",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "main": "bin/cam.mjs",
+  "scripts": {
+    "start": "node bin/cam.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:birim": "node --test test/yetki.test.mjs",
+    "test:api": "node --test test/api.test.mjs"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

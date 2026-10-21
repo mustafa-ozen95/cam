@@ -1,0 +1,57 @@
+# Canli izleme (/live) icin mediamtx. Yol YOK: panel API ile tanimlar; cihaz parolasi dosyaya yazilmaz
+# (bkz. src/services/live.mjs). docker/rtc.Dockerfile bu dosyayi imaja koyar.
+#
+# Sunucuya gore degisen tek ayar tarayiciya verilecek adres: webrtcAdditionalHosts. Ortamdan verilir
+# (compose: KAMERA_RTC_ADRES -> MTX_WEBRTCADDITIONALHOSTS, virgulle birden cok); mediamtx her ayari
+# MTX_<AD> degiskeniyle ezer.
+logLevel: warn
+logDestinations: [stdout]
+
+api: true
+apiAddress: :9997
+metrics: false
+pprof: false
+playback: false
+
+# RTSP yalnız konteyner içi (çevirici ffmpeg okur/yayınlar); port dışarı açık değil.
+rtsp: true
+rtspAddress: :8554
+rtmp: false
+hls: false
+srt: false
+
+webrtc: true
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: ''
+# Tarayıcıya yalnız sunucunun adresi verilir (konteynerin 172.x adresi değil).
+webrtcIPsFromInterfaces: false
+webrtcAdditionalHosts: []
+webrtcICEServers2: []
+
+# İzlemek herkese açık (üyeliksiz). Yayınlamak yalnız konteyner
+# içinden (çevirici), yönetim yalnız docker ağından (panel) ve sağlık denetiminden (127.0.0.1).
+authMethod: internal
+authInternalUsers:
+  - user: any
+    ips: []
+    permissions:
+      - action: read
+  - user: any
+    ips: ['127.0.0.1', '::1']
+    permissions:
+      - action: publish
+      - action: read
+  - user: any
+    # Yönetim portu (9997) dışarı açılmaz; konteyner ağı platforma göre bu özel aralıklardan birindedir.
+    ips: ['127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
+    permissions:
+      - action: api
+
+pathDefaults:
+  sourceOnDemandStartTimeout: 15s
+  sourceOnDemandCloseAfter: 15s
+  runOnDemandStartTimeout: 20s
+  runOnDemandCloseAfter: 15s
+
+paths: {}

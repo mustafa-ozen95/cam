@@ -1,0 +1,32 @@
+/*
+ * İki alanı yan yana koyan form satırı.
+ *
+ * (.fieldgroup bu iş için DEĞİLDİR: o, katlanabilir <details> kümesidir ve
+ * alanların etrafına çerçeve çizer.)
+ */
+
+.field-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: var(--space-4);
+    align-items: start;
+}
+
+/* Izgara boşluğu zaten var; alanın kendi üst boşluğu ikinci bir aralık açardı. */
+.field-row > .field + .field,
+.field-row > .field {
+    margin-top: 0;
+}
+
+/*
+ * Satırlar birbirine yapışmaz.
+ *
+ * .field kendi üst boşluğunu yalnızca başka bir .field'ın ardından alıyordu;
+ * araya bir satır girdiğinde ipucu metni bir sonraki etiketin dibine
+ * oturuyordu.
+ */
+.field-row + .field-row,
+.field-row + .field,
+.field + .field-row {
+    margin-top: var(--space-5);
+}

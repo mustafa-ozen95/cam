@@ -1,0 +1,175 @@
+/* Zeminden kopan tek katman: bu yüzden gölge yalnızca burada kullanılır. */
+
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    display: grid;
+    place-items: center;
+    padding: var(--space-5);
+    background: var(--color-scrim);
+}
+
+.modal__box {
+    width: 100%;
+    max-width: 420px;
+    max-height: calc(100dvh - 2 * var(--space-5));
+    display: flex;
+    flex-direction: column;
+    background: var(--color-column);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-overlay);
+    overflow: hidden;
+}
+
+.modal__box--wide {
+    max-width: 680px;
+}
+
+.modal__header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+}
+
+.modal__title {
+    font-size: var(--text-md);
+    font-weight: var(--weight-semibold);
+}
+
+.modal__close {
+    margin-left: auto;
+    padding: 0 var(--space-2);
+    background: none;
+    border: 0;
+    color: var(--color-text-muted);
+    font-size: var(--text-lg);
+    line-height: 1;
+    cursor: pointer;
+}
+
+.modal__close:hover {
+    color: var(--color-text);
+}
+
+.modal__body [data-confirm-message] {
+    white-space: pre-line;
+    line-height: 1.6;
+}
+
+/*
+ * Onay penceresinin bölümleri çizgiyle ayrılır: mesaj, gerekçe, yazılı
+ * doğrulama. Ayrılmadıklarında mesajın son satırı ile alan etiketi
+ * birbirine yapışıyor ve etiket mesajın devamı gibi okunuyordu.
+ */
+.modal__body [data-confirm-reason-field],
+.modal__body [data-confirm-verify-field] {
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-line);
+}
+
+/*
+ * Yazılması istenen değer OLDUĞU GİBİ gösterilir.
+ *
+ * Alan etiketleri büyük harfe çevrilir; bu değer de çevrildiğinde pencere
+ * "TEST1 yazın" diyor ama karşılaştırma büyük/küçük harfe duyarlı olduğu
+ * için "TEST1" kabul edilmiyordu. Kullanıcıya yazamayacağı bir şey
+ * yazdırılıyordu.
+ */
+.modal__body [data-confirm-expected] {
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.modal__body {
+    padding: var(--space-4);
+    /* Pencere ekranı aşmadıkça kaydırma çubuğu çıkmaz. */
+    max-height: calc(100dvh - 14rem);
+    overflow-y: auto;
+    font-size: var(--text-md);
+}
+
+/*
+ * Pencerenin içindeki uzun form.
+ *
+ * Hata listesi formun üstünde durur: alan altındaki tek satırlık uyarı
+ * kaydırma çubuğunun altında kalıyor, kullanıcı "kaydetmedi ama neden"
+ * diye bakıyordu.
+ */
+.modal__alert {
+    margin-bottom: var(--space-4);
+}
+
+/*
+ * Pencerenin gövdesi zaten çerçevelidir; içindeki panellerin kendi
+ * çerçevesi ikinci bir kutu çizip formu daraltıyordu. Panel burada
+ * yalnızca BAŞLIKLI BÖLÜM olarak kalır: çizgi üstte, kutu yok.
+ */
+.modal__body .panel {
+    border: 0;
+    border-radius: 0;
+    background: none;
+}
+
+.modal__body .panel + .panel {
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-line);
+}
+
+.modal__body .panel__head {
+    padding: 0 0 var(--space-3);
+    border-bottom: 0;
+}
+
+.modal__body .panel__body {
+    padding: 0;
+}
+
+.modal__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--color-line);
+}
+
+@media (max-width: 480px) {
+    /*
+     * TELEFONDA PENCERE ÜSTTEN AÇILIR.
+     *
+     * Önce alttan açılıyordu; klavye de alttan geliyor ve kutuyu yukarı
+     * itmek yerine üzerini örtüyordu: yazılacak alan çoğu zaman klavyenin
+     * altında kalıyordu.
+     *
+     * Ekranın kenarına DAYANMAZ: ince bir boşluk kalır, kutu köşelere denk
+     * gelmez ve yuvarlatma görünür kalır. Boşluk bilinçli olarak küçüktür;
+     * büyütmek dar ekranda içeriğe yer bırakmaz.
+     */
+    .modal {
+        align-items: flex-start;
+        padding: var(--space-2) var(--space-2) 0;
+    }
+
+    .modal__box {
+        max-width: none;
+        max-height: calc(100dvh - var(--space-2));
+        border-radius: var(--radius-lg);
+    }
+
+    /* Telefonda da kaydırma çıkmasın diye boşluklar sıkılaşır. */
+    .modal__body {
+        max-height: calc(100dvh - 8rem - var(--space-2));
+        padding: var(--space-3);
+        gap: var(--space-3);
+    }
+
+    .modal__body .textarea {
+        height: 4.5rem;
+        min-height: 0;
+    }
+}
