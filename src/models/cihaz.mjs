@@ -1,10 +1,11 @@
 /**
- * Cihaz deposu (veri/cihazlar.json): panele eklenen NVR'lar. Parolalar AES-256-GCM ile sifreli saklanir (anahtar: panelin gizli anahtarindan
- * turetilir; dosya tek basina parola vermez). Her cihaza KALICI bir kanal blogu (baslangic) verilir: cihaz silinse de digerlerinin kanal
- * numaralari (ad/gizleme ayarlari) kaymaz. Dosya yoksa KAMERA_CIHAZLAR ortam degiskeni (JSON) ile tohumlanir.
+ * Cihaz deposu (cihazlar tablosu): panele eklenen NVR'lar. Parolalar AES-256-GCM ile sifreli saklanir (anahtar: panelin gizli anahtarindan
+ * turetilir; veritabani dokumu tek basina parola vermez). Her cihaza KALICI bir kanal blogu (baslangic) verilir: cihaz silinse de digerlerinin kanal
+ * numaralari (ad/gizleme ayarlari) kaymaz. Tablo bossa KAMERA_CIHAZLAR ortam degiskeni (JSON) ile tohumlanir.
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { Ayarlar, Kilit, Koleksiyon, yazGeriAl } from '../core/tables.mjs';
+import { CIHAZLAR } from '../database/schema.mjs';
 
 export const TURLER = {
   uniview: { ad: 'Uniview NVR', kanal: 32, etiket: 'D' },
@@ -15,22 +16,35 @@ export const TURLER = {
 const HOST = /^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/;
 
 export class CihazDeposu {
-  constructor(dosya, gizli, tohum = []) {
-    this.dosya = dosya;
+  /** vt: Veritabani; gizli: panelin gizli anahtari (Buffer); tohum: tablo bossa eklenecek ilk cihazlar. Veriyi yukle() getirir. */
+  constructor(vt, gizli, tohum = []) {
+    this.vt = vt; this.kol = new Koleksiyon(vt, CIHAZLAR); this.ayarlar_ = new Ayarlar(vt); this.kilit = new Kilit(); this.tohum = tohum;
     // Etiket eski adla SABIT (depo cam oldu): degisirse kayitli cihaz parolalari cozulemez.
     this.anahtar = createHash('sha256').update(`kamera2-cihaz-parola|${gizli.toString('hex')}`).digest();
     this.liste_ = []; this.ustSinir = 0;
-    if (existsSync(dosya)) { const d = JSON.parse(readFileSync(dosya, 'utf8')); this.liste_ = d.cihazlar ?? []; this.ustSinir = Number(d.ustSinir) || 0; }
-    else if (tohum.length) { for (const t of tohum) this.liste_.push(this.#kur(t, null, true)); this.#yaz(); }
-    // Eski dosyada ust sinir yok: mevcut bloklarin sonundan baslar (ilk yazimda dosyaya girer; silme de yazimdir, yani silmeden once kayda gecer).
+  }
+
+  /** Acilista veritabanindan bellege; tablo bossa KAMERA_CIHAZLAR tohumu yazilir. */
+  async yukle() {
+    this.liste_ = await this.kol.yukle();
+    this.ustSinir = Number(await this.ayarlar_.oku('device-block-limit')) || 0;
+    if (!this.liste_.length && this.tohum.length) await this.#islem(() => { for (const t of this.tohum) this.liste_.push(this.#kur(t, null, true)); });
+    // Ust sinir kayitli degilse mevcut bloklarin sonundan baslar (ilk yazimda kaydolur; silme de yazimdir, yani silmeden once kayda gecer).
     this.ustSinir = Math.max(this.ustSinir, this.#blokSonu());
+    return this;
   }
 
   #blokSonu() { return this.liste_.reduce((m, c) => Math.max(m, c.baslangic + c.kanalSayisi), 0); }
   /** Kanal numaralari KALICIDIR: silinen/kuculen cihazin blogu hic yeniden verilmez (kapsamlardaki kanal numaralari yeni cihaza kaymasin). */
-  #yaz() {
-    this.ustSinir = Math.max(this.ustSinir ?? 0, this.#blokSonu());
-    const g = `${this.dosya}.tmp`; writeFileSync(g, JSON.stringify({ surum: 1, ustSinir: this.ustSinir, cihazlar: this.liste_ }, null, 2), { mode: 0o600 }); renameSync(g, this.dosya);
+  /** Bellek degisikligi (fn, esinkron) + veritabani yazimi (ust sinir ayni islemde) tek parca ve sirayla; yazim basarisizsa bellek eski haline doner. */
+  #islem(fn) {
+    return this.kilit.calistir(async () => {
+      const eskiUst = this.ustSinir;
+      const sonuc = fn();
+      this.ustSinir = Math.max(this.ustSinir ?? 0, this.#blokSonu());
+      await yazGeriAl(() => this.kol.kaydet(this.liste_, (c) => this.ayarlar_.yaz('device-block-limit', this.ustSinir, c)), () => { this.liste_ = this.kol.geriAl(); this.ustSinir = eskiUst; }, 'cihazlar');
+      return sonuc;
+    });
   }
 
   sifrele(metin) {
@@ -92,8 +106,7 @@ export class CihazDeposu {
   }
   ekle(kayit) {
     const { parola, ...gerisi } = kayit;
-    this.liste_.push({ ...gerisi, parola: this.sifrele(parola) }); this.#yaz();
-    return this.ayar(kayit.id);
+    return this.#islem(() => { this.liste_.push({ ...gerisi, parola: this.sifrele(parola) }); return this.ayar(kayit.id); });
   }
   /** Guncelleme kaydi hazirlar; kanal blogu komsu cihazla cakisiyorsa hata. */
   guncellemeHazirla(id, g) {
@@ -105,14 +118,18 @@ export class CihazDeposu {
     return { ...k, parola: this.coz(k.parola) };
   }
   guncelle(kayit) {
-    const i = this.liste_.findIndex((c) => c.id === kayit.id);
     const { parola, ...gerisi } = kayit;
-    this.liste_[i] = { ...gerisi, parola: this.sifrele(parola) }; this.#yaz();
-    return this.ayar(kayit.id);
+    return this.#islem(() => {
+      const i = this.liste_.findIndex((c) => c.id === kayit.id);
+      this.liste_[i] = { ...gerisi, parola: this.sifrele(parola) };
+      return this.ayar(kayit.id);
+    });
   }
   sil(id) {
-    if (this.liste_.length < 2) throw new Error('Son cihaz silinemez');
-    if (!this.liste_.some((c) => c.id === id)) throw new Error('Cihaz yok');
-    this.liste_ = this.liste_.filter((c) => c.id !== id); this.#yaz();
+    return this.#islem(() => {
+      if (this.liste_.length < 2) throw new Error('Son cihaz silinemez');
+      if (!this.liste_.some((c) => c.id === id)) throw new Error('Cihaz yok');
+      this.liste_ = this.liste_.filter((c) => c.id !== id);
+    });
   }
 }

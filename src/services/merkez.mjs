@@ -5,12 +5,13 @@
  * kod doner; kod sunucu tarafinda jetona cevrilir ve /oauth/kullanici ile kimlik okunur. Parola bu panele ugramaz.
  * EYS/NYS panellerindeki MerkezIstemcisi ile ayni protokol (bkz. KYM Uygulamalar ekrani).
  *
- * BAGLAR (veri/merkez-baglari.json): merkezdeki kimlik (sub) -> buradaki uye adi. Merkezde erisimi kalkan ya da
+ * BAGLAR (merkez_baglari tablosu): merkezdeki kimlik (sub) -> buradaki uye adi. Merkezde erisimi kalkan ya da
  * rolu degisen kisi burada da ayni anda degismeli; durum, giriste ve her N dakikada bir arka kanaldan
  * (/api/kimlik-durumu) sorulur, merkez bildirim gonderirse (/api/kimlik/tazele) hemen sorulur.
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { Kilit, Koleksiyon, yazGeriAl } from '../core/tables.mjs';
+import { MERKEZ_BAGLARI } from '../database/schema.mjs';
 
 export class MerkezYetkisizHatasi extends Error {}
 
@@ -89,37 +90,51 @@ export class MerkezIstemcisi {
  *
  * BAG UYENIN ADINA DEGIL, UYENIN KENDISINE baglidir: `uyeKimlik` = uyenin olusturma damgasi. Ad silinip yeniden kullanilabilir; damga
  * tutmayan (ayni adli ama baska) bir uye bagi devralamaz, merkezdeki rolu ona uygulanmaz. Uye silinince bag da silinir (uyeyiBirak).
- * Eski dosyalarda (damgasiz) bag, yuklenirken ADIN GUNCEL uyesinin damgasini alir; uyesi olmayan eski bag atilir.
+ * Eski kayitlarda (damgasiz) bag, yuklenirken ADIN GUNCEL uyesinin damgasini alir; uyesi olmayan eski bag atilir.
  */
 export class MerkezBaglari {
-  constructor(dosya, { merkez, uyeler, gunluk, yapilandirma }) {
-    this.dosya = dosya; this.merkez = merkez; this.uyeler = uyeler; this.gunluk = gunluk; this.k = yapilandirma.kimlik;
-    this.veri = existsSync(dosya) ? JSON.parse(readFileSync(dosya, 'utf8')) : {};
-    this.#damgala();
+  constructor(vt, { merkez, uyeler, gunluk, yapilandirma }) {
+    this.vt = vt; this.kol = new Koleksiyon(vt, MERKEZ_BAGLARI); this.kilit = new Kilit();
+    this.merkez = merkez; this.uyeler = uyeler; this.gunluk = gunluk; this.k = yapilandirma.kimlik;
+    this.veri = {};
     this.sonDeneme = new Map();   // sub -> ms (merkeze ulasilamayinca bir dakika beklenir; her istekte denenmez)
     this.surenler = new Map();    // sub -> Promise (ayni kimlik icin es zamanli ikinci sorgu acilmaz)
   }
 
-  /** Damgasiz (eski bicim) baglari mevcut uyeye damgalar; uyesi olmayanlari atar. Degisiklik varsa dosyaya yazilir. */
-  #damgala() {
-    let degisti = false;
-    for (const [sub, b] of Object.entries(this.veri)) {
-      if (b.uyeKimlik) continue;
-      const u = this.uyeler.bul(b.ad);
-      if (u) b.uyeKimlik = u.olusturma; else delete this.veri[sub];
-      degisti = true;
-    }
-    if (degisti) this.#yaz();
+  /** Acilista veritabanindan bellege (uyeler once yuklenmis olmali). */
+  async yukle() {
+    this.veri = this.#sozluk(await this.kol.yukle());
+    await this.#damgala();
+    return this;
+  }
+  #sozluk(liste) { return Object.fromEntries(liste.map(({ sub, ...b }) => [sub, b])); }
+  /** Bellek degisikligi (fn, esinkron) + veritabani yazimi tek parca ve sirayla; yazim basarisizsa bellek son basarili haline doner. */
+  #islem(fn) {
+    return this.kilit.calistir(async () => {
+      const sonuc = fn();
+      await yazGeriAl(() => this.kol.kaydet(Object.entries(this.veri).map(([sub, b]) => ({ sub, ...b }))), () => { this.veri = this.#sozluk(this.kol.geriAl()); }, 'merkez_baglari');
+      return sonuc;
+    });
+  }
+
+  /** Damgasiz (eski bicim) baglari mevcut uyeye damgalar; uyesi olmayanlari atar. Degisiklik varsa yazilir. */
+  async #damgala() {
+    if (!Object.values(this.veri).some((b) => !b.uyeKimlik)) return;
+    await this.#islem(() => {
+      for (const [sub, b] of Object.entries(this.veri)) {
+        if (b.uyeKimlik) continue;
+        const u = this.uyeler.bul(b.ad);
+        if (u) b.uyeKimlik = u.olusturma; else delete this.veri[sub];
+      }
+    });
   }
   /** Bagin gercekten bagli oldugu uye (ad VE damga tutuyorsa), yoksa null. */
   #uyesi(bag) { const u = bag && this.uyeler.bul(bag.ad); return u && bag.uyeKimlik && bag.uyeKimlik === u.olusturma ? u : null; }
   /** Uye silinince: o uyeye bagli (ya da ayni adi tutan) butun baglar dusurulur. */
   uyeyiBirak(ad) {
-    const k = String(ad).toLowerCase(); let d = false;
-    for (const [sub, b] of Object.entries(this.veri)) if (b.ad.toLowerCase() === k) { delete this.veri[sub]; d = true; }
-    if (d) this.#yaz();
+    const k = String(ad).toLowerCase();
+    return this.#islem(() => { for (const [sub, b] of Object.entries(this.veri)) if (b.ad.toLowerCase() === k) delete this.veri[sub]; });
   }
-  #yaz() { const g = `${this.dosya}.tmp`; writeFileSync(g, JSON.stringify(this.veri, null, 2), { mode: 0o600 }); renameSync(g, this.dosya); }
   bul(sub) { return this.veri[sub] ?? null; }
   /** Bu adli UYEYE bagli bag (damga tutmayan eski/yabanci bag sayilmaz). */
   adaGore(ad) { const k = String(ad).toLowerCase(); for (const [sub, b] of Object.entries(this.veri)) if (b.ad.toLowerCase() === k && this.#uyesi(b)) return { sub, ...b }; return null; }
@@ -139,21 +154,23 @@ export class MerkezBaglari {
    * Giriste: bagli uyeyi dondurur; bag yoksa ve merkez "hesap acilabilir" diyorsa uye acar.
    * Uye adi e-postanin kendisidir (diger paneller gibi; uye.mjs kurali: 3-64, harf/rakam/._-@); catisirsa @ oncesine sayi eklenir.
    */
-  girisYap(kimlik, istek) {
+  async girisYap(kimlik, istek) {
     let bag = this.bul(kimlik.sub);
-    if (bag && !this.#uyesi(bag)) { delete this.veri[kimlik.sub]; bag = null; }   // uye silinmis (ya da ayni adla baska uye): bag olu
+    if (bag && !this.#uyesi(bag)) { await this.#islem(() => { delete this.veri[kimlik.sub]; }); bag = null; }   // uye silinmis (ya da ayni adla baska uye): bag olu
     if (!bag) {
       if (!kimlik.hesapAcilabilir || !kimlik.epostaDogrulandi) throw new MerkezYetkisizHatasi('Bu panelde hesabınız yok; yöneticiye başvurun.');
       const ad = this.#bosAd(kimlik.eposta);
       const rol = this.yerelRol(kimlik.rol);
       if (!rol) throw new MerkezYetkisizHatasi('Merkezdeki rolünüzün bu panelde karşılığı yok; yöneticiye başvurun.');
-      this.uyeler.ekle(ad, randomBytes(24).toString('base64url'), rol);          // parola rastgele: giris yalniz merkezden
+      await this.uyeler.ekle(ad, randomBytes(24).toString('base64url'), rol);          // parola rastgele: giris yalniz merkezden
       this.gunluk.yaz('merkez-hesap-acildi', ad, istek, { eposta: kimlik.eposta, merkezRolu: kimlik.rol, rol });
       bag = { ad, uyeKimlik: this.uyeler.bul(ad).olusturma, eposta: kimlik.eposta, rol: kimlik.rol, girebilir: true, kontrol: null, sonGiris: null };
     }
-    bag.eposta = kimlik.eposta; bag.girebilir = true; bag.kontrol = new Date().toISOString(); bag.sonGiris = bag.kontrol;
-    this.#roluUygula(bag, kimlik.rol, istek);
-    this.veri[kimlik.sub] = bag; this.#yaz();
+    await this.#roluUygula(bag, kimlik.rol, istek);
+    await this.#islem(() => {
+      bag.eposta = kimlik.eposta; bag.girebilir = true; bag.kontrol = new Date().toISOString(); bag.sonGiris = bag.kontrol; bag.rol = kimlik.rol;
+      this.veri[kimlik.sub] = bag;
+    });
     return this.uyeler.bul(bag.ad);
   }
 
@@ -169,36 +186,38 @@ export class MerkezBaglari {
     return ad;
   }
 
-  #roluUygula(bag, merkezRolu, istek = null) {
+  /** Merkezdeki rolun buradaki uyeye yansimasi (uyenin rolu); bagin kendi rol alani cagiranin islemiyle yazilir. */
+  async #roluUygula(bag, merkezRolu, istek = null) {
     const u = this.#uyesi(bag); if (!u) return;
     const yeni = this.yerelRol(merkezRolu);
-    bag.rol = merkezRolu;
     if (!yeni || u.rol === yeni) return;
-    try { this.uyeler.guncelle(bag.ad, { rol: yeni }, null); this.gunluk.yaz('merkez-rol', bag.ad, istek, { eski: u.rol, yeni, merkezRolu }); }
+    try { await this.uyeler.guncelle(bag.ad, { rol: yeni }, null); this.gunluk.yaz('merkez-rol', bag.ad, istek, { eski: u.rol, yeni, merkezRolu }); }
     catch (e) { this.gunluk.yaz('merkez-rol-hata', bag.ad, istek, { neden: e.message, merkezRolu }); }
   }
 
   /** Merkezin verdigi durumu uygular: girebilir / rol. */
-  durumUygula(sub, durum) {
+  async durumUygula(sub, durum) {
     const bag = this.bul(sub); if (!bag) return;
     const girebilir = !!durum.girebilir;
     if (bag.girebilir && !girebilir) this.gunluk.yaz('merkez-erisim-kapandi', bag.ad, null, { merkezDurumu: durum.durum ?? 'bilinmiyor' });
     if (!bag.girebilir && girebilir) this.gunluk.yaz('merkez-erisim-acildi', bag.ad, null, {});
-    bag.girebilir = girebilir; bag.kontrol = new Date().toISOString();
-    if (girebilir && durum.rol !== undefined) this.#roluUygula(bag, durum.rol ?? null);
-    // Ortak cikis: bildirim kaybolduysa an buradan gelir (bkz. cikisIsle).
-    if (Number.isSafeInteger(durum.son_cikis) && durum.son_cikis > (bag.sonCikis ?? 0)) bag.sonCikis = durum.son_cikis;
-    this.#yaz();
+    if (girebilir && durum.rol !== undefined) await this.#roluUygula(bag, durum.rol ?? null);
+    await this.#islem(() => {
+      bag.girebilir = girebilir; bag.kontrol = new Date().toISOString();
+      if (girebilir && durum.rol !== undefined) bag.rol = durum.rol ?? null;
+      // Ortak cikis: bildirim kaybolduysa an buradan gelir (bkz. cikisIsle).
+      if (Number.isSafeInteger(durum.son_cikis) && durum.son_cikis > (bag.sonCikis ?? 0)) bag.sonCikis = durum.son_cikis;
+    });
   }
 
   /**
    * ORTAK CIKIS (bir panelden cikis merkezden ve oteki panellerden de cikistir): merkezdeki son cikis ani (ms).
    * Bu andan ONCE acilmis oturum cerezi islemez. An yalniz ILERI gider: gec gelen eski bildirim yeni girisi kapatmaz.
    */
-  cikisIsle(sub, an) {
+  async cikisIsle(sub, an) {
     const bag = this.bul(sub);
     if (!bag || !Number.isSafeInteger(an) || an <= (bag.sonCikis ?? 0)) return false;
-    bag.sonCikis = an; this.#yaz();
+    await this.#islem(() => { bag.sonCikis = an; });
     return true;
   }
 
@@ -227,7 +246,7 @@ export class MerkezBaglari {
   tazele(sub) {
     if (this.surenler.has(sub)) return this.surenler.get(sub);
     const is = (async () => {
-      try { const d = await this.merkez.kimlikDurumlari([sub]); if (d[sub]) this.durumUygula(sub, d[sub]); }
+      try { const d = await this.merkez.kimlikDurumlari([sub]); if (d[sub]) await this.durumUygula(sub, d[sub]); }
       catch (e) { this.sonDeneme.set(sub, Date.now()); console.error('merkez durumu sorulamadı:', e.message); }
       finally { this.surenler.delete(sub); }
     })();

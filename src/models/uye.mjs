@@ -2,13 +2,13 @@
  * Uyelik: kullanici adi + parola. Uyeyi yalniz yetkili olan (uye.yonet) olusturur.
  * Her uyenin bir ROLU (yetki.mjs: yerlesik ya da ozel rol), istege bagli KAPSAMI (hangi kameralari gorebilir),
  * hesap BITIS tarihi ve IP/CIDR listesi vardir.
- * Parolalar scrypt ile tuzlanip saklanir (veri/kullanicilar.json); oturum, gizli anahtarla imzali cerezdir
- * (sunucuda oturum tablosu yok; cerez her istekte dosyadan yeniden dogrulanir: uye silinince, parola degisince, cikis yapilinca
+ * Parolalar scrypt ile tuzlanip saklanir (uyeler tablosu; bellekte onbellekli, yazma veritabanina islenince degisir); oturum, gizli
+ * anahtarla imzali cerezdir (sunucuda oturum tablosu yok; cerez her istekte uyeden yeniden dogrulanir: uye silinince, parola degisince, cikis yapilinca
  * ya da ayni adla yeni hesap acilinca eski cerez islemez — cerez uyenin olusturma damgasina ve oturum surumune baglidir).
  */
 import { createHmac, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { Kilit, Koleksiyon, yazGeriAl } from '../core/tables.mjs';
+import { UYELER } from '../database/schema.mjs';
 import { bitisNormalle, ipEslesir, iplerNormalle, kapsamNormalle } from './yetki.mjs';
 
 const AD_KURALI = /^[a-zA-Z0-9._@-]{3,64}$/;   // @: merkezden gelen uye adi e-posta (diger paneller gibi)
@@ -36,21 +36,30 @@ export function tercihNormalle(t) {
 }
 
 export class Uyelik {
-  constructor(dosya, gizliDosya) {
-    this.dosya = dosya;
-    mkdirSync(dirname(dosya), { recursive: true });
-    this.liste = existsSync(dosya) ? JSON.parse(readFileSync(dosya, 'utf8')) : [];
-    if (existsSync(gizliDosya)) this.gizli = readFileSync(gizliDosya);
-    else { this.gizli = randomBytes(32); writeFileSync(gizliDosya, this.gizli, { mode: 0o600 }); }
+  /** vt: Veritabani; gizli: panelin gizli anahtari (Buffer). Veriyi yukle() getirir. */
+  constructor(vt, gizli) {
+    this.vt = vt; this.kol = new Koleksiyon(vt, UYELER); this.kilit = new Kilit();
+    this.liste = []; this.gizli = gizli;
     this.hatalar = new Map(); // ip|ad -> { sayi, kilitli, z }
-    // Eski kayitlarda olusturma damgasi yoksa bir kez verilir ve yazilir: oturum ve KYM bagi bu damgaya baglanir (ad tek basina yeniden kullanilabilir).
-    if (this.liste.some((u) => !u.olusturma)) { for (const u of this.liste) u.olusturma ??= new Date().toISOString(); this.#yaz(); }
     this.temizlik = setInterval(() => this.#hataTemizle(), 60_000); this.temizlik.unref?.();
     /** Rol kimligi gecerli mi? sunucu, yetki deposunun rol listesine baglar. */
     this.rolGecerli = (r) => r === 'admin' || r === 'kullanici';
   }
 
-  #yaz() { const g = `${this.dosya}.tmp`; writeFileSync(g, JSON.stringify(this.liste, null, 2), { mode: 0o600 }); renameSync(g, this.dosya); }
+  /** Acilista veritabanindan belleğe. Olusturma damgasi olmayan kayda bir kez damga verilir ve yazilir: oturum ve KYM bagi bu damgaya baglanir (ad tek basina yeniden kullanilabilir). */
+  async yukle() {
+    this.liste = await this.kol.yukle();
+    if (this.liste.some((u) => !u.olusturma)) await this.#islem(() => { for (const u of this.liste) u.olusturma ??= new Date().toISOString(); });
+    return this;
+  }
+  /** Bellek degisikligi (fn, esinkron) + veritabani yazimi tek parca ve sirayla; yazim basarisizsa bellek eski haline doner, VeritabaniHatasi firlar. */
+  #islem(fn) {
+    return this.kilit.calistir(async () => {
+      const sonuc = fn();
+      await yazGeriAl(() => this.kol.kaydet(this.liste), () => { this.liste = this.kol.geriAl(); }, 'uyeler');
+      return sonuc;
+    });
+  }
   #adminSayisi() { return this.liste.filter((x) => x.rol === 'admin').length; }
 
   #hataTemizle(simdi = Date.now()) { for (const [k, h] of this.hatalar) if (simdi - h.z > HATA_TTL && !(h.kilitli > simdi)) this.hatalar.delete(k); }
@@ -65,14 +74,16 @@ export class Uyelik {
   tercih(ad) { return tercihNormalle(this.bul(ad)?.tercih); }
   /** Verilen alanlar degisir, verilmeyen kalir. Gecersiz deger hata degil, sinira cekilir ya da yok sayilir. */
   tercihYaz(ad, g) {
-    const u = this.bul(ad);
-    if (!u) throw new Error('Kullanıcı yok');
-    u.tercih = tercihNormalle({ ...u.tercih, ...(g && typeof g === 'object' ? g : {}) });
-    this.#yaz();
-    return u.tercih;
+    return this.#islem(() => {
+      const u = this.bul(ad);
+      if (!u) throw new Error('Kullanıcı yok');
+      u.tercih = tercihNormalle({ ...u.tercih, ...(g && typeof g === 'object' ? g : {}) });
+      return u.tercih;
+    });
   }
 
   ekle(ad, parola, rol, ek = {}) {
+    return this.#islem(() => {
     if (!AD_KURALI.test(ad ?? '')) throw new Error('Kullanıcı adı 3-64 karakter olmalı (harf, rakam, . _ - @)');
     if (typeof parola !== 'string' || parola.length < 8 || parola.length > 128) throw new Error('Parola en az 8 karakter olmalı');
     if (!this.rolGecerli(rol)) throw new Error('Rol geçersiz');
@@ -82,11 +93,12 @@ export class Uyelik {
       ad, rol, tuz: tuz.toString('hex'), karma: karma(parola, tuz).toString('hex'), olusturma: new Date().toISOString(), oturumSurum: 0,
       kapsam: kapsamNormalle(ek.kapsam), bitis: bitisNormalle(ek.bitis), ipler: iplerNormalle(ek.ipler),
     });
-    this.#yaz();
+    });
   }
 
   /** g: { parola, rol, kapsam, bitis, ipler } (verilmeyen alan degismez). yapanIp: islemi yapanin IP'si (kendini kilitlemeyi onler). */
   guncelle(ad, g, yapan, yapanIp = null) {
+    return this.#islem(() => {
     const { parola, rol } = g;
     const u = this.bul(ad);
     if (!u) throw new Error('Kullanıcı yok');
@@ -119,20 +131,21 @@ export class Uyelik {
       yeni.oturumSurum = (u.oturumSurum ?? 0) + 1;      // parola degisince eldeki butun cerezler gecersiz
     }
     Object.assign(u, yeni);
-    this.#yaz();
+    });
   }
 
   sil(ad, yapan) {
+    return this.#islem(() => {
     const u = this.bul(ad);
     if (!u) throw new Error('Kullanıcı yok');
     if (u.ad === yapan) throw new Error('Kendinizi silemezsiniz');
     if (u.rol === 'admin' && this.#adminSayisi() < 2) throw new Error('Son admin silinemez');
     this.liste = this.liste.filter((x) => x !== u);
-    this.#yaz();
+    });
   }
 
   /** Cikis / "her yerden cik": uyenin eldeki butun oturum cerezleri gecersiz olur (sunucuda oturum tablosu yok, surum sayaci var). */
-  oturumuKapat(ad) { const u = this.bul(ad); if (!u) return; u.oturumSurum = (u.oturumSurum ?? 0) + 1; this.#yaz(); }
+  oturumuKapat(ad) { return this.#islem(() => { const u = this.bul(ad); if (!u) return; u.oturumSurum = (u.oturumSurum ?? 0) + 1; }); }
 
   /** Giris denemesi: yanlis parolada artan bekleme (5 hatadan sonra 60 sn kilit). Dondurur kullanici ya da firlatir. */
   async dogrula(ad, parola, ip) {

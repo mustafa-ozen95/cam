@@ -1,12 +1,16 @@
 # =============================================================================
 #  Kamera paneli — Compose (compose-spec.io)
 # =============================================================================
-#  Her ortamda aynı dosya: `docker compose up -d --build`, NineDeploy, Coolify,
-#  Dokploy, Portainer... Ayarların hepsi ortamdan gelir (.env ya da platformun
-#  değişken ekranı); liste .env.example'da.
+#  Kurulum: `docker compose up -d --build`. Ayarların hepsi ortamdan gelir
+#  (.env ya da ortam değişkenleri); liste .env.example'da.
 #
-#  HTTP portu dışarı AÇILMAZ: alan adını ve TLS'i önündeki vekil (platformun
-#  kendisi) verir, panele konteyner ağından 80'den ulaşır. Vekilsiz, doğrudan
+#  Veri MariaDB'dedir (db servisi, kendi hacmi). Dışarıdaki bir veritabanı
+#  kullanmak için DB_HOST ve kimlik bilgilerini verin, VT_KOPYA=0 ile db
+#  servisi hiç kalkmaz. JSON dönemindeki veri/ klasörü varsa ilk açılışta bir
+#  kez veritabanına aktarılır (README).
+#
+#  HTTP portu dışarı AÇILMAZ: alan adını ve TLS'i önündeki ters
+#  vekil verir, panele konteyner ağından 80'den ulaşır. Vekilsiz, doğrudan
 #  porttan kullanmak için docker-compose.override.example.yml.
 #
 #  /live: görüntüyü kamera-rtc (mediamtx) verir. Tarayıcının bağlantı isteği
@@ -14,7 +18,7 @@
 #  Görüntünün kendisi tarayıcıyla mediamtx arasında 8189/udp'den akar.
 #
 #  Aynı sunucuda ikinci kurulum: ayrı klasör ve ayrı .env (KAMERA_KONTEYNER,
-#  KAMERA_RTC_KONTEYNER, KAMERA_VERI_VOLUME, KAMERA_RTC_PORT, KAMERA_CEREZ).
+#  KAMERA_RTC_KONTEYNER, KAMERA_DB_KONTEYNER, KAMERA_VERI_VOLUME, KAMERA_DB_VOLUME, KAMERA_RTC_PORT, KAMERA_CEREZ).
 # =============================================================================
 
 services:
@@ -29,7 +33,7 @@ services:
       KAMERA_CEREZ: ${KAMERA_CEREZ:-nvr_oturum}
       KAMERA_CIHAZLAR: ${KAMERA_CIHAZLAR:-}
       KAMERA_ADMIN_PAROLA: ${KAMERA_ADMIN_PAROLA:-}
-      # Vekilin gerçek istemci adresini yazdığı başlık (NineDeploy/Traefik, Caddy, nginx: X-Real-IP).
+      # Vekilin gerçek istemci adresini yazdığı başlık (Caddy, nginx, Traefik: X-Real-IP).
       KAMERA_IP_BASLIGI: ${KAMERA_IP_BASLIGI:-X-Real-IP}
       # Boş = /live yalnız panelin içinde gömülebilir; tanımsızsa her yer (harici izleme panosu).
       KAMERA_LIVE_CERCEVE: ${KAMERA_LIVE_CERCEVE-*}
@@ -47,14 +51,49 @@ services:
       KAMERA_KIMLIK_ROL_ESLEME: ${KAMERA_KIMLIK_ROL_ESLEME:-}
       KAMERA_KIMLIK_VARSAYILAN_ROL: ${KAMERA_KIMLIK_VARSAYILAN_ROL:-}
       GUNCELLEME_JETONU: ${GUNCELLEME_JETONU:-}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_DATABASE: ${DB_DATABASE:-cam}
+      DB_USERNAME: ${DB_USERNAME:-cam}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD gerekli (.env.example)}
+      # base64, 32 bayt (openssl rand -base64 32). Boşsa veri/gizli.anahtar dosyası kullanılır. Veritabanına girmez.
+      KAMERA_GIZLI_ANAHTAR: ${KAMERA_GIZLI_ANAHTAR:-}
     volumes:
       - veri:/app/veri
+    # VT_KOPYA=0 (dışarıdaki veritabanı) iken db servisi yoktur; bağımlılık o zaman aranmaz.
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1/api/v1/saglik').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 20s
       retries: 3
+
+  db:
+    image: mariadb:11.4
+    container_name: ${KAMERA_DB_KONTEYNER:-cam-db}
+    restart: unless-stopped
+    # 0: dışarıdaki bir veritabanı kullanılıyor (DB_HOST).
+    deploy:
+      replicas: ${VT_KOPYA:-1}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MARIADB_DATABASE: ${DB_DATABASE:-cam}
+      MARIADB_USER: ${DB_USERNAME:-cam}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD gerekli (.env.example)}
+      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+      MARIADB_AUTO_UPGRADE: "1"
+    volumes:
+      - database:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 6
 
   kamera-rtc:
     build:
@@ -78,5 +117,8 @@ networks:
 
 volumes:
   veri:
-    # Üye, günlük, kanal ve cihaz verisi; mevcut bir kurulumun verisi için adını verin.
+    # Gizli anahtar dosyası, ilk admin parolası ve (varsa) JSON dönemi verisi; mevcut bir kurulumun hacmi için adını verin.
     name: ${KAMERA_VERI_VOLUME:-cam_veri}
+  database:
+    # MariaDB verisi (üyeler, cihazlar, günlük, roller, anahtarlar...).
+    name: ${KAMERA_DB_VOLUME:-cam_database}

@@ -4,7 +4,8 @@ ARG NODE_EN_AZ=22.23.4
 RUN node -e 'const [a, b] = [process.versions.node, process.env.NODE_EN_AZ].map(s => s.split(".").map(Number)); const k = a.findIndex((x, i) => x !== b[i]); if (k >= 0 && a[k] < b[k]) { console.error("Node en az " + process.env.NODE_EN_AZ + " olmalı"); process.exit(1); }'
 RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends ffmpeg tzdata && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY package.json ./
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 COPY bin ./bin
 COPY src ./src
 COPY routes ./routes
@@ -21,7 +22,7 @@ HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1/api
 # derlemede degisir, onbellegi bozmasin.
 ARG SURUM=""
 ENV UYGULAMA_SURUMU=${SURUM}
-# SURUM verilmezse (NineDeploy gibi platformlar derlemeye commit vermez) baglamdaki .git'ten okunur, /app/SURUM'a
+# SURUM verilmezse (commit vermeyen derleme ortamlarında) baglamdaki .git'ten okunur, /app/SURUM'a
 # yazilir; config/app.mjs once ortama, sonra bu dosyaya bakar. .git yoksa dosya bos kalir.
 RUN --mount=type=bind,target=/tmp/baglam sh /tmp/baglam/docker/surum-oku.sh > /app/SURUM
 USER node

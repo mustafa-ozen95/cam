@@ -2,13 +2,14 @@
  * Yetkilendirme cekirdegi (saf mantik; HTTP'den bagimsiz, birim testli).
  *
  *  - IZINLER: ince taneli izin katalogu ("grup.eylem"); "*" her sey, "grup.*" bir grubun tumu.
- *  - ROLLER: yerlesik (degismez) + ozel roller (veri/yetki.json).
+ *  - ROLLER: yerlesik (degismez) + ozel roller (roller, yerlesik_izinler tablolari).
  *  - KAPSAM: kamera erisim listesi { cihazlar:[id], kanallar:[n] }; null = kisitsiz.
  *  - API ANAHTARLARI: kp_<id>_<gizli>; yalniz HMAC ozeti saklanir, gizli bir kez gosterilir; sona erme, IP/CIDR listesi, hiz siniri, eszamanli akis siniri.
  *  - HIZ SINIRI ve kimlik dogrulama hata kisiti (IP basina kaba kuvvet korumasi).
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { Kilit, Koleksiyon, birlikteKaydet, yazGeriAl } from '../core/tables.mjs';
+import { ANAHTARLAR, ROLLER, YERLESIK_IZINLER } from '../database/schema.mjs';
 
 export class YetkiHatasi extends Error {
   /** kod: makine okunur (YETKI_YOK...), durum: HTTP kodu, ekstra: yanita eklenecek alanlar */
@@ -264,30 +265,67 @@ export { baglariSinirla };
 
 export class YetkiDeposu {
   /**
-   * dosya: veri/yetki.json; gizli: panelin gizli anahtari (Buffer).
+   * vt: Veritabani; gizli: panelin gizli anahtari (Buffer). Veriyi yukle() getirir.
    * secenek.rolKullanimda(rolId) -> bool (uye/anahtar bu rolu kullaniyor mu)
    */
-  constructor(dosya, gizli, secenek = {}) {
-    this.dosya = dosya; this.secenek = secenek;
+  constructor(vt, gizli, secenek = {}) {
+    this.vt = vt; this.secenek = secenek; this.kilit = new Kilit();
+    this.kolRoller = new Koleksiyon(vt, ROLLER); this.kolYerlesik = new Koleksiyon(vt, YERLESIK_IZINLER); this.kolAnahtar = new Koleksiyon(vt, ANAHTARLAR);
     // Etiket eski adla SABIT (depo cam oldu): degisirse verilmis API anahtarlarinin hicbiri dogrulanmaz.
     this.karmaAnahtari = createHmac('sha256', gizli).update('kamera2/api-anahtar').digest();
     this.veri = { surum: 1, roller: {}, anahtarlar: [], yerlesikIzinler: {} };
-    if (existsSync(dosya)) { try { this.veri = { surum: 1, roller: {}, anahtarlar: [], yerlesikIzinler: {}, ...JSON.parse(readFileSync(dosya, 'utf8')) }; } catch (e) { throw new Error(`yetki.json okunamadı: ${e.message}`); } }
     this.hata = new HataKisiti(); this.hiz = new HizSiniri(); this.akislar = new Map();
     this.kirli = false; this.zamanlayici = null;
     // bellek: hiz penceresi ve hata kisiti kayitlari periyodik temizlenir (unref: sureci acik tutmaz)
     this.temizlik = setInterval(() => { this.hiz.temizle(); for (const [ip, d] of this.hata.ipler) if (Date.now() - d.ilk > this.hata.pencereMs && d.kilit < Date.now()) this.hata.ipler.delete(ip); }, 60_000); this.temizlik.unref?.();
   }
 
-  #yaz() { const g = `${this.dosya}.tmp`; writeFileSync(g, JSON.stringify(this.veri, null, 2), { mode: 0o600 }); renameSync(g, this.dosya); this.kirli = false; }
-  /** Sik degisen alanlar (son kullanim) icin ertelenmis yazim. */
+  /** Acilista veritabanindan belleğe. */
+  async yukle() {
+    const [roller, yerlesik, anahtarlar] = await Promise.all([this.kolRoller.yukle(), this.kolYerlesik.yukle(), this.kolAnahtar.yukle()]);
+    this.#bellegeAl(roller, yerlesik, anahtarlar);
+    return this;
+  }
+  #bellegeAl(roller, yerlesik, anahtarlar) {
+    this.veri = {
+      surum: 1, anahtarlar,
+      roller: Object.fromEntries(roller.map(({ id, ...r }) => [id, r])),
+      yerlesikIzinler: Object.fromEntries(yerlesik.map((x) => [x.rol, x.izinler])),
+    };
+  }
+  #listeler() {
+    return [
+      [this.kolRoller, Object.entries(this.veri.roller).map(([id, r]) => ({ id, ...r }))],
+      [this.kolYerlesik, Object.entries(this.veri.yerlesikIzinler ?? {}).map(([rol, izinler]) => ({ rol, izinler }))],
+      [this.kolAnahtar, this.veri.anahtarlar],
+    ];
+  }
+  /** Bellegin su anki halini yazar (degisen satirlar; hepsi tek islemde). */
+  async #yaz() { await birlikteKaydet(this.vt, this.#listeler()); this.kirli = false; }
+  /** Bellek degisikligi (fn, esinkron) + veritabani yazimi tek parca ve sirayla; yazim basarisizsa bellek son basarili haline doner. */
+  #islem(fn) {
+    return this.kilit.calistir(async () => {
+      const sonuc = fn();
+      await yazGeriAl(() => this.#yaz(), () => this.#bellegeAl(this.kolRoller.geriAl(), this.kolYerlesik.geriAl(), this.kolAnahtar.geriAl()), 'yetki');
+      return sonuc;
+    });
+  }
+  /** Sik degisen alanlar (son kullanim) icin ertelenmis yazim; basarisizsa kirli kalir, sonraki turda yeniden denenir. */
   #ertele() {
     this.kirli = true;
     if (this.zamanlayici) return;
-    this.zamanlayici = setTimeout(() => { this.zamanlayici = null; if (this.kirli) try { this.#yaz(); } catch {} }, 15_000);
+    this.zamanlayici = setTimeout(() => {
+      this.zamanlayici = null;
+      if (this.kirli) this.kilit.calistir(() => this.#yaz()).catch((e) => { console.error('api anahtari son kullanimi yazilamadi:', e?.message ?? e); this.#ertele(); });
+    }, 15_000);
     this.zamanlayici.unref?.();
   }
-  kapat() { clearInterval(this.temizlik); if (this.zamanlayici) { clearTimeout(this.zamanlayici); this.zamanlayici = null; } if (this.kirli) try { this.#yaz(); } catch {} }
+  /** Kapanis: bekleyen ertelenmis yazim varsa veritabanina islenir. */
+  async kapat() {
+    clearInterval(this.temizlik);
+    if (this.zamanlayici) { clearTimeout(this.zamanlayici); this.zamanlayici = null; }
+    if (this.kirli) await this.kilit.calistir(() => this.#yaz()).catch((e) => console.error('api anahtari son kullanimi yazilamadi:', e?.message ?? e));
+  }
 
   // ---------- roller
   roller() {
@@ -311,15 +349,18 @@ export class YetkiDeposu {
     return { ad: adTemiz, aciklama, izinler };
   }
   rolEkle(g, olusturan, ebeveynIzinler = ['*']) {
+    return this.#islem(() => {
     const id = String(g.id ?? '').trim();
     if (!ROL_KIMLIK.test(id)) throw new YetkiHatasi('GECERSIZ_ISTEK', 'Rol kimliği küçük harf/rakam/-/_ ile başlamalı (2-32 karakter)', 400);
     if (this.rolVar(id)) throw new YetkiHatasi('CAKISMA', 'Bu rol kimliği kullanılıyor', 409);
     const r = this.#rolDogrula(g);
     if (!izinAltKume(r.izinler, ebeveynIzinler)) throw new YetkiHatasi('YETKI_YUKSELTME', 'Sahip olmadığınız izinleri bir role veremezsiniz', 403);
-    this.veri.roller[id] = { ...r, olusturan, olusturma: new Date().toISOString() }; this.#yaz();
+    this.veri.roller[id] = { ...r, olusturan, olusturma: new Date().toISOString() };
     return this.rolBul(id);
+    });
   }
   rolGuncelle(id, g, ebeveynIzinler = ['*']) {
+    return this.#islem(() => {
     // DC rolleri (network/teknik/muhasebe): ad sabit, yalniz izinler degisir; bos liste gecerli (izinsiz rol).
     if (YERLESIK_ROLLER[id]?.izinDuzenlenir) {
       const izinler = [...new Set(g.izinler ?? [])];
@@ -327,21 +368,24 @@ export class YetkiDeposu {
       if (kotu) throw new YetkiHatasi('GECERSIZ_ISTEK', `Bilinmeyen izin: ${kotu}`, 400);
       if (izinler.includes('*')) throw new YetkiHatasi('GECERSIZ_ISTEK', 'Bu rolde "*" kullanılamaz (tam yetki yalnız admin rolünde)', 400);
       if (!izinAltKume(izinler, ebeveynIzinler)) throw new YetkiHatasi('YETKI_YUKSELTME', 'Sahip olmadığınız izinleri bir role veremezsiniz', 403);
-      this.veri.yerlesikIzinler = { ...(this.veri.yerlesikIzinler ?? {}), [id]: izinler }; this.#yaz();
+      this.veri.yerlesikIzinler = { ...(this.veri.yerlesikIzinler ?? {}), [id]: izinler };
       return this.rolBul(id);
     }
     if (YERLESIK_ROLLER[id]) throw new YetkiHatasi('YERLESIK_DEGISMEZ', 'Yerleşik roller değiştirilemez', 403);
     const mevcut = this.veri.roller[id]; if (!mevcut) throw new YetkiHatasi('BULUNAMADI', 'Rol yok', 404);
     const r = this.#rolDogrula({ ad: g.ad ?? mevcut.ad, aciklama: g.aciklama ?? mevcut.aciklama, izinler: g.izinler ?? mevcut.izinler }, mevcut);
     if (!izinAltKume(r.izinler, ebeveynIzinler)) throw new YetkiHatasi('YETKI_YUKSELTME', 'Sahip olmadığınız izinleri bir role veremezsiniz', 403);
-    this.veri.roller[id] = { ...mevcut, ...r }; this.#yaz();
+    this.veri.roller[id] = { ...mevcut, ...r };
     return this.rolBul(id);
+    });
   }
   rolSil(id) {
+    return this.#islem(() => {
     if (YERLESIK_ROLLER[id]) throw new YetkiHatasi('YERLESIK_DEGISMEZ', 'Yerleşik roller silinemez', 403);
     if (!this.veri.roller[id]) throw new YetkiHatasi('BULUNAMADI', 'Rol yok', 404);
     if (this.veri.anahtarlar.some((a) => a.rol === id) || this.secenek.rolKullanimda?.(id)) throw new YetkiHatasi('CAKISMA', 'Bu rol bir üye ya da anahtar tarafından kullanılıyor', 409);
-    delete this.veri.roller[id]; this.#yaz();
+    delete this.veri.roller[id];
+    });
   }
 
   // ---------- API anahtarlari
@@ -360,6 +404,7 @@ export class YetkiDeposu {
    * Dondurur { kayit, anahtar } — anahtar (gizli) BIR KEZ doner.
    */
   anahtarOlustur(g, olusturan, { ebeveynIzinler = ['*'], ebeveynKapsam = null, kanalToplam = 0, cihazIdOf = null, ebeveynIpler = [], ebeveynBitis = null, ebeveynHiz = null, ebeveynAkis = null } = {}) {
+    return this.#islem(() => {
     const ad = String(g.ad ?? '').trim();
     if (!ad || ad.length > 60) throw new YetkiHatasi('GECERSIZ_ISTEK', 'Anahtar adı gerekli (en çok 60 karakter)', 400);
     const rol = g.rol ? String(g.rol) : null;
@@ -390,10 +435,12 @@ export class YetkiDeposu {
       id, ad, onek: `kp_${id}_${gizli.slice(0, 4)}…`, karma: this.#karma(gizli), rol, izinler, kapsam, bitis, ipler, hizLimiti, eszamanliAkis,
       sahip: g.sahip ?? olusturan, olusturan, olusturma: new Date().toISOString(), sonKullanim: null, sayac: 0, iptal: null, notlar: String(g.notlar ?? '').slice(0, 200),
     };
-    this.veri.anahtarlar.push(kayit); this.#yaz();
+    this.veri.anahtarlar.push(kayit);
     return { kayit: this.#acik(kayit), anahtar: `kp_${id}_${gizli}` };
+    });
   }
   anahtarGuncelle(id, g, { ebeveynIzinler = ['*'], ebeveynKapsam = null, kanalToplam = 0, cihazIdOf = null, kisitli = false, ebeveynIpler = [], ebeveynBitis = null } = {}) {
+    return this.#islem(() => {
     const a = this.veri.anahtarlar.find((x) => x.id === id); if (!a) throw new YetkiHatasi('BULUNAMADI', 'Anahtar yok', 404);
     if (a.iptal) throw new YetkiHatasi('CAKISMA', 'İptal edilmiş anahtar değiştirilemez', 409);
     const yeni = { ...a };
@@ -418,27 +465,34 @@ export class YetkiDeposu {
       if (yeni.hizLimiti > a.hizLimiti) sinirAs('Hız limiti yetki.yonet olmadan artırılamaz');
       if (yeni.eszamanliAkis > a.eszamanliAkis) sinirAs('Akış sınırı yetki.yonet olmadan artırılamaz');
     }
-    Object.assign(a, yeni); this.#yaz();
+    Object.assign(a, yeni);
     return this.#acik(a);
+    });
   }
   /** Gizliyi degistirir: eski gizli hemen gecersiz olur (anahtar kimligi ayni kalir). */
   anahtarYenile(id) {
+    return this.#islem(() => {
     const a = this.veri.anahtarlar.find((x) => x.id === id); if (!a) throw new YetkiHatasi('BULUNAMADI', 'Anahtar yok', 404);
     if (a.iptal) throw new YetkiHatasi('CAKISMA', 'İptal edilmiş anahtar yenilenemez', 409);
     const gizli = this.#yeniGizli();
-    a.karma = this.#karma(gizli); a.onek = `kp_${id}_${gizli.slice(0, 4)}…`; a.surum = (a.surum ?? 1) + 1; this.#yaz();
+    a.karma = this.#karma(gizli); a.onek = `kp_${id}_${gizli.slice(0, 4)}…`; a.surum = (a.surum ?? 1) + 1;
     return { kayit: this.#acik(a), anahtar: `kp_${id}_${gizli}` };
+    });
   }
   anahtarIptal(id, kim) {
+    return this.#islem(() => {
     const a = this.veri.anahtarlar.find((x) => x.id === id); if (!a) throw new YetkiHatasi('BULUNAMADI', 'Anahtar yok', 404);
-    if (!a.iptal) { a.iptal = { z: new Date().toISOString(), kim }; this.#yaz(); }
+    if (!a.iptal) { a.iptal = { z: new Date().toISOString(), kim }; }
     return this.#acik(a);
+    });
   }
   anahtarSil(id) {
+    return this.#islem(() => {
     const n = this.veri.anahtarlar.length;
     this.veri.anahtarlar = this.veri.anahtarlar.filter((a) => a.id !== id);
     if (this.veri.anahtarlar.length === n) throw new YetkiHatasi('BULUNAMADI', 'Anahtar yok', 404);
-    this.#yaz();
+   
+    });
   }
 
   /**

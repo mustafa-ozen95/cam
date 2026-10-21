@@ -5,13 +5,14 @@
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { uygulamaKur } from '../src/bootstrap.mjs';
 import { yapilandirma as temel } from '../config/app.mjs';
+import { gecicivt } from './helpers.mjs';
 
-let sunucu, uygulama, B, veri;
+let sunucu, uygulama, B, veri, gv;
 const cerezler = new Map();
 const istek = async (yol, { yontem = 'GET', govde, kim = 'admin', bearer, basliklar = {}, csrf = true, ham = false } = {}) => {
   const h = { ...basliklar };
@@ -29,7 +30,8 @@ const giris = async (ad, parola) => { const r = await istek('/api/giris', { yont
 
 before(async () => {
   veri = mkdtempSync(join(tmpdir(), 'cam-api-'));
-  const y = { ...temel, veriKlasoru: veri, sunucu: { ...temel.sunucu, port: 0, adres: '127.0.0.1' }, cihaz: { ...temel.cihaz, test: true, tohum: JSON.stringify([{ ad: 'Sahte A', tur: 'sahte', ana: '127.0.0.1', kullanici: 'a', parola: 'b', etiket: 'A' }, { ad: 'Sahte B', tur: 'sahte', ana: '127.0.0.2', kullanici: 'a', parola: 'b', etiket: 'B' }]) }, yetki: { ...temel.yetki, ilkAdminParola: 'adminparola1' } };
+  gv = await gecicivt();
+  const y = { ...temel, veriKlasoru: veri, veritabani: gv.ayar, sunucu: { ...temel.sunucu, port: 0, adres: '127.0.0.1' }, cihaz: { ...temel.cihaz, test: true, tohum: JSON.stringify([{ ad: 'Sahte A', tur: 'sahte', ana: '127.0.0.1', kullanici: 'a', parola: 'b', etiket: 'A' }, { ad: 'Sahte B', tur: 'sahte', ana: '127.0.0.2', kullanici: 'a', parola: 'b', etiket: 'B' }]) }, yetki: { ...temel.yetki, ilkAdminParola: 'adminparola1' } };
   uygulama = await uygulamaKur(y);
   sunucu = uygulama.dinle();
   await new Promise((r) => sunucu.once('listening', r));
@@ -40,7 +42,7 @@ before(async () => {
     const r = await istek('/api/yetki/roller', { yontem: 'POST', govde: { id, ad: id, izinler } }); assert.equal(r.durum, 200, r.metin);
   }
 });
-after(async () => { uygulama.kapat(); sunucu.close(); rmSync(veri, { recursive: true, force: true }); });
+after(async () => { sunucu.close(); await uygulama.kapat(); await gv.sil(); rmSync(veri, { recursive: true, force: true }); });
 
 test('güvenlik başlıkları her yanıtta', async () => {
   const r = await istek('/api/v1/saglik', { kim: null });
@@ -124,7 +126,7 @@ test('API anahtarı: oluşturma bir kez gösterir, Bearer ile çalışır, dosya
   assert.equal(r.durum, 200, r.metin);
   anahtar = r.json.anahtar; anahtarId = r.json.kayit.id;
   assert.match(anahtar, /^kp_[0-9a-f]{8}_[A-Za-z0-9_-]{43}$/);
-  assert.ok(!readFileSync(join(veri, 'yetki.json'), 'utf8').includes(anahtar.slice('kp_12345678_'.length)));
+  assert.ok(!JSON.stringify(await uygulama.hizmetler.vt.sorgu('SELECT * FROM api_keys')).includes(anahtar.slice('kp_12345678_'.length)));
   const ben = await istek('/api/v1/ben', { bearer: anahtar });
   assert.equal(ben.durum, 200); assert.equal(ben.json.tur, 'anahtar'); assert.ok(ben.json.izinler.includes('kayit.indir'));
   assert.equal((await istek('/api/v1/kameralar/0/kayitlar?gun=2026-10-05', { bearer: anahtar })).durum, 200);
@@ -217,8 +219,10 @@ test('cihaz yönetimi ve günlük: parola sızmaz, zincir doğrulanır, olaylar 
   const c = await istek('/api/cihazlar', { yontem: 'POST', govde: { ad: 'Sahte C', tur: 'sahte', ana: '127.0.0.3', kullanici: 'u', parola: 'gizliparola', etiket: 'C' } });
   assert.equal(c.durum, 200, c.metin);
   assert.ok(!JSON.stringify((await istek('/api/cihazlar')).json).includes('gizliparola'));
-  assert.ok(!readFileSync(join(veri, 'cihazlar.json'), 'utf8').includes('gizliparola'));
-  assert.ok(!readFileSync(join(veri, 'gunluk.jsonl'), 'utf8').includes('gizliparola'));
+  await uygulama.hizmetler.gunluk.bekle();
+  const vt = uygulama.hizmetler.vt;
+  assert.ok(!JSON.stringify(await vt.sorgu('SELECT * FROM devices')).includes('gizliparola'));
+  assert.ok(!JSON.stringify(await vt.sorgu('SELECT * FROM audit_log')).includes('gizliparola'));
   // anahtarla yapılan işlem günlüğe anahtar:<id> adıyla yazılır
   const ak = await istek('/api/yetki/anahtarlar', { yontem: 'POST', govde: { ad: 'otomasyon', izinler: ['api.anahtar'] } });
   const alt = await istek('/api/v1/anahtarlar', { bearer: ak.json.anahtar, yontem: 'POST', govde: { ad: 'alt', izinler: ['api.anahtar'] } });

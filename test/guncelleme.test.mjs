@@ -6,14 +6,15 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GuncellemeHizmeti } from '../src/services/guncelleme.mjs';
 import { IZINLER } from '../src/models/yetki.mjs';
-import { uygulamaAc } from './helpers.mjs';
+import { uygulamaAc, vtAc } from './helpers.mjs';
+import { Ayarlar } from '../src/core/tables.mjs';
 
 const JETON = 'github_pat_SINAMA_JETONU_123';
 const CALISAN = 'a'.repeat(40), SON = 'b'.repeat(40);
@@ -33,26 +34,26 @@ function sahteGithub({ son = SON, fark = { status: 'identical' }, kod = 200, kop
   return { fetch, istekler };
 }
 
-function hizmet(ayar = {}, gh = sahteGithub()) {
-  const klasor = mkdtempSync(join(tmpdir(), 'cam-gnc-'));
-  const h = new GuncellemeHizmeti({ dosya: join(klasor, 'guncelleme.json'), ayar: { ...AYAR, ...ayar }, fetch: gh.fetch });
-  return { h, gh, klasor, temizle: () => rmSync(klasor, { recursive: true, force: true }) };
+async function hizmet(ayar = {}, gh = sahteGithub()) {
+  const v = await vtAc(), ayarlar = new Ayarlar(v.vt);
+  const h = await new GuncellemeHizmeti({ ayarlar, ayar: { ...AYAR, ...ayar }, fetch: gh.fetch }).yukle();
+  return { h, gh, vt: v.vt, ayarlar, temizle: () => v.sil() };
 }
 
 const commit = (sha, mesaj, tarih) => ({ sha, commit: { message: mesaj, committer: { date: tarih } } });
 
 test('jeton yoksa açık depoya jetonsuz sorulur', async () => {
-  const { h, gh, temizle } = hizmet({ jeton: '' }, sahteGithub({ son: CALISAN }));
+  const { h, gh, temizle } = await hizmet({ jeton: '' }, sahteGithub({ son: CALISAN }));
   assert.equal((await h.denetle('sınama')).durum, 'guncel');
   assert.equal(gh.istekler.length, 1); assert.equal(gh.istekler[0].secenek.headers.Authorization, undefined);
-  temizle();
+  await temizle();
 });
 
 test('jetonsuz sorulan özel ya da olmayan depo anlaşılır hata verir', async () => {
-  const { h, temizle } = hizmet({ jeton: '' }, sahteGithub({ kod: 404, govde: { message: 'Not Found' } }));
+  const { h, temizle } = await hizmet({ jeton: '' }, sahteGithub({ kod: 404, govde: { message: 'Not Found' } }));
   const s = await h.denetle('sınama');
   assert.equal(s.durum, 'hata'); assert.match(s.aciklama, /404/); assert.match(s.aciklama, /GUNCELLEME_JETONU/);
-  temizle();
+  await temizle();
 });
 
 test('çalışan sürüm derleme bağlamındaki .git\'ten okunur (ayrı ref, packed-refs, .git yok)', () => {
@@ -73,18 +74,18 @@ test('çalışan sürüm derleme bağlamındaki .git\'ten okunur (ayrı ref, pac
 });
 
 test('son başarılı derlemeyle aynıysa güncel; istek jetonla ve main/success süzgeciyle', async () => {
-  const { h, gh, temizle } = hizmet({}, sahteGithub({ son: CALISAN }));
+  const { h, gh, temizle } = await hizmet({}, sahteGithub({ son: CALISAN }));
   assert.equal((await h.denetle('sınama')).durum, 'guncel');
   assert.equal(gh.istekler.length, 1);
   const u = new URL(gh.istekler[0].url);
   assert.equal(u.searchParams.get('branch'), 'main'); assert.equal(u.searchParams.get('status'), 'success');
   assert.equal(gh.istekler[0].secenek.headers.Authorization, `Bearer ${JETON}`);
-  temizle();
+  await temizle();
 });
 
 test('geride ise yeni sürüm; commitler yeniden eskiye; güncellenince uyarı susar', async () => {
   const fark = { status: 'ahead', ahead_by: 2, behind_by: 0, commits: [commit('c'.repeat(40), 'Eski düzeltme\n\nayrıntı', '2026-10-19T08:00:00Z'), commit(SON, 'Yeni özellik', '2026-10-20T09:00:00Z')] };
-  const { h, gh, temizle } = hizmet({}, sahteGithub({ fark }));
+  const { h, gh, temizle } = await hizmet({}, sahteGithub({ fark }));
   const s = await h.denetle('sınama');
   assert.equal(s.durum, 'yeni'); assert.equal(s.geride, 2);
   assert.deepEqual(s.commitler.map((c) => c.baslik), ['Yeni özellik', 'Eski düzeltme']);
@@ -92,50 +93,50 @@ test('geride ise yeni sürüm; commitler yeniden eskiye; güncellenince uyarı s
   assert.equal(h.yeniVar(), true);
   h.ayar = { ...h.ayar, surum: SON };
   assert.equal(h.yeniVar(), false);
-  temizle();
+  await temizle();
 });
 
 test('ileride ise güncelleme denmez', async () => {
-  const { h, temizle } = hizmet({}, sahteGithub({ fark: { status: 'behind', ahead_by: 0, behind_by: 3, commits: [] } }));
+  const { h, temizle } = await hizmet({}, sahteGithub({ fark: { status: 'behind', ahead_by: 0, behind_by: 3, commits: [] } }));
   const s = await h.denetle('sınama');
   assert.equal(s.durum, 'ileride'); assert.match(s.aciklama, /geri almak/); assert.equal(h.yeniVar(), false);
-  temizle();
+  await temizle();
 });
 
 test('ayrışık dal', async () => {
-  const { h, temizle } = hizmet({}, sahteGithub({ fark: { status: 'diverged', ahead_by: 1, behind_by: 2, commits: [] } }));
+  const { h, temizle } = await hizmet({}, sahteGithub({ fark: { status: 'diverged', ahead_by: 1, behind_by: 2, commits: [] } }));
   assert.equal((await h.denetle('sınama')).durum, 'ayrisik');
-  temizle();
+  await temizle();
 });
 
 test('çalışan sürüm bilinmiyorsa karşılaştırılmaz', async () => {
-  const { h, gh, temizle } = hizmet({ surum: '' });
+  const { h, gh, temizle } = await hizmet({ surum: '' });
   const s = await h.denetle('sınama');
   assert.equal(s.durum, 'bilinmiyor'); assert.equal(s.son, SON); assert.equal(gh.istekler.length, 1);
-  temizle();
+  await temizle();
 });
 
-test('reddedilen jeton hata olur ve jeton dosyaya yazılmaz', async () => {
-  const { h, klasor, temizle } = hizmet({}, sahteGithub({ kod: 401 }));
+test('reddedilen jeton hata olur ve jeton veritabanına yazılmaz', async () => {
+  const { h, vt, temizle } = await hizmet({}, sahteGithub({ kod: 401 }));
   const s = await h.denetle('sınama');
   assert.equal(s.durum, 'hata'); assert.match(s.aciklama, /401/);
-  assert.ok(!readFileSync(join(klasor, 'guncelleme.json'), 'utf8').includes(JETON));
-  temizle();
+  assert.ok(!JSON.stringify(await vt.sorgu('SELECT * FROM settings')).includes(JETON));
+  await temizle();
 });
 
 test('erişim yoksa hata; son sonuç okunur', async () => {
-  const { h, temizle } = hizmet({}, sahteGithub({ kopuk: true }));
+  const { h, temizle } = await hizmet({}, sahteGithub({ kopuk: true }));
   await h.denetle('sınama');
   const s = h.son();
   assert.equal(s.durum, 'hata'); assert.match(s.aciklama, /erişilemedi/); assert.equal(s.tetikleyen, 'sınama'); assert.equal(s.calisan, CALISAN);
-  temizle();
+  await temizle();
 });
 
-test('bozuk sonuç dosyası yok sayılır', () => {
-  const { h, klasor, temizle } = hizmet();
-  writeFileSync(join(klasor, 'guncelleme.json'), '{"durum":"bilmem"}');
+test('bozuk sonuç kaydı yok sayılır', async () => {
+  const { h, ayarlar, temizle } = await hizmet();
+  await ayarlar.yaz('update-status', { durum: 'bilmem' }); await h.yukle();
   assert.equal(h.son(), null); assert.equal(h.yeniVar(), false);
-  temizle();
+  await temizle();
 });
 
 test('uçlar: admin kontrol eder; izni olmayan 403 ve gerekenIzin döner; jeton yanıtta yok', async () => {

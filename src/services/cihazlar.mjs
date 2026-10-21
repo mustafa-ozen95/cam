@@ -1,10 +1,10 @@
 /**
- * Cihaz hizmeti: surucu kaydi, cihaz grubu (calisan nesneler), cihaz deposu (sifreli ayarlar) ve kanal ayarlari (veri/kanallar.json).
+ * Cihaz hizmeti: surucu kaydi, cihaz grubu (calisan nesneler), cihaz deposu (sifreli ayarlar) ve kanal ayarlari (ayarlar tablosu, "kanallar").
  * Denetleyiciler cihaza yalniz bu hizmet uzerinden dokunur.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { VeritabaniHatasi } from '../core/errors.mjs';
 import { Uniview } from '../drivers/uniview.mjs';
 import { Hikvision } from '../drivers/hikvision.mjs';
 import { Xiongmai } from '../drivers/xiongmai.mjs';
@@ -18,7 +18,9 @@ function ffmpegBul(tercih) {
 }
 
 export class CihazHizmeti {
-  constructor({ yapilandirma, gizli }) {
+  /** vt: Veritabani; ayarlar: Ayarlar. Veriyi baslat() getirir. */
+  constructor({ yapilandirma, gizli, vt, ayarlar }) {
+    this.vt = vt; this.ayarlar = ayarlar;
     this.y = yapilandirma;
     mkdirSync(yapilandirma.veriKlasoru, { recursive: true });
     this.ffmpeg = ffmpegBul(yapilandirma.cihaz.ffmpeg);
@@ -27,17 +29,16 @@ export class CihazHizmeti {
     this.turler = { ...TURLER };
     this.grup = new CihazGrubu({ ayar: {}, ffmpeg: this.ffmpeg, veriKlasoru: yapilandirma.veriKlasoru });
     this.gizli = gizli;
-    this.KANAL_DOSYA = join(yapilandirma.veriKlasoru, 'kanallar.json');
     this.kanalAyar = {};
-    try { this.kanalAyar = JSON.parse(readFileSync(this.KANAL_DOSYA, 'utf8')); } catch {}
     this.#adlariUygula();
   }
   /** Testler icin sahte surucu kaydi (yalniz yapilandirma.cihaz.test). */
   async sahteyiKaydet() { if (!this.y.cihaz.test) return; const { Sahte } = await import('../drivers/sahte.mjs'); this.suruculer.sahte = Sahte; this.turler.sahte = TURLER.sahte = { ad: 'Sahte (test)', kanal: 4, etiket: 'T' }; }
   /** Depoyu acar (tohumlar) ve cihazlari baslatir. sahteyiKaydet()'ten SONRA cagrilir. */
-  baslat() {
+  async baslat() {
     let tohum = []; try { tohum = JSON.parse(this.y.cihaz.tohum); } catch (e) { throw new Error(`KAMERA_CIHAZLAR okunamadı: ${e.message}`); }
-    this.depo = new CihazDeposu(join(this.y.veriKlasoru, 'cihazlar.json'), this.gizli, tohum);
+    this.depo = await new CihazDeposu(this.vt, this.gizli, tohum).yukle();
+    this.kanalAyar = (await this.ayarlar.oku('channels')) ?? {}; this.#adlariUygula();
     for (const a of this.depo.ayarlar()) this.grup.ekle(this.olustur(a));
   }
 
@@ -52,13 +53,13 @@ export class CihazHizmeti {
 
   // ---- cihaz CRUD (depo + grup birlikte)
   liste() { return this.depo.liste().map((c) => ({ ...c, hata: this.grup.hatalar.get(c.id) ?? null })); }
-  async ekle(g) { const k = this.depo.hazirla(g); const inst = this.olustur(k); await this.baglantiDene(inst); this.depo.ekle(k); this.grup.ekle(inst); return k; }
+  async ekle(g) { const k = this.depo.hazirla(g); const inst = this.olustur(k); await this.baglantiDene(inst); await this.depo.ekle(k); this.grup.ekle(inst); return k; }
   async guncelle(id, g) {
     const k = this.depo.guncellemeHazirla(id, g), eski = this.depo.ayar(id), inst = this.olustur(k);
     if (['ana', 'kullanici', 'parola', 'httpPort', 'rtspPort', 'port', 'sablon', 'yol'].some((a) => String(k[a] ?? '') !== String(eski[a] ?? ''))) await this.baglantiDene(inst);
-    this.depo.guncelle(k); this.grup.degistir(id, inst); return k;
+    await this.depo.guncelle(k); this.grup.degistir(id, inst); return k;
   }
-  sil(id) { const eski = this.depo.ayar(id); this.depo.sil(id); this.grup.cikar(id); return eski; }
+  async sil(id) { const eski = this.depo.ayar(id); await this.depo.sil(id); this.grup.cikar(id); return eski; }
   bul(id) { return this.grup.cihazlar.find((x) => x.id === id) ?? null; }
 
   // ---- kanal ayarlari (ad, goster/gizle)
@@ -74,7 +75,7 @@ export class CihazHizmeti {
       kanalOtomatikBos: b.kanalBos, kanalAyar: ka,
     };
   }
-  kanalAyarKaydet(ayar, aralik) {
+  async kanalAyarKaydet(ayar, aralik) {
     let yeni = {};
     for (const [k, v] of Object.entries(ayar ?? {})) {
       if (!/^\d{1,4}$/.test(k) || Number(k) >= 1024 || typeof v !== 'object' || !v) continue;
@@ -86,7 +87,7 @@ export class CihazHizmeti {
       const ic = Object.fromEntries(Object.entries(yeni).filter(([k]) => Number(k) >= aralik.bas && Number(k) < aralik.son));
       yeni = { ...dis, ...ic };
     }
-    const g = this.KANAL_DOSYA + '.tmp'; writeFileSync(g, JSON.stringify(yeni, null, 2)); renameSync(g, this.KANAL_DOSYA);
+    try { await this.ayarlar.yaz('channels', yeni); } catch (e) { console.error('kanal ayari yazilamadi:', e?.code ?? '', e?.message ?? e); throw new VeritabaniHatasi(e); }
     this.kanalAyar = yeni; this.#adlariUygula();
     return Object.keys(yeni).length;
   }

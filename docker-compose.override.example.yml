@@ -1,7 +1,6 @@
 # Vekilsiz, doğrudan porttan kullanım (deneme, iç ağda tek panel):
 #     cp docker-compose.override.example.yml docker-compose.override.yml
-# Compose bu dosyayı kendiliğinden okur. Bir platformun (NineDeploy, Coolify...) ya da
-# önde bir vekilin arkasında GEREKMEZ.
+# Compose bu dosyayı kendiliğinden okur. Önde bir ters vekil varsa GEREKMEZ.
 services:
   cam:
     ports:

@@ -4,8 +4,6 @@
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { uygulamaAc } from './helpers.mjs';
 
 let t;
@@ -23,8 +21,8 @@ test('yazilan tercih kalici; verilmeyen alan degismez', async () => {
   assert.equal(r.durum, 200);
   r = await t.istek('/api/ben/tercih', { yontem: 'PUT', govde: { arkaPlandaDurdur: false } });
   assert.deepEqual(r.json, { hepsiSayi: 12, hepsiSira: [3, 1, 2], arkaPlandaDurdur: false, izgaraAkis: 'alt' });
-  const kayit = JSON.parse(readFileSync(join(t.veri, 'kullanicilar.json'), 'utf8')).find((u) => u.ad === 'admin');
-  assert.deepEqual(kayit.tercih, { hepsiSayi: 12, hepsiSira: [3, 1, 2], arkaPlandaDurdur: false, izgaraAkis: 'alt' });
+  const [kayit] = await t.hizmetler.vt.sorgu('SELECT preferences FROM users WHERE name = ?', ['admin']);
+  assert.deepEqual(JSON.parse(kayit.preferences), { hepsiSayi: 12, hepsiSira: [3, 1, 2], arkaPlandaDurdur: false, izgaraAkis: 'alt' });
 });
 
 test('gecersiz degerler sinira cekilir, bilinmeyen alan kayda girmez', async () => {

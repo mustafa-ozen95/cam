@@ -14,6 +14,18 @@ const dosyaSatiri = (yol) => { try { return readFileSync(yol, 'utf8').trim(); } 
 export const yapilandirma = Object.freeze({
   kok: KOK,
   veriKlasoru: env.KAMERA_VERI ?? join(KOK, 'veri'),
+  /** Gizli anahtar (base64, 32 bayt). Bossa veri/gizli.anahtar dosyasi kullanilir (yoksa uretilir). Veritabanina GIRMEZ. */
+  gizliAnahtar: env.KAMERA_GIZLI_ANAHTAR || '',
+
+  /** Veritabani (MariaDB/MySQL): diger panellerle ayni degisken adlari. Acilista veritabani gelmezse beklemeSn kadar yeniden denenir. */
+  veritabani: {
+    host: env.DB_HOST || 'db',
+    port: sayi(env.DB_PORT, 3306),
+    database: env.DB_DATABASE || 'cam',
+    username: env.DB_USERNAME || 'cam',
+    password: env.DB_PASSWORD ?? '',
+    beklemeSn: sayi(env.DB_BEKLEME_SN, 60),
+  },
   gorunumler: join(KOK, 'resources', 'views', 'web'),
   dokumanKlasoru: join(KOK, 'docs'),
 
@@ -69,7 +81,7 @@ export const yapilandirma = Object.freeze({
   },
 
   cihaz: {
-    tohum: env.KAMERA_CIHAZLAR || '[]',             // yalniz veri/cihazlar.json yokken ilk cihazlar (JSON dizi)
+    tohum: env.KAMERA_CIHAZLAR || '[]',             // yalniz cihazlar tablosu bosken ilk cihazlar (JSON dizi)
     oran: env.KAMERA_ORAN ?? '16:9',
     oynatmaMax: sayi(env.KAMERA_OYNATMA_MAX, 4),
     indirmeMax: sayi(env.KAMERA_INDIRME_MAX, 2),

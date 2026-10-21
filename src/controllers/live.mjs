@@ -4,6 +4,7 @@
  * Harici bir izleme panosu iframe ile gomebilir: bu yanitlarda gomme serbest (KAMERA_LIVE_CERCEVE, varsayilan "*"); panelin geri kalani 'self'.
  */
 import { readFileSync } from 'node:fs';
+import { VeritabaniHatasi } from '../core/errors.mjs';
 import { join } from 'node:path';
 import { govdeOku, hamGovdeOku, json } from '../core/http.mjs';
 
@@ -62,8 +63,8 @@ export function liveDenetleyici({ live, yapilandirma }) {
       if (kapali(ctx)) return;
       if (!admin(ctx.asal)) return json(ctx.res, 403, { hata: 'Düzeni yalnız admin kaydeder', kod: 'YASAK' });
       const g = await govdeOku(ctx.istek, 20_000);
-      try { const d = live.duzenYaz(g, ctx.asal.ad); console.log(`live duzen: ${ctx.asal.ad}, ${d.yollar.length} kamera`); return json(ctx.res, 200, d); }
-      catch (e) { return json(ctx.res, 400, { hata: e.message, kod: 'GECERSIZ_ISTEK' }); }
+      try { const d = await live.duzenYaz(g, ctx.asal.ad); console.log(`live duzen: ${ctx.asal.ad}, ${d.yollar.length} kamera`); return json(ctx.res, 200, d); }
+      catch (e) { if (e instanceof VeritabaniHatasi) throw e; return json(ctx.res, 400, { hata: e.message, kod: 'GECERSIZ_ISTEK' }); }
     },
   };
 }

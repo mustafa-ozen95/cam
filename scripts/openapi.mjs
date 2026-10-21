@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { yapilandirma as temel } from '../config/app.mjs';
 import { uygulamaKur } from '../src/bootstrap.mjs';
+import { gecicivt } from '../test/helpers.mjs';
 import { IZINLER } from '../src/models/yetki.mjs';
 
 const ACIKLAMA = {
@@ -37,7 +38,9 @@ const SORGU = {
 };
 
 const veri = mkdtempSync(join(tmpdir(), 'cam-oa-'));
-const y = { ...temel, veriKlasoru: veri, cihaz: { ...temel.cihaz, test: true, tohum: '[{"ad":"X","tur":"sahte","ana":"127.0.0.1","kullanici":"a","parola":"b"}]' }, yetki: { ...temel.yetki, ilkAdminParola: 'x'.repeat(10) } };
+// Rota tablosu icin gecici bir veritabani acilir (DB_HOST, DB_USERNAME, DB_PASSWORD: veritabani olusturabilen kullanici) ve silinir.
+const gv = await gecicivt();
+const y = { ...temel, veriKlasoru: veri, veritabani: gv.ayar, cihaz: { ...temel.cihaz, test: true, tohum: '[{"ad":"X","tur":"sahte","ana":"127.0.0.1","kullanici":"a","parola":"b"}]' }, yetki: { ...temel.yetki, ilkAdminParola: 'x'.repeat(10) } };
 const app = await uygulamaKur(y);
 const paths = {};
 for (const r of app.yonlendirici.liste().filter((x) => x.kalip.startsWith('/api/v1'))) {
@@ -73,5 +76,5 @@ const belge = {
   paths,
 };
 writeFileSync(new URL('../docs/openapi.json', import.meta.url), JSON.stringify(belge, null, 2));
-app.kapat(); rmSync(veri, { recursive: true, force: true });
+await app.kapat(); await gv.sil(); rmSync(veri, { recursive: true, force: true });
 console.log(`openapi.json: ${Object.keys(paths).length} yol`);

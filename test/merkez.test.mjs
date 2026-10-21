@@ -10,10 +10,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { uygulamaKur } from '../src/bootstrap.mjs';
+import { gecicivt } from './helpers.mjs';
 import { yapilandirma as temel } from '../config/app.mjs';
 
 const SIR = 'istemci-sirri', BILDIRIM = 'bildirim-sirri', ISTEMCI = 'kamera-istemci';
-let merkezSunucu, M, uygulama, sunucu, B, veri;
+let merkezSunucu, M, uygulama, sunucu, B, veri, gv;
 /** Sahte merkezin davranisi; testler degistirir. */
 const merkez = { meydan: null, kod: 'KOD-1', kullanici: { sub: '11111111-1111-7111-8111-111111111111', name: 'Ali Veli', email: 'ali.veli@ornek.test', email_verified: true, rol: 'admin', hesap_acilabilir: true }, yetkisiz: false, durum: { durum: 'aktif', girebilir: true, rol: 'admin' }, sorular: 0, cikislar: [] };
 
@@ -55,7 +56,8 @@ before(async () => {
   M = `http://127.0.0.1:${merkezSunucu.address().port}`;
 
   veri = mkdtempSync(join(tmpdir(), 'cam-merkez-'));
-  const y = { ...temel, veriKlasoru: veri, sunucu: { ...temel.sunucu, port: 0, adres: '127.0.0.1' },
+  gv = await gecicivt();
+  const y = { ...temel, veriKlasoru: veri, veritabani: gv.ayar, sunucu: { ...temel.sunucu, port: 0, adres: '127.0.0.1' },
     cihaz: { ...temel.cihaz, test: true, tohum: JSON.stringify([{ ad: 'Sahte', tur: 'sahte', ana: '127.0.0.1', kullanici: 'a', parola: 'b', etiket: 'A' }]) },
     yetki: { ...temel.yetki, ilkAdminParola: 'adminparola1' },
     kimlik: { ...temel.kimlik, adres: M, istemci: ISTEMCI, sir: SIR, donus: '', bildirimSirri: BILDIRIM, dogrulamaDakika: 60, rolEsleme: {}, varsayilanRol: '' } };
@@ -64,7 +66,7 @@ before(async () => {
   B = `http://127.0.0.1:${sunucu.address().port}`;
   y.kimlik.donus = `${B}/giris/merkez/geri`;   // donus adresi port bilinince yazilir (nesne paylasiliyor)
 });
-after(async () => { uygulama.kapat(); sunucu.close(); merkezSunucu.close(); rmSync(veri, { recursive: true, force: true }); });
+after(async () => { sunucu.close(); merkezSunucu.close(); await uygulama.kapat(); await gv.sil(); rmSync(veri, { recursive: true, force: true }); });
 
 const cerez = (r) => (r.headers.get('set-cookie') ?? '').split(',').map((c) => c.split(';')[0]).filter(Boolean);
 

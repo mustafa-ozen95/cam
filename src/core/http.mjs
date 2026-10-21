@@ -2,6 +2,7 @@
  * HTTP yardimcilari: JSON yanit, hata yaniti, govde okuma (boyut sinirli), cerez okuma/yazma, istemci IP.
  */
 import { YetkiHatasi } from '../models/yetki.mjs';
+import { VeritabaniHatasi } from './errors.mjs';
 
 export class HttpHatasi extends Error { constructor(durum, mesaj, kod = 'HATA') { super(mesaj); this.durum = durum; this.kod = kod; } }
 
@@ -11,7 +12,7 @@ export const json = (res, kod, nesne) => { res.writeHead(kod, { 'Content-Type': 
 export const hataYaniti = (res, e, kod = 502) => {
   if (res.headersSent) return res.end();
   if (e instanceof YetkiHatasi) { if (e.ekstra?.yenidenDenemeSn) res.setHeader('Retry-After', String(e.ekstra.yenidenDenemeSn)); return json(res, e.durum, { hata: e.message, kod: e.kod, ...e.ekstra }); }
-  if (e instanceof HttpHatasi) return json(res, e.durum, { hata: e.message, kod: e.kod });
+  if (e instanceof HttpHatasi || e instanceof VeritabaniHatasi) return json(res, e.durum, { hata: e.message, kod: e.kod });
   if (e instanceof SyntaxError) return json(res, 400, { hata: 'Gövde JSON olmalı', kod: 'GECERSIZ_JSON' });
   json(res, kod, { hata: e?.message ? String(e.message).slice(0, 300) : 'Beklenmeyen hata', kod: 'SUNUCU' });
 };

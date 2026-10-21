@@ -5,7 +5,7 @@
 import { izin, herhangi } from '../src/middleware/yetki.mjs';
 import { json, temizIp } from '../src/core/http.mjs';
 
-export function apiV1Rotalari(r, d, ara, { cihazlar, yapilandirma }) {
+export function apiV1Rotalari(r, d, ara, { cihazlar, yapilandirma, vt }) {
   /**
    * Saglik yoklamasi (Dockerfile HEALTHCHECK, 127.0.0.1): yalniz konteynerin kendi dongu adresinden ve vekilsiz gelen istege yanit verir;
    * baska herkese 404 (panelin varligini/surumunu/cihaz sayisini kimliksiz kimse ogrenmesin). Yanit hicbir dagitim ayrintisi tasimaz.
@@ -14,6 +14,7 @@ export function apiV1Rotalari(r, d, ara, { cihazlar, yapilandirma }) {
     const vekilBasligi = yapilandirma.sunucu.guvenilenIpBasligi;
     const yerel = ['127.0.0.1', '::1'].includes(temizIp(ctx.istek.socket.remoteAddress)) && !(vekilBasligi && ctx.istek.headers[vekilBasligi.toLowerCase()]);
     if (!yerel) return json(ctx.res, 404, { hata: 'Yok', kod: 'BULUNAMADI' });
+    if (!(await vt.saglikli())) return json(ctx.res, 503, { tamam: false });   // veritabanina ulasilamiyorsa saglikli degil
     return json(ctx.res, 200, { tamam: true });
   });
 

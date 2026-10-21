@@ -56,7 +56,7 @@ test('/live acik: izleme kimliksiz, duzen yalniz admin (CSRF), gomme yalniz /liv
     assert.equal(r.durum, 200); assert.equal(r.json.kaydeden, 'admin');
     assert.deepEqual((await (await fetch(`${u.B}/live/duzen.json`)).json()).yollar, ['k1', 'k0']);
 
-    u.hizmetler.uyeler.ekle('ayse', 'ayseparola12', 'kamera');
+    await u.hizmetler.uyeler.ekle('ayse', 'ayseparola12', 'kamera');
     await u.giris('ayse', 'ayseparola12');
     assert.equal((await u.istek('/live/duzen', { yontem: 'PUT', govde: { sutun: 2, yollar: ['k0'] }, kim: 'ayse' })).durum, 403, 'admin olmayan');
     assert.equal((await u.istek('/live/yetki', { kim: 'ayse' })).json.duzenleyebilir, false);
@@ -119,7 +119,7 @@ test('/live varsayilan duzen: KAMERA_LIVE_VARSAYILAN sirasi (1\'den kanal no), b
   } finally { process.env = eski; }
   const { LiveHizmeti } = await import('../src/services/live.mjs');
   const kameralar = [{ yol: 'k0' }, { yol: 'k1' }, { yol: 'k2' }];
-  const h = (varsayilan) => Object.assign(Object.create(LiveHizmeti.prototype), { y: { varsayilan }, kameralar, DOSYA: '/yok/live-duzen.json' });
+  const h = (varsayilan) => Object.assign(Object.create(LiveHizmeti.prototype), { y: { varsayilan }, kameralar, kayitliDuzen: null });
   assert.deepEqual(h(['k2', 'k9', 'k0']).duzen(), { sutun: 4, yollar: ['k2', 'k0'], varsayilan: true }, 'listede olmayan atlanir');
   assert.deepEqual(h([]).duzen().yollar, ['k0', 'k1', 'k2'], 'bos: ilk kameralar');
 });

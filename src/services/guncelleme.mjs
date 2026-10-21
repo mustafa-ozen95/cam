@@ -11,12 +11,10 @@
  * JETON ISTEGE BAGLI: depo acikken jetonsuz sorulur (GitHub'in jetonsuz siniri IP basina saatte 60 istek; gunde bir tur
  * ve elle basilan dugme icin yeter). Ozel depo jeton ister; jetonsuz sorulan ozel depo 404 doner.
  *
- * YALNIZCA BAKAR, KURMAZ: guncelleme sunucudan, onayli yapilir. Sonuc veri klasorunde (guncelleme.json): her sabahki tur
+ * YALNIZCA BAKAR, KURMAZ: guncelleme sunucudan, onayli yapilir. Sonuc veritabaninda (ayarlar tablosu, "guncelleme"): her sabahki tur
  * yazar, ekran ve uyari seridi okur. Jeton sonucta ve iletilerde gecmez.
  */
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { VeritabaniHatasi } from '../core/errors.mjs';
 
 export const DURUMLAR = ['guncel', 'yeni', 'ileride', 'ayrisik', 'bilinmiyor', 'hata'];
 
@@ -24,9 +22,15 @@ export const DURUMLAR = ['guncel', 'yeni', 'ileride', 'ayrisik', 'bilinmiyor', '
 const EN_COK_COMMIT = 20;
 
 export class GuncellemeHizmeti {
-  /** ayar: yapilandirma.guncelleme; fetch: testler sahtesini verir. */
-  constructor({ dosya, ayar, fetch = globalThis.fetch }) {
-    this.dosya = dosya; this.ayar = ayar; this.fetch = fetch; this.zamanlayici = null;
+  /** ayarlar: Ayarlar (veritabani); ayar: yapilandirma.guncelleme; fetch: testler sahtesini verir. Son sonucu yukle() getirir. */
+  constructor({ ayarlar, ayar, fetch = globalThis.fetch }) {
+    this.ayarlar = ayarlar; this.ayar = ayar; this.fetch = fetch; this.zamanlayici = null; this.sonuc = null;
+  }
+
+  async yukle() {
+    const v = await this.ayarlar.oku('update-status');
+    this.sonuc = v && DURUMLAR.includes(v.durum) ? v : null;
+    return this;
   }
 
   /** Calisan commit (40 haneli); imaj surum bilgisi olmadan derlendiyse null. */
@@ -35,9 +39,7 @@ export class GuncellemeHizmeti {
     return /^[0-9a-f]{40}$/.test(s) ? s : null;
   }
 
-  son() {
-    try { const v = JSON.parse(readFileSync(this.dosya, 'utf8')); return v && DURUMLAR.includes(v.durum) ? v : null; } catch { return null; }
-  }
+  son() { return this.sonuc; }
 
   /** Uyari seridi: son kontrol yeni surum bulduysa VE o kontrol su an calisan surumle yapildiysa (guncellenince susar). */
   yeniVar() {
@@ -50,7 +52,7 @@ export class GuncellemeHizmeti {
     let sonuc = { calisan: this.surum(), depo: this.ayar.depo, tetikleyen };
     try { sonuc = { ...sonuc, ...(await this.#sor(sonuc.calisan)) }; } catch (e) { sonuc = { ...sonuc, durum: 'hata', aciklama: this.#temiz(String(e?.message ?? e)) }; }
     sonuc.zaman = new Date().toISOString();
-    this.#yaz(sonuc);
+    await this.#yaz(sonuc);
     return sonuc;
   }
 
@@ -117,9 +119,8 @@ export class GuncellemeHizmeti {
     return (j ? ileti.split(j).join('***') : ileti).slice(0, 300);
   }
 
-  #yaz(sonuc) {
-    mkdirSync(dirname(this.dosya), { recursive: true });
-    const gecici = `${this.dosya}.${randomBytes(4).toString('hex')}`;
-    try { writeFileSync(gecici, JSON.stringify(sonuc, null, 2), { mode: 0o600 }); renameSync(gecici, this.dosya); } catch (e) { try { unlinkSync(gecici); } catch { /* yok */ } throw e; }
+  async #yaz(sonuc) {
+    try { await this.ayarlar.yaz('update-status', sonuc); } catch (e) { console.error('guncelleme sonucu yazilamadi:', e?.code ?? '', e?.message ?? e); throw new VeritabaniHatasi(e); }
+    this.sonuc = sonuc;
   }
 }

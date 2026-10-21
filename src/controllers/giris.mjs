@@ -1,5 +1,6 @@
 /** Giris / cikis / ben. */
 import { cerezOku, cerezYaz, govdeOku, json } from '../core/http.mjs';
+import { VeritabaniHatasi } from '../core/errors.mjs';
 import { HataKisiti, izinGenislet } from '../models/yetki.mjs';
 
 export function girisDenetleyici({ uyeler, gunluk, yapilandirma, merkez = null, baglar = null }) {
@@ -33,7 +34,7 @@ export function girisDenetleyici({ uyeler, gunluk, yapilandirma, merkez = null, 
     async cikis(ctx) {
       const kim = uyeler.oturumCoz(cerezOku(ctx.istek.headers.cookie, yapilandirma.oturum.cerez));
       if (kim) {
-        uyeler.oturumuKapat(kim.ad); gunluk.yaz('cikis', kim.ad, ctx.istek);
+        await uyeler.oturumuKapat(kim.ad); gunluk.yaz('cikis', kim.ad, ctx.istek);
         const bag = baglar?.adaGore(kim.ad);
         if (bag && merkez?.acikMi()) merkez.oturumKapandi(bag.sub).catch((e) => console.error('merkeze çıkış bildirilemedi:', e.message));
       }
@@ -52,7 +53,7 @@ export function girisDenetleyici({ uyeler, gunluk, yapilandirma, merkez = null, 
     async tercihYaz(ctx) {
       if (ctx.asal.tur !== 'uye') return json(ctx.res, 403, { hata: 'Tercih yalnız üye oturumunda', kod: 'YASAK' });
       const g = await govdeOku(ctx.istek, 16_384);
-      try { return json(ctx.res, 200, uyeler.tercihYaz(ctx.asal.ad, g)); } catch (e) { return json(ctx.res, 404, { hata: e.message, kod: 'BULUNAMADI' }); }
+      try { return json(ctx.res, 200, await uyeler.tercihYaz(ctx.asal.ad, g)); } catch (e) { if (e instanceof VeritabaniHatasi) throw e; return json(ctx.res, 404, { hata: e.message, kod: 'BULUNAMADI' }); }
     },
   };
 }

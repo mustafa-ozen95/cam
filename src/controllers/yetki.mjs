@@ -32,15 +32,15 @@ export function yetkiDenetleyici({ yetki, gunluk, cihazlar }) {
   return {
     async izinler(ctx) { return json(ctx.res, 200, { izinler: Object.entries(IZINLER).map(([id, i]) => ({ id, ...i })), gruplar: IZIN_GRUPLARI, benim: izinGenislet(ctx.asal.izinler) }); },
     async roller(ctx) { return json(ctx.res, 200, yetki.roller()); },
-    async rolEkle(ctx) { ctx.gerek('yetki.yonet'); const g = await govdeOku(ctx.istek); const r = yetki.rolEkle(g, ctx.asal.gunlukAdi, ctx.asal.izinler); gunluk.yaz('rol-ekle', ctx.asal.gunlukAdi, ctx.istek, { rol: r.id, izinler: r.izinler }); return json(ctx.res, 200, r); },
-    async rolGuncelle(ctx) { ctx.gerek('yetki.yonet'); const g = await govdeOku(ctx.istek); const r = yetki.rolGuncelle(ctx.param.id, g, ctx.asal.izinler); gunluk.yaz('rol-duzenle', ctx.asal.gunlukAdi, ctx.istek, { rol: r.id, izinler: r.izinler }); return json(ctx.res, 200, r); },
-    async rolSil(ctx) { ctx.gerek('yetki.yonet'); yetki.rolSil(ctx.param.id); gunluk.yaz('rol-sil', ctx.asal.gunlukAdi, ctx.istek, { rol: ctx.param.id }); return json(ctx.res, 200, { tamam: true }); },
+    async rolEkle(ctx) { ctx.gerek('yetki.yonet'); const g = await govdeOku(ctx.istek); const r = await yetki.rolEkle(g, ctx.asal.gunlukAdi, ctx.asal.izinler); gunluk.yaz('rol-ekle', ctx.asal.gunlukAdi, ctx.istek, { rol: r.id, izinler: r.izinler }); return json(ctx.res, 200, r); },
+    async rolGuncelle(ctx) { ctx.gerek('yetki.yonet'); const g = await govdeOku(ctx.istek); const r = await yetki.rolGuncelle(ctx.param.id, g, ctx.asal.izinler); gunluk.yaz('rol-duzenle', ctx.asal.gunlukAdi, ctx.istek, { rol: r.id, izinler: r.izinler }); return json(ctx.res, 200, r); },
+    async rolSil(ctx) { ctx.gerek('yetki.yonet'); await yetki.rolSil(ctx.param.id); gunluk.yaz('rol-sil', ctx.asal.gunlukAdi, ctx.istek, { rol: ctx.param.id }); return json(ctx.res, 200, { tamam: true }); },
 
     async anahtarlar(ctx) { return json(ctx.res, 200, yetki.anahtarlar(tumYetki(ctx.asal) ? (ctx.q.get('sahip') || null) : sahipAdi(ctx.asal))); },
     async anahtarEkle(ctx) {
       const g = await govdeOku(ctx.istek);
       if (!tumYetki(ctx.asal)) g.sahip = sahipAdi(ctx.asal);               // kendi adina (anahtarla yapiliyorsa anahtarin sahibi adina)
-      const { kayit, anahtar } = yetki.anahtarOlustur(g, ctx.asal.gunlukAdi, ctxEb(ctx.asal));
+      const { kayit, anahtar } = await yetki.anahtarOlustur(g, ctx.asal.gunlukAdi, ctxEb(ctx.asal));
       gunluk.yaz('anahtar-olustur', ctx.asal.gunlukAdi, ctx.istek, { anahtar: kayit.id, ad: kayit.ad, rol: kayit.rol, izinler: kayit.izinler, kapsam: kayit.kapsam, bitis: kayit.bitis, sahip: kayit.sahip });
       return json(ctx.res, 200, { kayit, anahtar, uyari: 'Anahtar yalnız bu yanıtta gösterilir; güvenli bir yere kaydedin.' });
     },
@@ -48,12 +48,12 @@ export function yetkiDenetleyici({ yetki, gunluk, cihazlar }) {
     async anahtarGuncelle(ctx) {
       anahtarErisim(ctx.asal, ctx.param.id);
       const g = await govdeOku(ctx.istek); delete g.sahip;
-      const k = yetki.anahtarGuncelle(ctx.param.id, g, ctxEb(ctx.asal));
+      const k = await yetki.anahtarGuncelle(ctx.param.id, g, ctxEb(ctx.asal));
       gunluk.yaz('anahtar-duzenle', ctx.asal.gunlukAdi, ctx.istek, { anahtar: k.id, alanlar: Object.keys(g) });
       return json(ctx.res, 200, k);
     },
-    async anahtarYenile(ctx) { anahtarErisim(ctx.asal, ctx.param.id); const { kayit, anahtar } = yetki.anahtarYenile(ctx.param.id); gunluk.yaz('anahtar-yenile', ctx.asal.gunlukAdi, ctx.istek, { anahtar: kayit.id }); return json(ctx.res, 200, { kayit, anahtar }); },
-    async anahtarIptal(ctx) { anahtarErisim(ctx.asal, ctx.param.id, true); const k = yetki.anahtarIptal(ctx.param.id, ctx.asal.gunlukAdi); gunluk.yaz('anahtar-iptal', ctx.asal.gunlukAdi, ctx.istek, { anahtar: k.id }); return json(ctx.res, 200, k); },
-    async anahtarSil(ctx) { anahtarErisim(ctx.asal, ctx.param.id, true); yetki.anahtarSil(ctx.param.id); gunluk.yaz('anahtar-sil', ctx.asal.gunlukAdi, ctx.istek, { anahtar: ctx.param.id }); return json(ctx.res, 200, { tamam: true }); },
+    async anahtarYenile(ctx) { anahtarErisim(ctx.asal, ctx.param.id); const { kayit, anahtar } = await yetki.anahtarYenile(ctx.param.id); gunluk.yaz('anahtar-yenile', ctx.asal.gunlukAdi, ctx.istek, { anahtar: kayit.id }); return json(ctx.res, 200, { kayit, anahtar }); },
+    async anahtarIptal(ctx) { anahtarErisim(ctx.asal, ctx.param.id, true); const k = await yetki.anahtarIptal(ctx.param.id, ctx.asal.gunlukAdi); gunluk.yaz('anahtar-iptal', ctx.asal.gunlukAdi, ctx.istek, { anahtar: k.id }); return json(ctx.res, 200, k); },
+    async anahtarSil(ctx) { anahtarErisim(ctx.asal, ctx.param.id, true); await yetki.anahtarSil(ctx.param.id); gunluk.yaz('anahtar-sil', ctx.asal.gunlukAdi, ctx.istek, { anahtar: ctx.param.id }); return json(ctx.res, 200, { tamam: true }); },
   };
 }

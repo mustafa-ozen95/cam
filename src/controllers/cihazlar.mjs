@@ -1,9 +1,10 @@
 /** Cihaz yonetimi (cihaz.oku / cihaz.yonet / cihaz.saat / kanal.yonet). Parolalar yanitlarda ve gunlukte YOK. */
 import { govdeOku, json } from '../core/http.mjs';
+import { VeritabaniHatasi } from '../core/errors.mjs';
 import { YetkiHatasi } from '../models/yetki.mjs';
 
 export function cihazlarDenetleyici({ cihazlar, gunluk }) {
-  const hataIle = async (res, fn) => { try { return await fn(); } catch (e) { if (e instanceof YetkiHatasi || e instanceof SyntaxError) throw e; return json(res, 400, { hata: e.message, kod: 'GECERSIZ_ISTEK' }); } };
+  const hataIle = async (res, fn) => { try { return await fn(); } catch (e) { if (e instanceof YetkiHatasi || e instanceof VeritabaniHatasi || e instanceof SyntaxError) throw e; return json(res, 400, { hata: e.message, kod: 'GECERSIZ_ISTEK' }); } };
   const KAPSAM_DISI = (ek) => new YetkiHatasi('KAPSAM_DISI', 'Bu cihaz/kamera erişim kapsamınızın dışında', 403, ek);
   const blok = (c) => Array.from({ length: c.kanalSayisi ?? c.kanal }, (_, i) => c.baslangic + i);
   /** Cihaz kimligiyle yazma (duzenle, sil, kamera ekle, saat): kapsamli asal icin cihazin TUM kanal blogu kapsamda olmali. */
@@ -68,7 +69,7 @@ export function cihazlarDenetleyici({ cihazlar, gunluk }) {
     async sil(ctx) {
       return hataIle(ctx.res, async () => {
         cihazGerek(ctx.asal, ctx.param.id);
-        const eski = cihazlar.sil(ctx.param.id);
+        const eski = await cihazlar.sil(ctx.param.id);
         gunluk.yaz('cihaz-sil', ctx.asal.gunlukAdi, ctx.istek, { cihaz: eski?.ana, ad: eski?.ad });
         return json(ctx.res, 200, { tamam: true });
       });
@@ -114,7 +115,7 @@ export function cihazlarDenetleyici({ cihazlar, gunluk }) {
         ayar = { ...Object.fromEntries(korunan), ...Object.fromEntries(Object.entries(ayar).filter(([k]) => sayisal(k) && icinde(k))) };
         aralik = null;
       }
-      const n = cihazlar.kanalAyarKaydet(ayar, aralik);
+      const n = await cihazlar.kanalAyarKaydet(ayar, aralik);
       gunluk.yaz('kanal-ayari', ctx.asal.gunlukAdi, ctx.istek, { kanalSayisi: n });
       return json(ctx.res, 200, { tamam: true });
     },

@@ -6,6 +6,10 @@ import { join } from 'node:path';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { Uygulama } from './core/uygulama.mjs';
+import { Veritabani } from './core/database.mjs';
+import { Ayarlar } from './core/tables.mjs';
+import { anahtarIzi, gizliAnahtarCoz } from './core/secret-key.mjs';
+import { eskiVeriyiAktar } from './database/import-legacy.mjs';
 import { basliklar, csrf } from './middleware/guvenlik.mjs';
 import { kimlikKur } from './middleware/kimlik.mjs';
 import { Uyelik } from './models/uye.mjs';
@@ -31,27 +35,41 @@ import { apiV1Rotalari } from '../routes/api-v1.mjs';
 
 export async function uygulamaKur(yapilandirma) {
   mkdirSync(yapilandirma.veriKlasoru, { recursive: true });
-  // modeller
-  const uyeler = new Uyelik(join(yapilandirma.veriKlasoru, 'kullanicilar.json'), join(yapilandirma.veriKlasoru, 'gizli.anahtar'));
-  const yetki = new YetkiDeposu(join(yapilandirma.veriKlasoru, 'yetki.json'), uyeler.gizli, { rolKullanimda: (id) => uyeler.rolKullanimda(id) });
+  // veritabani: gelene kadar bekler, gocleri kosturur, eski JSON verisini (varsa) bir kez aktarir
+  const vt = await new Veritabani(yapilandirma.veritabani).baglan({ beklemeSn: yapilandirma.veritabani.beklemeSn });
+  try { return await uygulamaKurVt(yapilandirma, vt); } catch (e) { await vt.kapat(); throw e; }
+}
+
+async function uygulamaKurVt(yapilandirma, vt) {
+  await vt.gocYap();
+  const ayarlar = new Ayarlar(vt);
+  const gizli = gizliAnahtarCoz({ ortam: yapilandirma.gizliAnahtar, dosya: join(yapilandirma.veriKlasoru, 'gizli.anahtar') });
+  // Bu veritabani baska bir anahtarla dolduysa acilis durur: yanlis anahtarla cihaz parolalari cozulemez, oturumlar ve gunluk imzalari tutmaz.
+  const iz = anahtarIzi(gizli), kayitliIz = await ayarlar.oku('key-fingerprint');
+  if (kayitliIz !== undefined && kayitliIz !== iz) throw new Error('Gizli anahtar bu veritabanını dolduran anahtarla aynı değil (KAMERA_GIZLI_ANAHTAR ya da veri/gizli.anahtar). Doğru anahtarı verin; anahtar kaybolduysa kayıtlı cihaz parolaları yeniden girilmelidir.');
+  await eskiVeriyiAktar({ vt, veriKlasoru: yapilandirma.veriKlasoru, gizli });
+  if (kayitliIz === undefined) await ayarlar.yaz('key-fingerprint', iz);
+  // modeller (veritabanindan bellege)
+  const uyeler = await new Uyelik(vt, gizli).yukle();
+  const yetki = await new YetkiDeposu(vt, uyeler.gizli, { rolKullanimda: (id) => uyeler.rolKullanimda(id) }).yukle();
   uyeler.rolGecerli = (r) => yetki.rolVar(r);
   if (uyeler.bos()) {
     const parola = yapilandirma.yetki.ilkAdminParola || randomBytes(9).toString('base64url');
-    uyeler.ekle('admin', parola, 'admin');
+    await uyeler.ekle('admin', parola, 'admin');
     if (!yapilandirma.yetki.ilkAdminParola) { writeFileSync(join(yapilandirma.veriKlasoru, 'ilk-admin.txt'), `Kullanıcı adı: admin\nParola: ${parola}\n\nGiriş yaptıktan sonra Üyeler sekmesinden parolayı değiştirin ve bu dosyayı silin.\n`, { mode: 0o600 }); console.log('İlk admin hesabı oluşturuldu: veri/ilk-admin.txt'); }
   }
   // hizmetler
-  const cihazlar = new CihazHizmeti({ yapilandirma, gizli: uyeler.gizli });
+  const cihazlar = new CihazHizmeti({ yapilandirma, gizli: uyeler.gizli, vt, ayarlar });
   await cihazlar.sahteyiKaydet();
-  cihazlar.baslat();
-  const gunluk = new Gunluk(join(yapilandirma.veriKlasoru, 'gunluk.jsonl'), (m) => uyeler.imza(m), yapilandirma.sunucu.guvenilenIpBasligi);
+  await cihazlar.baslat();
+  const gunluk = await new Gunluk(vt, (m) => uyeler.imza(m), yapilandirma.sunucu.guvenilenIpBasligi).yukle();
   cihazlar.grup.olay = (olay, ayrinti) => gunluk.yaz(olay, 'sistem', null, ayrinti);
   // Kimlik Yonetim Merkezi: istemci (OAuth akisi) ve baglar (merkezdeki kimlik -> buradaki uye). Yapilandirilmamissa akis kapali, baglar bos.
   const merkez = new MerkezIstemcisi(yapilandirma.kimlik);
-  const baglar = new MerkezBaglari(join(yapilandirma.veriKlasoru, 'merkez-baglari.json'), { merkez, uyeler, gunluk, yapilandirma });
-  const live = new LiveHizmeti({ yapilandirma, cihazlar });
-  const guncelleme = new GuncellemeHizmeti({ dosya: join(yapilandirma.veriKlasoru, 'guncelleme.json'), ayar: yapilandirma.guncelleme });
-  const hizmetler = { uyeler, yetki, cihazlar, gunluk, yapilandirma, merkez, baglar, live, guncelleme };
+  const baglar = await new MerkezBaglari(vt, { merkez, uyeler, gunluk, yapilandirma }).yukle();
+  const live = await new LiveHizmeti({ yapilandirma, cihazlar, ayarlar }).yukle();
+  const guncelleme = await new GuncellemeHizmeti({ ayarlar, ayar: yapilandirma.guncelleme }).yukle();
+  const hizmetler = { vt, uyeler, yetki, cihazlar, gunluk, yapilandirma, merkez, baglar, live, guncelleme };
 
   // denetleyiciler + ara katmanlar
   const d = {
@@ -68,6 +86,7 @@ export async function uygulamaKur(yapilandirma) {
   apiV1Rotalari(uygulama.yonlendirici, d, ara, hizmetler);
   live.baslat();
   guncelleme.baslat();
-  uygulama.kapat = () => { guncelleme.kapat(); live.kapat(); cihazlar.kapat(); yetki.kapat(); };
+  // Kapanis: bekleyen gunluk yazimlari ve ertelenmis yetki yazimi veritabanina islenir, sonra havuz kapanir.
+  uygulama.kapat = async () => { guncelleme.kapat(); live.kapat(); cihazlar.kapat(); await yetki.kapat(); await gunluk.bekle(); await vt.kapat(); };
   return uygulama;
 }

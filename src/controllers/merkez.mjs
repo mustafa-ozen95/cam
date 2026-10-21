@@ -3,6 +3,7 @@
  * Akis durumu (PKCE dogrulayicisi + state) kisa omurlu, imzali bir cerezde tasinir: sunucuda oturum tablosu yok.
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { VeritabaniHatasi } from '../core/errors.mjs';
 import { cerezOku, cerezYaz, govdeOku, json } from '../core/http.mjs';
 import { MerkezYetkisizHatasi } from '../services/merkez.mjs';
 
@@ -51,8 +52,8 @@ export function merkezDenetleyici({ merkez, baglar, uyeler, gunluk, yapilandirma
         gunluk.yaz('giris-merkez-hata', 'merkez', istek, { neden: e.message }); return hataya(res, 'merkez');
       }
       let u;
-      try { u = baglar.girisYap(kimlik, istek); }
-      catch (e) { gunluk.yaz('giris-merkez-red', kimlik.eposta, istek, { neden: e.message }); return hataya(res, 'yetki'); }
+      try { u = await baglar.girisYap(kimlik, istek); }
+      catch (e) { if (e instanceof VeritabaniHatasi) throw e; gunluk.yaz('giris-merkez-red', kimlik.eposta, istek, { neden: e.message }); return hataya(res, 'yetki'); }
       cerezYaz(res, AKIS_CEREZI, '', 0, guvenli(res));
       cerezYaz(res, yapilandirma.oturum.cerez, uyeler.oturumCerezi(u), yapilandirma.oturum.gun * 86400, guvenli(res));
       gunluk.yaz('giris-merkez', u.ad, istek, { eposta: kimlik.eposta, merkezRolu: kimlik.rol });
@@ -76,7 +77,7 @@ export function merkezDenetleyici({ merkez, baglar, uyeler, gunluk, yapilandirma
     async cikis(ctx) {
       const g = await govdeOku(ctx.istek).catch(() => ({}));
       const subject = String(g.subject ?? '').trim(), an = Number(g.an);
-      if (merkez.acikMi() && merkez.cikisImzaliMi(subject, an, String(ctx.istek.headers['x-kimlik-imza'] ?? ''))) baglar.cikisIsle(subject, an);
+      if (merkez.acikMi() && merkez.cikisImzaliMi(subject, an, String(ctx.istek.headers['x-kimlik-imza'] ?? ''))) await baglar.cikisIsle(subject, an);
       return json(ctx.res, 200, { sonuc: 'alındı' });
     },
   };

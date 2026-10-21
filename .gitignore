@@ -4,3 +4,4 @@ ayar.json
 docker-compose.override.yml
 # Imajda derlemede yazilir (Dockerfile); depoya girmez.
 /SURUM
+node_modules/

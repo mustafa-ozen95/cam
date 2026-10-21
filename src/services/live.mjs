@@ -4,12 +4,11 @@
  *  - her kanalin alt akis kodegini bir kez olcer (ffprobe);
  *  - mediamtx'e API ile yol yazar: H.264 kanal dogrudan kaynak, digerleri (H.265) izlenirken KAYNAK KALITEDE H.264'e cevrilir
  *    (Chrome WebRTC'de H.265 oynatmiyor). Cihaz parolasi dosyaya yazilmaz, yalniz bellekte ve mediamtx'in belleginde durur;
- *  - herkesin gordugu ORTAK duzeni tutar (veri/live-duzen.json; panel yedegine girer).
+ *  - herkesin gordugu ORTAK duzeni tutar (ayarlar tablosu, "live-duzen"; veritabani yedegine girer).
  * mediamtx yeniden baslarsa yollar bir sonraki esitlemede (en gec 1 dk) geri yazilir. KAMERA_RTC_API bossa kapali.
  */
 import { spawn } from 'node:child_process';
-import { readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { VeritabaniHatasi } from '../core/errors.mjs';
 
 /**
  * Cevirme kaynak kalitede: cozunurluk ve kare hizi oldugu gibi (goruntu kalitesinden odun verilmez).
@@ -48,12 +47,13 @@ function kodekOlc(ffprobe, url) {
 }
 
 export class LiveHizmeti {
-  constructor({ yapilandirma, cihazlar }) {
-    this.y = yapilandirma.live; this.cihazlar = cihazlar;
-    this.DOSYA = join(yapilandirma.veriKlasoru, 'live-duzen.json');
+  /** ayarlar: Ayarlar (veritabani); kayitli duzeni yukle() getirir. */
+  constructor({ yapilandirma, cihazlar, ayarlar }) {
+    this.y = yapilandirma.live; this.cihazlar = cihazlar; this.ayarlar = ayarlar; this.kayitliDuzen = null;
     this.kodek = new Map(); this.yazilan = new Map(); this.kameralar = []; this.son = null;
     this.ffprobe = (cihazlar.ffmpeg ?? 'ffmpeg').replace(/ffmpeg(\.exe)?$/, 'ffprobe$1');
   }
+  async yukle() { const d = await this.ayarlar.oku('live-layout'); this.kayitliDuzen = d && Array.isArray(d.yollar) ? d : null; return this; }
   get acik() { return !!this.y.rtcApi; }
 
   /** ilk: ilk esitlemenin sozu (testler bekler). */
@@ -110,18 +110,19 @@ export class LiveHizmeti {
 
   // ---- ortak duzen
   duzen() {
-    try { const d = JSON.parse(readFileSync(this.DOSYA, 'utf8')); if (Array.isArray(d.yollar)) return d; } catch {}
+    if (this.kayitliDuzen) return this.kayitliDuzen;
     // Kayitli duzen yoksa: KAMERA_LIVE_VARSAYILAN sirasi (listede olmayan atlanir), o da bossa ilk LIVE_ILK kamera.
     const sira = this.y.varsayilan ?? [];
     const yollar = sira.length ? sira.filter((y) => !this.kameralar.length || this.kameralar.some((k) => k.yol === y)) : this.kameralar.slice(0, LIVE_ILK).map((k) => k.yol);
     return { sutun: 4, yollar, varsayilan: true };
   }
   /** g: { sutun, yollar }. Gecersizse hata. */
-  duzenYaz(g, kaydeden) {
+  async duzenYaz(g, kaydeden) {
     const yollar = Array.isArray(g?.yollar) ? [...new Set(g.yollar)] : null;
     if (!yollar || yollar.length > 64 || !yollar.every((y) => this.kameralar.some((k) => k.yol === y)) || !LIVE_SUTUN.includes(g.sutun)) throw new Error('Geçersiz düzen');
     const d = { sutun: g.sutun, yollar, kaydeden, zaman: new Date().toISOString() };
-    const gecici = `${this.DOSYA}.yeni`; writeFileSync(gecici, JSON.stringify(d, null, 1)); renameSync(gecici, this.DOSYA);
+    try { await this.ayarlar.yaz('live-layout', d); } catch (e) { console.error('live duzeni yazilamadi:', e?.code ?? '', e?.message ?? e); throw new VeritabaniHatasi(e); }
+    this.kayitliDuzen = d;
     return d;
   }
 }
