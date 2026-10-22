@@ -8,6 +8,7 @@
  *  - HIZ SINIRI ve kimlik dogrulama hata kisiti (IP basina kaba kuvvet korumasi).
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { apiKeyHashKey } from '../core/crypto-labels.mjs';
 import { Lock, Collection, saveTogether, writeOrRollback } from '../core/tables.mjs';
 import { API_KEYS, ROLES, BUILTIN_PERMISSIONS } from '../database/schema.mjs';
 
@@ -271,8 +272,8 @@ export class PermissionStore {
   constructor(db, secret, option = {}) {
     this.db = db; this.option = option; this.lock = new Lock();
     this.collRoles = new Collection(db, ROLES); this.collBuiltin = new Collection(db, BUILTIN_PERMISSIONS); this.collKey = new Collection(db, API_KEYS);
-    // Etiket eski adla SABIT (depo cam oldu): degisirse verilmis API anahtarlarinin hicbiri dogrulanmaz.
-    this.hashKey = createHmac('sha256', secret).update('kamera2/api-anahtar').digest();
+    // Etiket (cam/api-key) degisirse verilmis API anahtarlarinin hicbiri dogrulanmaz (karma tek yonlu, tasinamaz: migrations.mjs, surum 3).
+    this.hashKey = apiKeyHashKey(secret);
     this.data = { version: 1, roles: {}, keys: [], builtinPermissions: {} };
     this.error = new ErrorLimit(); this.rate = new RateLimit(); this.streams = new Map();
     this.dirty = false; this.timer = null;

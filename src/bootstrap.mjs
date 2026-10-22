@@ -3,13 +3,12 @@
  * Giris noktasi bin/cam.mjs; testler de buradan uygulama kurar (gercek cihaz yerine sahte surucuyle).
  */
 import { join } from 'node:path';
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { App } from './core/app.mjs';
 import { Database } from './core/database.mjs';
 import { Settings } from './core/tables.mjs';
 import { keyFingerprint, resolveSecretKey } from './core/secret-key.mjs';
-import { importLegacyData } from './database/import-legacy.mjs';
 import { headers, csrf } from './middleware/security.mjs';
 import { setupIdentity } from './middleware/identity.mjs';
 import { Membership } from './models/member.mjs';
@@ -35,21 +34,18 @@ import { apiV1Routes } from '../routes/api-v1.mjs';
 
 export async function createApp(config) {
   mkdirSync(config.dataDir, { recursive: true });
-  const oldInitialAdmin = join(config.dataDir, 'ilk-admin.txt'), newInitialAdmin = join(config.dataDir, 'initial-admin.txt');
-  if (existsSync(oldInitialAdmin) && !existsSync(newInitialAdmin)) renameSync(oldInitialAdmin, newInitialAdmin);
-  // veritabani: gelene kadar bekler, gocleri kosturur, eski JSON verisini (varsa) bir kez aktarir
+  // veritabani: gelene kadar bekler (gocleri createAppWithDb kosturur)
   const db = await new Database(config.database).connect({ waitingSec: config.database.waitingSec });
   try { return await createAppWithDb(config, db); } catch (e) { await db.close(); throw e; }
 }
 
 async function createAppWithDb(config, db) {
-  await db.runMigrations();
-  const settings = new Settings(db);
   const secret = resolveSecretKey({ env: config.secretKey, file: join(config.dataDir, 'secret.key') });
+  await db.runMigrations({ secret });   // gizli anahtara bagli kayitli veriyi tasiyan gocler (surum 3) anahtari ister
+  const settings = new Settings(db);
   // Bu veritabani baska bir anahtarla dolduysa acilis durur: yanlis anahtarla cihaz parolalari cozulemez, oturumlar ve gunluk imzalari tutmaz.
   const fingerprint = keyFingerprint(secret), savedFingerprint = await settings.read('key-fingerprint');
   if (savedFingerprint !== undefined && savedFingerprint !== fingerprint) throw new Error('Gizli anahtar bu veritabanını dolduran anahtarla aynı değil (CAM_SECRET_KEY ya da data/secret.key). Doğru anahtarı verin; anahtar kaybolduysa kayıtlı cihaz parolaları yeniden girilmelidir.');
-  await importLegacyData({ db, dataDir: config.dataDir, secret });
   if (savedFingerprint === undefined) await settings.write('key-fingerprint', fingerprint);
   // modeller (veritabanindan bellege)
   const members = await new Membership(db, secret).load();
@@ -58,7 +54,7 @@ async function createAppWithDb(config, db) {
   if (members.empty()) {
     const password = config.permissions.initialAdminPassword || randomBytes(9).toString('base64url');
     await members.add('admin', password, 'admin');
-    if (!config.permissions.initialAdminPassword) { writeFileSync(join(config.dataDir, 'initial-admin.txt'), `Kullanıcı adı: admin\nParola: ${password}\n\nGiriş yaptıktan sonra Üyeler sekmesinden parolayı değiştirin ve bu dosyayı silin.\n`, { mode: 0o600 }); console.log('İlk admin hesabı oluşturuldu: veri/ilk-admin.txt'); }
+    if (!config.permissions.initialAdminPassword) { writeFileSync(join(config.dataDir, 'initial-admin.txt'), `Kullanıcı adı: admin\nParola: ${password}\n\nGiriş yaptıktan sonra Üyeler sekmesinden parolayı değiştirin ve bu dosyayı silin.\n`, { mode: 0o600 }); console.log('İlk admin hesabı oluşturuldu: data/initial-admin.txt'); }
   }
   // hizmetler
   const devices = new DeviceService({ config, secret: members.secret, db, settings });

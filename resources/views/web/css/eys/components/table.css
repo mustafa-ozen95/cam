@@ -205,18 +205,18 @@
  * Özet + ayrıntı düğmesi: düğme metnin taban çizgisine değil ortasına
  * oturur ve metinden ayrı durur; taban çizgisi hizası düğmeyi aşağı itiyordu.
  */
-.log-ozet {
+.log-summary {
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
     vertical-align: middle;
 }
 
-.log-ozet > .btn {
+.log-summary > .btn {
     flex: 0 0 auto;
     color: var(--color-text-muted);
 }
 
-.log-ozet > .btn:hover {
+.log-summary > .btn:hover {
     color: var(--color-text);
 }

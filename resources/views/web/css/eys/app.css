@@ -17,13 +17,13 @@
 @import './components/empty.css';
 @import './components/tabs.css';
 @import './components/toast.css';
-@import './components/kullanici-menu.css';
+@import './components/user-menu.css';
 @import './components/remote-session.css';
 @import './components/pagination.css';
-@import './components/dondurme-ilerleme.css';
-@import './components/toplu-ilerleme.css';
-@import './components/kayit-formu.css';
-@import './components/ipucu.css';
-@import './components/katlanir.css';
+@import './components/rotation-progress.css';
+@import './components/bulk-progress.css';
+@import './components/record-form.css';
+@import './components/hint.css';
+@import './components/collapsible.css';
 
 @import './utilities.css';

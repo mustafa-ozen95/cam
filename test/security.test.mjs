@@ -118,9 +118,9 @@ test('etiketsiz (eski bicim) imzali ya da tipsiz talepli cerez oturum sayilmaz',
   const stream = plain(load({ d: 'x', s: 'y', e: Date.now() + 1e6 }));
   assert.equal((await req('/api/me', { cookie: `cam_session=${stream}` })).status, 401);
   // dogru etiketle imzali ama tipsiz talep de reddedilir
-  const labeled = (o) => { const y = load(o); return `${y}.${h.members.labeledSignature('kamera2/oturum', y)}`; };
+  const labeled = (o) => { const y = load(o); return `${y}.${h.members.labeledSignature('cam/session', y)}`; };
   assert.equal((await req('/api/me', { cookie: `cam_session=${labeled({ e: Date.now() + 1e6 })}` })).status, 401);
-  assert.equal((await req('/api/me', { cookie: `cam_session=${labeled({ t: 'oturum', a: 5, e: Date.now() + 1e6 })}` })).status, 401);
+  assert.equal((await req('/api/me', { cookie: `cam_session=${labeled({ t: 'session', a: 5, e: Date.now() + 1e6 })}` })).status, 401);
 });
 
 // ---- 6 key-bindings-not-bounded-by-creator

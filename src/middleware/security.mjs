@@ -21,7 +21,7 @@ export const csrf = async (ctx, next) => {
   const { req } = ctx;
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   // Merkezin bildirimleri (sunucudan sunucuya, HMAC imzali; cerez tasimaz): CSRF basligi istenmez, imza denetleyicide.
-  if (ctx.path === '/api/kimlik/tazele' || ctx.path === '/api/kimlik/cikis') return next();
+  if (ctx.path === '/api/identity/refresh' || ctx.path === '/api/identity/logout') return next();
   const bearer = /^Bearer\s/i.test(String(req.headers.authorization ?? ''));
   if (!bearer && req.headers['x-cam'] !== '1') { ctx.res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' }); return ctx.res.end(JSON.stringify({ error: 'İstek reddedildi (CSRF)', code: 'CSRF' })); }
   return next();

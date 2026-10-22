@@ -61,7 +61,7 @@
  * genişlikte duruyor.
  */
 /*
- * SEÇİCİLER TORUNU DA KAPSAR: şeritler telefonda `.toplu-araclar` sarmalının
+ * SEÇİCİLER TORUNU DA KAPSAR: şeritler telefonda `.bulk-tools` sarmalının
  * içinde (display: contents). Sarmal yerleşimde görünmez ama DOM'da durur;
  * "doğrudan çocuk" (>) seçicisi eşleşmeyince şeritler genişliksiz kalıp
  * düğmenin yanına diziliyordu.
@@ -134,32 +134,32 @@
  * gelir; "Toplu işlemler" düğmesi onay kutusunu değiştirir, kutu da
  * araçları açar. Betik gerekmez ve yerinde yenilemede de çalışır.
  */
-.toplu-araclar {
+.bulk-tools {
     display: contents;
 }
 
-.toplu-araclar__dugme {
+.bulk-tools__button {
     display: none;
 }
 
 @media (max-width: 820px) {
-    .toplu-araclar {
+    .bulk-tools {
         display: none;
     }
 
-    .toplu-araclar__kutu:checked ~ .toplu-araclar {
+    .bulk-tools__box:checked ~ .bulk-tools {
         display: contents;
     }
 
     /* Düğme ile "Yeni kayıt" aynı satırı paylaşır; araçlar açılınca altına iner. */
-    .toplu-araclar__dugme {
+    .bulk-tools__button {
         display: inline-flex;
         order: 1;
         flex: 1 1 0;
         min-width: 0;
     }
 
-    .toplu-araclar__kutu:checked ~ .toplu-araclar__dugme {
+    .bulk-tools__box:checked ~ .bulk-tools__button {
         background: var(--color-selected);
     }
 
@@ -169,7 +169,7 @@
         flex: 1 1 0;
     }
 
-    .toplu-araclar > * {
+    .bulk-tools > * {
         order: 2;
     }
 }

@@ -6,8 +6,7 @@
 #
 #  Veri MariaDB'dedir (db servisi, kendi hacmi). Dışarıdaki bir veritabanı
 #  kullanmak için DB_HOST ve kimlik bilgilerini verin, DB_REPLICAS=0 ile db
-#  servisi hiç kalkmaz. JSON dönemindeki data/ klasörü varsa ilk açılışta bir
-#  kez veritabanına aktarılır (README).
+#  servisi hiç kalkmaz.
 #
 #  HTTP portu dışarı AÇILMAZ: alan adını ve TLS'i önündeki ters
 #  vekil verir, panele konteyner ağından 80'den ulaşır. Vekilsiz, doğrudan
@@ -117,7 +116,7 @@ networks:
 
 volumes:
   data:
-    # Gizli anahtar dosyası, ilk admin parolası ve (varsa) JSON dönemi verisi; mevcut bir kurulumun hacmi için adını verin.
+    # Gizli anahtar dosyası, ve ilk admin parolası; mevcut bir kurulumun hacmi için adını verin.
     name: ${CAM_DATA_VOLUME:-cam_data}
   database:
     # MariaDB verisi (üyeler, cihazlar, günlük, roller, anahtarlar...).

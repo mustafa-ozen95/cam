@@ -34,14 +34,14 @@
  * ızgaradaki ilk karttan sonraki her kart bir boşluk kadar aşağı kayar ve
  * aynı satırdaki kartlar farklı yükseklikte görünür.
  */
-.panel-izgara {
+.panel-grid {
     display: grid;
     gap: var(--space-4);
     grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
 }
 
-.panel-izgara > .panel + .panel,
-.panel-izgara > .panel {
+.panel-grid > .panel + .panel,
+.panel-grid > .panel {
     margin-top: 0;
 }
 

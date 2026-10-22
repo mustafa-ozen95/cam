@@ -3,7 +3,8 @@
  * turetilir; veritabani dokumu tek basina parola vermez). Her cihaza KALICI bir kanal blogu (baslangic) verilir: cihaz silinse de digerlerinin kanal
  * numaralari (ad/gizleme ayarlari) kaymaz. Tablo bossa CAM_DEVICES ortam degiskeni (JSON) ile tohumlanir.
  */
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import { devicePasswordKey, seal, unseal } from '../core/crypto-labels.mjs';
 import { Settings, Lock, Collection, writeOrRollback } from '../core/tables.mjs';
 import { DEVICES } from '../database/schema.mjs';
 
@@ -19,8 +20,8 @@ export class DeviceStore {
   /** vt: Veritabani; gizli: panelin gizli anahtari (Buffer); tohum: tablo bossa eklenecek ilk cihazlar. Veriyi yukle() getirir. */
   constructor(db, secret, seed = []) {
     this.db = db; this.coll = new Collection(db, DEVICES); this.settings_ = new Settings(db); this.lock = new Lock(); this.seed = seed;
-    // Etiket eski adla SABIT (depo cam oldu): degisirse kayitli cihaz parolalari cozulemez.
-    this.key = createHash('sha256').update(`kamera2-cihaz-parola|${secret.toString('hex')}`).digest();
+    // Etiket (cam/device-password) degisirse kayitli cihaz parolalari cozulemez: veri goc ile tasinir (migrations.mjs, surum 3).
+    this.key = devicePasswordKey(secret);
     this.list_ = []; this.blockLimit = 0;
   }
 
@@ -47,16 +48,8 @@ export class DeviceStore {
     });
   }
 
-  encrypt(text) {
-    const iv = randomBytes(12), c = createCipheriv('aes-256-gcm', this.key, iv);
-    const data = Buffer.concat([c.update(String(text), 'utf8'), c.final()]);
-    return { iv: iv.toString('base64'), tag: c.getAuthTag().toString('base64'), data: data.toString('base64') };
-  }
-  resolve(o) {
-    const d = createDecipheriv('aes-256-gcm', this.key, Buffer.from(o.iv, 'base64'));
-    d.setAuthTag(Buffer.from(o.tag, 'base64'));
-    return Buffer.concat([d.update(Buffer.from(o.data, 'base64')), d.final()]).toString('utf8');
-  }
+  encrypt(text) { return seal(this.key, text); }
+  resolve(o) { return unseal(this.key, o); }
 
   /** Giris dogrulama + kayit nesnesi (kaydetmez). mevcut varsa guncelleme: bos alanlar eskisini korur. */
   #setup(g, existing, seed = false) {

@@ -1,7 +1,7 @@
 /**
  * Turkish-era names -> current English names, in ONE place.
  *
- * Used by: migration v2 (values stored in the database), the one-time JSON importer (data/ files of the JSON era) and the
+ * Used by: migration v2 (values stored in the database) and the
  * audit log views (history rows keep their original text: the chain is signed over it, so they are never rewritten).
  *
  * The quoted Turkish strings below are DATA (names that were stored before the rename), not code names: they must stay as written.
@@ -118,52 +118,3 @@ export function auditChainStep(k, previous, sign) {
   if (k[prevKey] !== previous || sign(previous + JSON.stringify(rest)) !== signature) return null;
   return signature;
 }
-
-// ---------------------------------------------------------------- JSON-era data files (read once by the importer)
-const MEMBER_FIELDS = { ad: 'name', rol: 'role', tuz: 'salt', karma: 'hash', olusturma: 'createdAt', oturumSurum: 'sessionVersion', kapsam: 'scope', bitis: 'expiresAt', ipler: 'ips', tercih: 'preferences' };
-const DEVICE_FIELDS = { ad: 'name', tur: 'type', ana: 'host', kullanici: 'username', parola: 'password', etiket: 'label', kanalSayisi: 'channelCount', sablon: 'template', yol: 'path', baslangic: 'startIndex', olusturma: 'createdAt' };
-const ROLE_FIELDS = { ad: 'name', aciklama: 'description', izinler: 'permissions', olusturan: 'createdBy', olusturma: 'createdAt' };
-const KEY_FIELDS = {
-  ad: 'name', onek: 'prefix', karma: 'hash', rol: 'role', izinler: 'permissions', kapsam: 'scope', bitis: 'expiresAt', ipler: 'ips', hizLimiti: 'rateLimit',
-  eszamanliAkis: 'concurrentStreams', sahip: 'owner', olusturan: 'createdBy', olusturma: 'createdAt', sonKullanim: 'lastUsed', sayac: 'counter', iptal: 'revoked', notlar: 'notes', surum: 'version',
-};
-const LINK_FIELDS = { ad: 'name', uyeKimlik: 'userStamp', eposta: 'email', rol: 'role', girebilir: 'canLogin', kontrol: 'check', sonGiris: 'lastLogin', sonCikis: 'lastLogout' };
-
-const withRole = (o) => (own(o) && o.role !== undefined ? { ...o, role: roleId(o.role) } : o);
-const withPermissions = (o) => (own(o) && o.permissions !== undefined ? { ...o, permissions: permissionList(o.permissions) } : o);
-
-/** kullanicilar.json entry */
-export const memberRecord = (o) => {
-  const m = withRole(mapKeys(o, MEMBER_FIELDS));
-  if (!own(m)) return m;
-  return { ...m, ...(m.scope !== undefined && m.scope !== null ? { scope: scope(m.scope) } : {}), ...(m.preferences !== undefined && m.preferences !== null ? { preferences: preferences(m.preferences) } : {}) };
-};
-/** cihazlar.json entry */
-export const deviceRecord = (o) => {
-  const d = mapKeys(o, DEVICE_FIELDS);
-  if (!own(d)) return d;
-  return { ...d, ...(d.type !== undefined ? { type: deviceType(d.type) } : {}), ...(d.template !== undefined ? { template: deviceTemplate(d.template) } : {}), ...(d.password !== undefined && d.password !== null ? { password: envelope(d.password) } : {}) };
-};
-/** cihazlar.json as a whole: { cihazlar: [...], ustSinir } */
-export const devicesFile = (o) => {
-  const f = mapKeys(o, { cihazlar: 'devices', ustSinir: 'blockLimit' });
-  return own(f) && Array.isArray(f.devices) ? { ...f, devices: f.devices.map(deviceRecord) } : f;
-};
-export const roleRecord = (o) => withPermissions(mapKeys(o, ROLE_FIELDS));
-export const apiKeyRecord = (o) => {
-  const k = withPermissions(withRole(mapKeys(o, KEY_FIELDS)));
-  if (!own(k)) return k;
-  return { ...k, ...(k.scope !== undefined && k.scope !== null ? { scope: scope(k.scope) } : {}), ...(k.lastUsed ? { lastUsed: keyLastUsed(k.lastUsed) } : {}), ...(k.revoked ? { revoked: keyRevoked(k.revoked) } : {}) };
-};
-/** yetki.json as a whole: { surum, roller, anahtarlar, yerlesikIzinler } */
-export const permissionsFile = (o) => {
-  const f = mapKeys(o, { surum: 'version', roller: 'roles', anahtarlar: 'keys', yerlesikIzinler: 'builtinPermissions' });
-  if (!own(f)) return f;
-  const out = { ...f };
-  if (own(out.roles)) out.roles = Object.fromEntries(Object.entries(out.roles).map(([id, r]) => [id, roleRecord(r)]));
-  if (Array.isArray(out.keys)) out.keys = out.keys.map(apiKeyRecord);
-  if (own(out.builtinPermissions)) out.builtinPermissions = Object.fromEntries(Object.entries(out.builtinPermissions).map(([r, l]) => [roleId(r), permissionList(l)]));
-  return out;
-};
-/** merkez-baglari.json entry */
-export const hubLinkRecord = (o) => withRole(mapKeys(o, LINK_FIELDS));

@@ -25,6 +25,6 @@
  * stil özniteliklerini engeller ve böyle bir kural SESSİZCE düşer. Sınıf
  * düşmez.
  */
-.alert--aralikli {
+.alert--spaced {
     margin-block: 1rem;
 }

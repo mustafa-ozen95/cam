@@ -1,6 +1,6 @@
 /**
  * Kimlik Yonetim Merkezi ile giris: sahte bir merkez (http) kurulur; PKCE akisi, hesap acma, rol eslemesi,
- * merkezin kapiyi kapatmasi (403), durum bildirimi (/api/kimlik/tazele) ve erisimin kalkmasi sinanir.
+ * merkezin kapiyi kapatmasi (403), durum bildirimi (/api/identity/refresh) ve erisimin kalkmasi sinanir.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,7 +16,7 @@ import { config as base } from '../config/app.mjs';
 const SECRET = 'istemci-sirri', NOTIFICATION = 'bildirim-sirri', CLIENT = 'kamera-istemci';
 let hubServer, M, app, server, B, data, gv;
 /** Sahte merkezin davranisi; testler degistirir. */
-const hub = { challenge: null, code: 'KOD-1', username: { sub: '11111111-1111-7111-8111-111111111111', name: 'Ali Veli', email: 'ali.veli@ornek.test', email_verified: true, 'rol': 'admin', 'hesap_acilabilir': true }, unauthorized: false, status: { 'durum': 'aktif', 'girebilir': true, 'rol': 'admin' }, queries: 0, logouts: [] };
+const hub = { challenge: null, code: 'KOD-1', username: { sub: '11111111-1111-7111-8111-111111111111', name: 'Ali Veli', email: 'ali.veli@ornek.test', email_verified: true, role: 'admin', can_create_account: true }, unauthorized: false, status: { status: 'etkin', can_enter: true, role: 'admin' }, queries: 0, logouts: [] };
 
 before(async () => {
   hubServer = createServer(async (req, res) => {
@@ -35,20 +35,20 @@ before(async () => {
       if (createHash('sha256').update(f.get('code_verifier')).digest('base64url') !== hub.challenge) return response(400, { error: 'invalid_grant' });
       return response(200, { access_token: 'JETON-1', token_type: 'Bearer' });
     }
-    if (u.pathname === '/oauth/kullanici') {
+    if (u.pathname === '/oauth/userinfo') {
       if (req.headers.authorization !== 'Bearer JETON-1') return response(401, {});
-      if (hub.unauthorized) return response(403, { 'kod': 'rol_yetkisiz', 'hata': 'Bu uygulamaya erişim yetkiniz yok.' });
+      if (hub.unauthorized) return response(403, { 'code': 'role_forbidden', 'error': 'Bu uygulamaya erişim yetkiniz yok.' });
       return response(200, hub.username);
     }
-    if (u.pathname === '/api/oturum-kapandi') {
+    if (u.pathname === '/api/session-closed') {
       let g = ''; for await (const p of req) g += p; const j = JSON.parse(g);
       if (j.client_secret !== SECRET) return response(401, {});
-      hub.logouts.push(j.subject); return response(200, { result: 'alındı' });
+      hub.logouts.push(j.subject); return response(200, { result: 'received' });
     }
-    if (u.pathname === '/api/kimlik-durumu') {
+    if (u.pathname === '/api/identity-status') {
       let g = ''; for await (const p of req) g += p; const j = JSON.parse(g); hub.queries++;
       if (j.client_secret !== SECRET) return response(401, {});
-      return response(200, { 'kimlikler': Object.fromEntries(j['kimlikler'].map((k) => [k, hub.status])) });
+      return response(200, { identities: Object.fromEntries(j.identities.map((k) => [k, hub.status])) });
     }
     response(404, {});
   });
@@ -116,30 +116,30 @@ test('merkez kapiyi kapatirsa (403) giris reddedilir', async () => {
 
 test('hesap acilamaz denince yeni kimlik giremez', async () => {
   const old = hub.username;
-  hub.username = { ...old, sub: '22222222-2222-7222-8222-222222222222', email: 'yeni@ornek.test', 'hesap_acilabilir': false };
+  hub.username = { ...old, sub: '22222222-2222-7222-8222-222222222222', email: 'yeni@ornek.test', can_create_account: false };
   try { const { error } = await hubEnter(); assert.equal(error, 'denied'); } finally { hub.username = old; }
 });
 
 test('merkezde erisim kalkinca bildirimle oturum duser; geri gelince acilir', async () => {
   const { session } = await hubEnter();
   assert.equal((await me(session)).status, 200);
-  hub.status = { 'durum': 'askida', 'girebilir': false, 'rol': 'admin' };
+  hub.status = { status: 'askida', can_enter: false, role: 'admin' };
   const signature = createHmac('sha256', NOTIFICATION).update(hub.username.sub).digest('hex');
   // imzasiz bildirim merkeze sordurmaz: durum askida olsa da oturum surer
   const queriesBefore = hub.queries;
-  await fetch(`${B}/api/kimlik/tazele`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject: hub.username.sub }) });
+  await fetch(`${B}/api/identity/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject: hub.username.sub }) });
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(hub.queries, queriesBefore, 'imzasiz bildirim merkeze soru acmamali');
   assert.equal((await me(session)).status, 200, 'imzasiz bildirim erisimi degistirmemeli');
-  const t = await fetch(`${B}/api/kimlik/tazele`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kimlik-Imza': signature }, body: JSON.stringify({ subject: hub.username.sub }) });
+  const t = await fetch(`${B}/api/identity/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Identity-Signature': signature }, body: JSON.stringify({ subject: hub.username.sub }) });
   assert.equal(t.status, 200);
   await app.services.links.refresh(hub.username.sub);
   assert.equal((await me(session)).status, 401, 'erisimi kalkan kisi 401 almali');
-  hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'network' };
+  hub.status = { status: 'etkin', can_enter: true, role: 'network' };
   await app.services.links.refresh(hub.username.sub);
   const r = await me(session); assert.equal(r.status, 200);
   assert.equal((await r.json()).role, 'network', 'merkezdeki rol degisince ayni adli DC rolu uygulanmali');
-  hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'admin' };
+  hub.status = { status: 'etkin', can_enter: true, role: 'admin' };
   await app.services.links.refresh(hub.username.sub);
 });
 
@@ -159,8 +159,8 @@ async function localAdmin() {
 
 test('merkezdeki kamera rolu panelde kamera rolune eslenir: izler, yonetemez', async () => {
   const old = hub.username, legacyStatus = hub.status;
-  hub.username = { ...old, sub: '55555555-5555-7555-8555-555555555555', name: 'Kam Era', email: 'kam.era@ornek.test', 'rol': 'kamera' };
-  hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'kamera' };
+  hub.username = { ...old, sub: '55555555-5555-7555-8555-555555555555', name: 'Kam Era', email: 'kam.era@ornek.test', role: 'kamera' };
+  hub.status = { status: 'etkin', can_enter: true, role: 'kamera' };
   try {
     const { session } = await hubEnter(); assert.ok(session);
     const j = await (await me(session)).json();
@@ -171,7 +171,7 @@ test('merkezdeki kamera rolu panelde kamera rolune eslenir: izler, yonetemez', a
 
 test('kym-bag: silinen uyenin adi yeniden kullanilsa eski kimlik yeni hesabi devralamaz ve rolunu degistiremez', async () => {
   const old = hub.username;
-  hub.username = { ...old, sub: '33333333-3333-7333-8333-333333333333', name: 'Zed Kim', email: 'zed.kim@ornek.test', 'rol': 'admin' };
+  hub.username = { ...old, sub: '33333333-3333-7333-8333-333333333333', name: 'Zed Kim', email: 'zed.kim@ornek.test', role: 'admin' };
   try {
     const first = await hubEnter(); assert.ok(first.session);
     assert.equal((await (await me(first.session)).json()).name, 'zed.kim@ornek.test');
@@ -189,20 +189,20 @@ test('kym-bag: silinen uyenin adi yeniden kullanilsa eski kimlik yeni hesabi dev
 
 test('kym-bag: merkezde erisimi kalkan uyenin API anahtari da islemez', async () => {
   const old = hub.username, sub = '44444444-4444-7444-8444-444444444444';
-  hub.username = { ...old, sub, name: 'Key Owner', email: 'key.owner@ornek.test', 'rol': 'admin' };
+  hub.username = { ...old, sub, name: 'Key Owner', email: 'key.owner@ornek.test', role: 'admin' };
   try {
     const { session } = await hubEnter(); assert.ok(session);
     const management = await localAdmin();
     const k = await (await management('/api/access/keys', 'POST', { name: 'k', permissions: ['live.view'], owner: 'key.owner@ornek.test' })).json();
     const bearer = () => fetch(`${B}/api/v1/me`, { headers: { Authorization: `Bearer ${k.key}` } });
     assert.equal((await bearer()).status, 200);
-    hub.status = { 'durum': 'askida', 'girebilir': false, 'rol': 'admin' };
+    hub.status = { status: 'askida', can_enter: false, role: 'admin' };
     await app.services.links.refresh(sub);
     assert.equal((await bearer()).status, 401, 'merkezde erisimi kalkan sahibin anahtari islememeli');
-    hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'admin' };
+    hub.status = { status: 'etkin', can_enter: true, role: 'admin' };
     await app.services.links.refresh(sub);
     assert.equal((await bearer()).status, 200);
-  } finally { hub.username = old; hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'admin' }; }
+  } finally { hub.username = old; hub.status = { status: 'etkin', can_enter: true, role: 'admin' }; }
 });
 
 test('cerez etiketi: merkez akis cerezi oturum cerezi olarak, oturum cerezi akis cerezi olarak gecmez', async () => {
@@ -217,14 +217,14 @@ test('cerez etiketi: merkez akis cerezi oturum cerezi olarak, oturum cerezi akis
 });
 
 // ORTAK CIKIS: merkezdeki son cikistan once acilan oturum islemez; buradan cikis merkeze bildirilir.
-const notifyLogout = (moment, signature) => fetch(`${B}/api/kimlik/cikis`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kimlik-Imza': signature ?? createHmac('sha256', NOTIFICATION).update(`cikis|${hub.username.sub}|${moment}`).digest('hex') }, body: JSON.stringify({ subject: hub.username.sub, moment }) });
+const notifyLogout = (moment, signature) => fetch(`${B}/api/identity/logout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Identity-Signature': signature ?? createHmac('sha256', NOTIFICATION).update(`logout|${hub.username.sub}|${moment}`).digest('hex') }, body: JSON.stringify({ subject: hub.username.sub, time: moment }) });
 
 test('merkezin imzali cikis bildirimi acik oturumu kapatir; sonra acilan oturum surer', async () => {
   const { session } = await hubEnter();
   assert.equal((await me(session)).status, 200);
   const moment = Date.now() + 5;
   assert.equal((await notifyLogout(moment, 'yanlis')).status, 200);
-  assert.equal((await notifyLogout(moment + 1, createHmac('sha256', NOTIFICATION).update(`cikis|${hub.username.sub}|${moment}`).digest('hex'))).status, 200);
+  assert.equal((await notifyLogout(moment + 1, createHmac('sha256', NOTIFICATION).update(`logout|${hub.username.sub}|${moment}`).digest('hex'))).status, 200);
   assert.equal((await me(session)).status, 200, 'imzasi tutmayan (ya da baska an icin) bildirim oturumu kapatmamali');
   await new Promise((r) => setTimeout(r, 10));
   assert.equal((await notifyLogout(moment)).status, 200);
@@ -247,12 +247,12 @@ test('buradan cikis merkeze bildirilir', async () => {
   assert.deepEqual(hub.logouts, [hub.username.sub]);
 });
 
-test('durum sorgusundaki son_cikis uygulanir (bildirim kaybolsa da)', async () => {
+test('durum sorgusundaki last_logout uygulanir (bildirim kaybolsa da)', async () => {
   const { session } = await hubEnter();
   await new Promise((r) => setTimeout(r, 5));
-  hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'admin', 'son_cikis': Date.now() };
+  hub.status = { status: 'etkin', can_enter: true, role: 'admin', last_logout: Date.now() };
   try {
     await app.services.links.refresh(hub.username.sub);
     assert.equal((await me(session)).status, 401);
-  } finally { hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'admin' }; }
+  } finally { hub.status = { status: 'etkin', can_enter: true, role: 'admin' }; }
 });

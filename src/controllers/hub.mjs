@@ -1,15 +1,16 @@
 /**
- * Merkez ile giris: baslat (merkeze gonder), geri (kodu jetona cevir, uyeyi bagla, oturum ac), tazele (merkezden bildirim).
+ * Merkez ile giris: baslat (merkeze gonder), geri (kodu jetona cevir, uyeyi bagla, oturum ac), refresh (merkezden bildirim).
  * Akis durumu (PKCE dogrulayicisi + state) kisa omurlu, imzali bir cerezde tasinir: sunucuda oturum tablosu yok.
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { LABELS } from '../core/crypto-labels.mjs';
 import { DatabaseError } from '../core/errors.mjs';
 import { readCookie, writeCookie, readBody, json } from '../core/http.mjs';
 import { HubUnauthorizedError } from '../services/hub.mjs';
 
 const FLOW_COOKIE = 'cam_hub_flow';
 const FLOW_SECONDS = 600;
-const FLOW_LABEL = 'kamera2/merkez-akis';   // oturum cerezinden ayri imza amaci: akis cerezi oturum cerezi olarak gecmez. Etiket eski adla SABIT (depo cam oldu): degisirse yarim kalan girisler duser
+const FLOW_LABEL = LABELS.hubFlow;   // oturum cerezinden ayri imza amaci: akis cerezi oturum cerezi olarak gecmez. Degisirse yarim kalan girisler duser
 
 /** Giris sayfasinda gosterilecek hata metinleri; adres cubugunda yalniz KOD gider, metin sunucuda. */
 export const HUB_ERRORS = {
@@ -67,18 +68,18 @@ export function hubController({ hub, links, members, auditLog, config }) {
     async refresh(ctx) {
       const g = await readBody(ctx.req).catch(() => ({}));
       const subject = String(g.subject ?? '').trim();
-      if (hub.isEnabled() && hub.isNotificationSigned(subject, String(ctx.req.headers['x-kimlik-imza'] ?? '')) && links.find(subject)) {
+      if (hub.isEnabled() && hub.isNotificationSigned(subject, String(ctx.req.headers['x-identity-signature'] ?? '')) && links.find(subject)) {
         links.refresh(subject).catch(() => {});
       }
-      return json(ctx.res, 200, { result: 'alındı' });
+      return json(ctx.res, 200, { result: 'received' });
     },
 
     /** Merkezden "bu kisi cikis yapti" (ortak cikis). Imza ani da kapsar; tutarsa an dogrudan uygulanir. Yanit her durumda ayni. */
     async logout(ctx) {
       const g = await readBody(ctx.req).catch(() => ({}));
-      const subject = String(g.subject ?? '').trim(), moment = Number(g.moment);
-      if (hub.isEnabled() && hub.isLogoutSigned(subject, moment, String(ctx.req.headers['x-kimlik-imza'] ?? ''))) await links.processLogout(subject, moment);
-      return json(ctx.res, 200, { result: 'alındı' });
+      const subject = String(g.subject ?? '').trim(), moment = Number(g.time);
+      if (hub.isEnabled() && hub.isLogoutSigned(subject, moment, String(ctx.req.headers['x-identity-signature'] ?? ''))) await links.processLogout(subject, moment);
+      return json(ctx.res, 200, { result: 'received' });
     },
   };
 }

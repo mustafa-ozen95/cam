@@ -285,7 +285,7 @@
  * Tema düğmesi giriş ekranında SAĞ ÜSTTE durur: panel içindeki yeriyle aynı
  * köşe, böylece giren kişi onu aradığı yerde bulur.
  */
-.gate__tema {
+.gate__theme {
     position: fixed;
     top: var(--space-4);
     right: var(--space-4);
@@ -329,7 +329,7 @@
  * arka planı boyayan bir sözcük kutusu gerekirdi ve tema değiştiğinde o kutu
  * zeminden ayrı düşerdi.
  */
-.gate__ayrac {
+.gate__divider {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
@@ -339,8 +339,8 @@
     color: var(--color-text-muted);
 }
 
-.gate__ayrac::before,
-.gate__ayrac::after {
+.gate__divider::before,
+.gate__divider::after {
     content: '';
     height: 1px;
     background: var(--color-line);
@@ -353,7 +353,7 @@
  * açılır. Ok işaretini kendimiz çiziyoruz — tarayıcının varsayılan üçgeni
  * her platformda farklı boyda ve hizası şeridin geri kalanıyla tutmuyor.
  */
-.gate__katlanir-baslik {
+.gate__collapsible-title {
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -364,11 +364,11 @@
     user-select: none;
 }
 
-.gate__katlanir-baslik::-webkit-details-marker {
+.gate__collapsible-title::-webkit-details-marker {
     display: none;
 }
 
-.gate__katlanir-baslik::before {
+.gate__collapsible-title::before {
     content: '';
     width: 0;
     height: 0;
@@ -378,16 +378,16 @@
     transition: transform var(--transition-fast);
 }
 
-.gate__katlanir[open] > .gate__katlanir-baslik::before {
+.gate__collapsible[open] > .gate__collapsible-title::before {
     transform: rotate(90deg);
 }
 
-.gate__katlanir-baslik:hover {
+.gate__collapsible-title:hover {
     color: var(--color-text);
 }
 
 /* Açıldığında form başlığa yapışmasın. */
-.gate__katlanir[open] > form {
+.gate__collapsible[open] > form {
     margin-top: var(--space-4);
 }
 
@@ -617,21 +617,21 @@
  * denenen yol. Renk yalnızca destekliyor; tek başına taşımıyor, çünkü
  * renk körlüğünde ve yüksek karşıtlık kipinde kaybolur.
  */
-.gate__mark--uyari {
+.gate__mark--warning {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     color: var(--color-red-fg);
 }
 
-.gate__mark--uyari svg {
+.gate__mark--warning svg {
     width: 1.1em;
     height: 1.1em;
     flex: none;
 }
 
 /* Denenen yol: kullanıcı yanlış bağlantıya tıkladıysa hangisi olduğunu görsün. */
-.gate__yol {
+.gate__path {
     background: var(--color-red-bg);
     border-radius: var(--radius-sm);
     color: var(--color-red-fg);
@@ -641,6 +641,6 @@
     padding: var(--space-2) var(--space-3);
 }
 
-.gate__lead--kucuk {
+.gate__lead--small {
     font-size: var(--text-sm);
 }

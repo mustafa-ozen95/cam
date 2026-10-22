@@ -7,17 +7,17 @@
  * Panel kabuğunu taklit eder ki liste, sayfanın geri kalanıyla aynı dilde
  * dursun.
  */
-.katlanir {
+.collapsible {
     background: var(--color-surface);
     border: 1px solid var(--color-line);
     border-radius: var(--radius-lg);
 }
 
-.katlanir + .katlanir {
+.collapsible + .collapsible {
     margin-top: var(--space-4);
 }
 
-.katlanir__baslik {
+.collapsible__title {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -27,12 +27,12 @@
     list-style: none;
 }
 
-.katlanir__baslik::-webkit-details-marker {
+.collapsible__title::-webkit-details-marker {
     display: none;
 }
 
 /* Oku kendimiz çiziyoruz: tarayıcının üçgeni her platformda farklı boyda. */
-.katlanir__baslik::before {
+.collapsible__title::before {
     content: '';
     flex-shrink: 0;
     width: 0;
@@ -43,15 +43,15 @@
     transition: transform var(--transition-fast);
 }
 
-.katlanir[open] > .katlanir__baslik::before {
+.collapsible[open] > .collapsible__title::before {
     transform: rotate(90deg);
 }
 
-.katlanir__ad {
+.collapsible__name {
     font-weight: var(--weight-semibold);
 }
 
-.katlanir__ek {
+.collapsible__extra {
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
@@ -59,17 +59,17 @@
 }
 
 /* Başlıktaki eylemler sağa yaslanır; tıklanınca panel açılıp kapanmaz. */
-.katlanir__eylemler {
+.collapsible__actions {
     margin-left: auto;
     display: flex;
     align-items: center;
     gap: var(--space-2);
 }
 
-.katlanir__govde {
+.collapsible__body {
     border-top: 1px solid var(--color-line);
 }
 
-.katlanir__govde .table {
+.collapsible__body .table {
     width: 100%;
 }

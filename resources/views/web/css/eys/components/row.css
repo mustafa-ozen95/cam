@@ -177,7 +177,7 @@
 }
 
 /*
- * Sürüklenebilir satır (gruplar ve alt gruplar; bkz. siralama.js).
+ * Sürüklenebilir satır (gruplar ve alt gruplar; bkz. sorting.js).
  *
  * Sırayı bir sayı kutusuna elle yazmak yerine sayfadaki dizilimi görüp
  * doğrudan yerini değiştirmek istenen davranış.
@@ -186,28 +186,28 @@
  * bağlantı, kutu ve düğmeler tıklanabilir kalmalı, o yüzden `draggable`
  * yalnızca satıra veriliyor ve imleç tutamağın üzerinde değişiyor.
  */
-[data-sira-kimlik] {
+[data-order-id] {
     cursor: grab;
 }
 
-[data-sira-kimlik] a,
-[data-sira-kimlik] button,
-[data-sira-kimlik] input {
+[data-order-id] a,
+[data-order-id] button,
+[data-order-id] input {
     cursor: auto;
 }
 
-[data-sira-kimlik] a,
-[data-sira-kimlik] button {
+[data-order-id] a,
+[data-order-id] button {
     cursor: pointer;
 }
 
-[data-sira-kimlik].is-dragging {
+[data-order-id].is-dragging {
     opacity: 0.4;
     cursor: grabbing;
 }
 
 /* Sürüklenecek yeri işaret eden tutamak; ayrı bir hedef değil, ipucu. */
-.tutamak {
+.handle {
     display: inline-block;
     flex-shrink: 0;
     width: 1em;

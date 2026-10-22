@@ -237,9 +237,9 @@ test('cihaz yönetimi ve günlük: parola sızmaz, zincir doğrulanır, olaylar 
 });
 
 test('rota listesi: HER rota kimlik ister; kimliksiz yalnız giriş sayfasının ihtiyacı ve açık istisnalar', async () => {
-  // /api/kimlik/tazele: merkezden gelen bildirim; kimligi HMAC imzasi (bkz. merkez.test.mjs), cerez/anahtar degil.
+  // /api/identity/refresh: merkezden gelen bildirim; kimligi HMAC imzasi (bkz. merkez.test.mjs), cerez/anahtar degil.
   // /api/v1/saglik: yalniz dongu adresinden yanit verir (HEALTHCHECK). Digerleri giris sayfasi: ana sayfa (oturum yoksa giris formu), css/js/font/simge, merkez ile giris akisi.
-  const isOpen = new Set(['/api/login', '/api/logout', '/api/kimlik/tazele', '/api/kimlik/cikis', '/api/v1/health', '/', '/index.html', '/icon.svg', '/css/:a', '/css/:a/:b', '/css/:a/:b/:c', '/fonts/:a', '/js/:a', '/js/:a/:b', '/js/:a/:b/:c', '/login/hub', '/login/hub/callback',
+  const isOpen = new Set(['/api/login', '/api/logout', '/api/identity/refresh', '/api/identity/logout', '/api/v1/health', '/', '/index.html', '/icon.svg', '/css/:a', '/css/:a/:b', '/css/:a/:b/:c', '/fonts/:a', '/js/:a', '/js/:a/:b', '/js/:a/:b/:c', '/login/hub', '/login/hub/callback',
     // /live: UYELIKSIZ izleme. Yalniz okuma: sayfa, kendi betik/stili, kamera adlari (adres yok), ortak duzen,
     // "admin miyim" sorusu. Duzeni yazmak (/live/duzen, PUT) kimlik ister ve bu listede DEGIL.
     // /live/rtc/:yol/whep: izleme baglantisi (SDP alisverisi); yalniz panelin listeledigi yollar, mediamtx'te okuma izni.

@@ -56,8 +56,9 @@ export class Database {
   /**
    * Gocler: surum tablosu (migrations), sirali, uygulananlar tekrar kosmaz. Es zamanli iki acilis (iki kopya) ayni goce girmesin diye
    * veritabani kilidi (GET_LOCK) altinda calisir. Dondurur: bu acilista uygulananlarin surumleri.
+   * baglam: { secret (Buffer; gizli anahtara bagli veriyi tasiyan gocler ister), log (varsayilan console.log) } — veri gocleri run(conn, baglam) alir.
    */
-  async runMigrations() {
+  async runMigrations(context = {}) {
     const c = await this.pool.getConnection();
     const applied = [];
     try {
@@ -70,7 +71,7 @@ export class Database {
         if (done.has(g.version)) continue;
         if (g.run) {       // veri goci: kendi satiri ile birlikte TEK islemde; hata olursa hicbir sey degismez
           await c.beginTransaction();
-          try { await g.run(c); await c.query('INSERT INTO migrations (version, name) VALUES (?, ?)', [g.version, g.name]); await c.commit(); }
+          try { await g.run(c, { log: console.log, ...context }); await c.query('INSERT INTO migrations (version, name) VALUES (?, ?)', [g.version, g.name]); await c.commit(); }
           catch (e) { await c.rollback(); throw e; }
         } else {
           for (const sql of g.sql) await c.query(sql);

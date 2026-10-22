@@ -21,7 +21,7 @@ const arg = process.argv.slice(2);
 const check = arg.includes('--check');
 const EYS = resolve(arg.find((a) => !a.startsWith('--')) ?? join(ROOT, '..', 'eys'));
 /** EYS'den alinan betikler: yalniz lib/dom.js'e dayananlar (confirm/navigation Laravel formlarina bagli, alinmaz). */
-export const JS_LIST = ['lib/dom.js', 'components/theme.js', 'components/kullanici-menu.js', 'components/dialog.js', 'components/toast.js', 'components/columns.js'];
+export const JS_LIST = ['lib/dom.js', 'components/theme.js', 'components/user-menu.js', 'components/dialog.js', 'components/toast.js', 'components/columns.js'];
 
 const summarize = (p) => createHash('sha256').update(readFileSync(p)).digest('hex');
 const files = (root) => readdirSync(root, { recursive: true }).map(String).filter((d) => statSync(join(root, d)).isFile()).sort();

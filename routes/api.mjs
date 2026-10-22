@@ -7,10 +7,10 @@ import { permission, any } from '../src/middleware/permissions.mjs';
 export function apiRoutes(r, d, middleware) {
   r.post('/api/login', d.login.login, [middleware.identityOptional]);
   r.post('/api/logout', d.login.logout);
-  // Merkezden "bu kimlik degisti" bildirimi: jeton yok, HMAC imza (bkz. src/controllers/hub.mjs · tazele).
-  r.post('/api/kimlik/tazele', d.hub.refresh);
-  // Merkezden ortak cikis bildirimi: HMAC imza ani da kapsar (bkz. src/controllers/hub.mjs · cikis).
-  r.post('/api/kimlik/cikis', d.hub.logout);
+  // Merkezden "bu kimlik degisti" bildirimi: jeton yok, HMAC imza (bkz. src/controllers/hub.mjs · refresh).
+  r.post('/api/identity/refresh', d.hub.refresh);
+  // Merkezden ortak cikis bildirimi: HMAC imza ani da kapsar (bkz. src/controllers/hub.mjs · logout).
+  r.post('/api/identity/logout', d.hub.logout);
 
   r.group([middleware.identity], () => {
     r.get('/api/me', d.login.me);

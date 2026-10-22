@@ -38,7 +38,7 @@
 .channel img, .focus-view img, .timeline-frame img, .channel video, .focus-view video { -webkit-user-drag: none; }
 .channel, .focus-view, .timeline { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 
-/* Sol listede cihaz bolumu: katlanir baslik; gorunus EYS .credential-bolum ile ayni dil. */
+/* Sol listede cihaz bolumu: katlanir baslik; gorunus EYS .credential-section ile ayni dil. */
 .camera-section { border-top: 1px solid var(--color-line); }
 .camera-section__header { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); cursor: pointer; list-style: none; font-size: var(--text-sm); font-weight: var(--weight-semibold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted); }
 .camera-section__header::-webkit-details-marker { display: none; }
@@ -85,7 +85,7 @@
     .detail--list { width: 340px; }
 }
 .recording-day .input { flex: 1 1 auto; min-width: 0; }
-.recording-filter .kayit-formu__gelismis { margin-top: var(--space-3); }
+.recording-filter .record-form__advanced { margin-top: var(--space-3); }
 .recording-filter .form-grid { gap: var(--space-3); }
 .recording-bulk { gap: var(--space-2); }
 
@@ -131,19 +131,19 @@
 .clocks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 
 /* Tam ekran: oynatici ekrani kaplar, kareler bolunur. */
-.pseudo-fullscreen.oynatici, .player:fullscreen { display: flex !important; flex-direction: column; background: #000; }
-.player.sahte-tam .timeline-grid, .player:fullscreen .timeline-grid { flex: 1 1 auto; min-height: 0; grid-template-rows: repeat(var(--timeline-r, 1), minmax(0, 1fr)); }
-.player.sahte-tam .timeline-frame, .player:fullscreen .timeline-frame { aspect-ratio: auto; height: 100%; }
+.pseudo-fullscreen.player, .player:fullscreen { display: flex !important; flex-direction: column; background: #000; }
+.player.pseudo-fullscreen .timeline-grid, .player:fullscreen .timeline-grid { flex: 1 1 auto; min-height: 0; grid-template-rows: repeat(var(--timeline-r, 1), minmax(0, 1fr)); }
+.player.pseudo-fullscreen .timeline-frame, .player:fullscreen .timeline-frame { aspect-ratio: auto; height: 100%; }
 /* iPhone Safari video disi ogeler icin tam ekran API'si sunmaz: sayfa ici tam ekran */
 .pseudo-fullscreen { position: fixed !important; inset: 0; z-index: 200; width: 100vw !important; height: 100dvh !important; max-height: none !important; margin: 0 !important; border: 0 !important; border-radius: 0 !important; background: #000; }
 .pseudo-fullscreen::after { content: '✕ Kapat'; position: fixed; top: calc(env(safe-area-inset-top) + 10px); right: 12px; padding: 6px 12px; background: rgb(0 0 0 / 65%); color: #fff; font: var(--text-md) var(--font-sans); border: 1px solid rgb(255 255 255 / 35%); border-radius: var(--radius); pointer-events: none; }
-.player.sahte-tam::after { display: none; }
+.player.pseudo-fullscreen::after { display: none; }
 /*
  * Tam ekran oynatici HER TEMADA KOYU. Zemin siyah; acik temanin beyaz yuzey/cizgi belirtecleri zaman cubugunu, dugme
  * kenarlarini ve kaydirma cubugunu beyaz gosterir. Degerler EYS tokens.css koyu :root
  * blogundakilerle AYNI; orada degisirse burada da degismeli.
  */
-.player:fullscreen, .player.sahte-tam {
+.player:fullscreen, .player.pseudo-fullscreen {
     color-scheme: dark;
     --color-page: var(--palette-graphite-850); --color-column: var(--palette-graphite-800); --color-column-alt: var(--palette-graphite-900);
     --color-surface: var(--palette-graphite-800); --color-sunken: var(--palette-graphite-950); --color-selected: var(--palette-graphite-600);
@@ -247,10 +247,10 @@
 
 /* Canli odak tam ekranda: Goruntu al ve Tam ekrandan cik (ustteki dugmeler tam ekranin disinda kaliyor). */
 .focus-view__tools { display: none; position: absolute; top: calc(env(safe-area-inset-top) + 12px); right: 12px; z-index: 2; gap: var(--space-3); }
-.focus-view:fullscreen .focus-view__tools, .focus-view.sahte-tam .focus-view__tools { display: flex; }
+.focus-view:fullscreen .focus-view__tools, .focus-view.pseudo-fullscreen .focus-view__tools { display: flex; }
 .focus-view__tools .btn { width: 40px; height: 40px; padding: 0; justify-content: center; background: rgb(0 0 0 / 55%); border-color: rgb(255 255 255 / 30%); color: #fff; }
 .focus-view__tools .btn:hover { background: rgb(0 0 0 / 75%); }
-.focus-view.sahte-tam::after { display: none; }   /* "Kapat" etiketi yerine cik dugmesi */
+.focus-view.pseudo-fullscreen::after { display: none; }   /* "Kapat" etiketi yerine cik dugmesi */
 
 /*
  * Telefonda pencere ORTADA acilir (tepede acilan pencere telefonda kotu durur).

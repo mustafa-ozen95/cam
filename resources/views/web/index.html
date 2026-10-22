@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="tema-alan" content="">
+<meta name="theme-domain" content="">
 <title>Kamera Paneli</title>
 <link rel="icon" href="./icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="./css/app.css">
@@ -37,26 +37,26 @@
       </svg>
     </button>
 
-    <div class="kullanici-menu" data-menu>
-      <button type="button" class="kullanici-menu__dugme" data-menu-ac
+    <div class="user-menu" data-menu>
+      <button type="button" class="user-menu__button" data-menu-open
               aria-haspopup="true" aria-expanded="false" aria-label="Hesap menüsü">
         <span class="topbar__avatar" aria-hidden="true" id="identityInitial"></span>
         <span class="topbar__name" id="identity"></span>
-        <svg class="kullanici-menu__ok" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+        <svg class="user-menu__arrow" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
           <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"
                 stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
 
-      <div class="kullanici-menu__liste" data-menu-liste hidden>
-        <button type="button" class="kullanici-menu__oge" id="languageToggle"></button>
-        <button type="button" class="kullanici-menu__oge kullanici-menu__oge--cikis" id="logout">Çıkış</button>
+      <div class="user-menu__list" data-menu-list hidden>
+        <button type="button" class="user-menu__item" id="languageToggle"></button>
+        <button type="button" class="user-menu__item user-menu__item--logout" id="logout">Çıkış</button>
       </div>
     </div>
   </header>
 
     <!-- Yeni surum uyarisi: yalniz update.check izni olana; ayrinti Guncelleme sekmesinde. -->
-    <div class="alert alert--info alert--aralikli" id="updateWarning" role="status" hidden>
+    <div class="alert alert--info alert--spaced" id="updateWarning" role="status" hidden>
       <strong>Panelin yeni sürümü var.</strong> <span id="updateWarningText"></span> <a href="#updates" data-tab="updates">Güncelleme</a>
     </div>
 
@@ -126,7 +126,7 @@
             <div class="timeline-downloads" id="timelineDownloads" hidden></div>
             <div class="timeline-grid" id="timelineGrid"></div>
             <div class="timeline" id="timeline" title="Sürükleyin: tüm kameralar birlikte kayar. Dokunduğunuz ana gider."></div>
-            <div class="timeline-tip" id="ipucu" hidden></div>
+            <div class="timeline-tip" id="timelineHint" hidden></div>
             <div class="clocks" id="clocks"></div>
           </section>
         </div>
@@ -145,9 +145,9 @@
               <input class="input" type="date" id="recDay" aria-label="Gün">
               <button type="button" class="btn btn--sm btn--icon" id="recTomorrow" title="Sonraki gün" aria-label="Sonraki gün">›</button>
             </div>
-            <details class="kayit-formu__gelismis" id="recFilterGroup">
-              <summary><span class="kayit-formu__gelismis-baslik">Süzgeç</span><span class="text-sm text-muted" id="recFilterSummary"></span></summary>
-              <div class="kayit-formu__gelismis-govde">
+            <details class="record-form__advanced" id="recFilterGroup">
+              <summary><span class="record-form__advanced-title">Süzgeç</span><span class="text-sm text-muted" id="recFilterSummary"></span></summary>
+              <div class="record-form__advanced-body">
                 <div class="form-grid">
                   <div class="field"><label class="field__label" for="recType">Tür</label><select class="select" id="recType"><option value="">Tüm türler</option><option value="R">Sürekli</option><option value="M">Hareket</option><option value="A">Alarm</option><option value="H">Elle</option></select></div>
                   <div class="field"><label class="field__label" for="recSize">Sayfada</label><select class="select" id="recSize"><option value="10">10 / sayfa</option><option value="25" selected>25 / sayfa</option><option value="50">50 / sayfa</option><option value="100">100 / sayfa</option></select></div>
@@ -163,9 +163,9 @@
             </details>
           </form>
           <div class="row row--wrap recording-bulk detail__block">
-            <input type="checkbox" id="bulk-tools-toggle" class="toplu-araclar__kutu" hidden>
-            <label for="bulk-tools-toggle" class="btn btn--sm toplu-araclar__dugme">Toplu işlemler</label>
-            <div class="toplu-araclar">
+            <input type="checkbox" id="bulk-tools-toggle" class="bulk-tools__box" hidden>
+            <label for="bulk-tools-toggle" class="btn btn--sm bulk-tools__button">Toplu işlemler</label>
+            <div class="bulk-tools">
               <div class="bulk" id="recBulk">
                 <label class="bulk__all">
                   <input type="checkbox" id="recAll" aria-label="Süzgeçteki tüm kayıtları seç">
@@ -416,9 +416,9 @@
         <div class="field"><label class="field__label" for="devHost">Adres</label><input class="input input--mono" id="devHost" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="url"><span class="field__hint">IP ya da alan adı</span></div>
         <div class="field"><label class="field__label" for="devUser">Kullanıcı adı</label><input class="input input--mono" id="devUser" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
         <div class="field"><label class="field__label" for="devPass">Parola</label><input class="input" id="devPass" type="password" autocomplete="new-password" autocapitalize="none" spellcheck="false"><span id="devPassNote" class="field__hint"></span></div>
-        <details class="kayit-formu__gelismis">
-          <summary><span class="kayit-formu__gelismis-baslik">Gelişmiş</span></summary>
-          <div class="kayit-formu__gelismis-govde">
+        <details class="record-form__advanced">
+          <summary><span class="record-form__advanced-title">Gelişmiş</span></summary>
+          <div class="record-form__advanced-body">
             <div class="field devChannelRow"><label class="field__label" for="devChannels">Kanal sayısı</label><input class="input input--mono" id="devChannels" type="number" min="1" max="128"></div>
             <div class="field"><label class="field__label" for="devLabel">Kanal öneki</label><input class="input input--mono" id="devLabel" maxlength="3" autocomplete="off" autocapitalize="characters"><span class="field__hint">D1, H1 gibi</span></div>
             <div class="field devPortRow"><label class="field__label" for="devPort">DVR bağlantı portu</label><input class="input input--mono" id="devPort" type="number" min="1" max="65535" placeholder="34567"></div>
@@ -473,9 +473,9 @@
         <div class="field"><label class="field__label" for="keyRole">Rol</label><select class="select" id="keyRole"><option value="">— rol yok, yalnız seçili izinler —</option></select><span class="field__hint">izinler rolden gelir; ek izin aşağıda</span></div>
         <div class="field"><span class="field__label">Ek izinler</span><div id="keyPermissions" class="permission-list"></div></div>
         <div class="field"><span class="field__label">Kamera kapsamı</span><div id="keyScope" class="scope-list"></div><span class="field__hint">boş = tümü</span></div>
-        <details class="kayit-formu__gelismis">
-          <summary><span class="kayit-formu__gelismis-baslik">Sınırlar</span></summary>
-          <div class="kayit-formu__gelismis-govde">
+        <details class="record-form__advanced">
+          <summary><span class="record-form__advanced-title">Sınırlar</span></summary>
+          <div class="record-form__advanced-body">
             <div class="field"><label class="field__label" for="keyExpiry">Bitiş tarihi</label><input class="input" type="date" id="keyExpiry"></div>
             <div class="field"><label class="field__label" for="keyIps">İzinli IP / CIDR</label><input class="input input--mono" id="keyIps" autocomplete="off" placeholder="10.0.0.0/24"><span class="field__hint">virgülle</span></div>
             <div class="field-row">
@@ -523,9 +523,9 @@
         <div class="field"><label class="field__label" for="memberName">Kullanıcı adı</label><input class="input input--mono" id="memberName" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
         <div class="field"><label class="field__label" for="memberPassword">Parola</label><input class="input" id="memberPassword" type="text" autocomplete="new-password" autocapitalize="none" spellcheck="false" placeholder="en az 8 karakter"><span id="memberPasswordNote" class="field__hint"></span></div>
         <div class="field"><label class="field__label" for="memberRole">Rol</label><select class="select" id="memberRole"></select><span class="field__hint" id="memberRoleNote"></span></div>
-        <details class="kayit-formu__gelismis">
-          <summary><span class="kayit-formu__gelismis-baslik">Erişim kısıtları (isteğe bağlı)</span></summary>
-          <div class="kayit-formu__gelismis-govde">
+        <details class="record-form__advanced">
+          <summary><span class="record-form__advanced-title">Erişim kısıtları (isteğe bağlı)</span></summary>
+          <div class="record-form__advanced-body">
             <div class="field"><span class="field__label">Kamera kapsamı</span><div id="memberScope" class="scope-list"></div><span class="field__hint">boş = tüm kameralar</span></div>
             <div class="field"><label class="field__label" for="memberExpiry">Hesap bitiş tarihi</label><input class="input" type="date" id="memberExpiry"></div>
             <div class="field"><label class="field__label" for="memberIps">İzinli IP / CIDR listesi</label><input class="input input--mono" id="memberIps" autocomplete="off" placeholder="10.0.0.0/24, 203.0.113.5"><span class="field__hint">virgülle; boş = kısıtsız</span></div>
@@ -597,7 +597,7 @@
  */
 import { $ } from '/js/eys/lib/dom.js';
 import * as theme from '/js/eys/components/theme.js';
-import * as userMenu from '/js/eys/components/kullanici-menu.js';
+import * as userMenu from '/js/eys/components/user-menu.js';
 import * as dialog from '/js/eys/components/dialog.js';
 import * as toast from '/js/eys/components/toast.js';
 import * as columns from '/js/eys/components/columns.js';
@@ -1881,7 +1881,7 @@ setInterval(() => { if (tl.playing && tl.t0) { tl.hub = tlNow(); drawTime(); } }
 // sürükle: çizelge parmağı/fareyi izler, bırakınca TÜM kameralar o andan oynar. Dokunuş (sürüklemeden): tıklanan ana git.
 let drag = null;
 const timeW = () => $('#timeline').getBoundingClientRect().width;
-function showHint(show) { const i = $('#ipucu'); i.hidden = !show; if (show) { i.textContent = string(tl.hub); i.style.left = `${timeW() / 2 - i.offsetWidth / 2}px`; } }
+function showHint(show) { const i = $('#timelineHint'); i.hidden = !show; if (show) { i.textContent = string(tl.hub); i.style.left = `${timeW() / 2 - i.offsetWidth / 2}px`; } }
 $('#timeline').addEventListener('pointerdown', (e) => {
   if (e.button > 0) return;
   $('#timeline').setPointerCapture(e.pointerId);
@@ -1994,10 +1994,10 @@ function drawJob(jobs) {
     const percent = i.size ? Math.min(99, Math.round((i.byte / i.size) * 100)) : 0;
     const stage = i.error ?? ({ downloading: `${writeSize(i.byte)} / ${writeSize(i.size)}`, converting: 'Cihazdan inen kayıt mp4’e çevriliyor', finished: writeSize(i.size), waiting: 'Sırada bekliyor', revoked: '' }[i.status] ?? '');
     const given = i.status === 'downloading' && percent > 0;
-    const progress = active ? el('div', { class: 'ilerleme' },
-      el('div', { class: 'ilerleme__ust' }, el('span', { class: 'ilerleme__metin' }, stage), el('span', { class: 'ilerleme__adim' }, given ? `%${percent}` : '')),
-      el('div', { class: 'ilerleme__yol', role: 'progressbar', 'aria-label': 'İlerleme', 'aria-valuemin': '0', 'aria-valuemax': '100', ...(given ? { 'aria-valuenow': String(percent) } : {}) },
-        el('div', { class: 'ilerleme__cubuk', style: `width:${given ? percent : 100}%` })))
+    const progress = active ? el('div', { class: 'progress' },
+      el('div', { class: 'progress__top' }, el('span', { class: 'progress__text' }, stage), el('span', { class: 'progress__step' }, given ? `%${percent}` : '')),
+      el('div', { class: 'progress__track', role: 'progressbar', 'aria-label': 'İlerleme', 'aria-valuemin': '0', 'aria-valuemax': '100', ...(given ? { 'aria-valuenow': String(percent) } : {}) },
+        el('div', { class: 'progress__bar', style: `width:${given ? percent : 100}%` })))
       : el('span', { class: i.error ? 'text-sm hata-yazi' : 'text-sm text-muted' }, stage);
     const action = ['waiting', 'downloading'].includes(i.status) ? button('İptal', 'danger', () => api(`/api/jobs/${i.id}/revoke`, { method: 'POST' }).then(reloadDownloaded))
       : i.status === 'finished' ? el('a', { class: 'btn btn--sm btn--primary', href: `/archive/${encodeURIComponent(i.name)}?download=1` }, 'Tekrar kaydet') : '';
@@ -2333,9 +2333,9 @@ function drawRoleList() {
     const badges = r.permissions.includes('*') ? [el('span', { class: 'badge badge--purple' }, 'Tüm izinler')]
       : !r.permissions.length ? [el('span', { class: 'text-sm text-muted' }, 'İzin yok')]
       : r.permissions.map((i) => el('span', { class: 'badge badge--gray', title: permissionName(i)?.[language] ?? permissionName(i)?.tr ?? '' }, i));
-    return el('details', { class: 'katlanir' },
-      el('summary', { class: 'katlanir__baslik' }, el('span', { class: 'katlanir__ad' }, r.name?.[language] ?? r.name?.tr ?? r.id), el('span', { class: 'katlanir__ek text-sm text-muted' }, ...parts(extra))),
-      el('div', { class: 'katlanir__govde' },
+    return el('details', { class: 'collapsible' },
+      el('summary', { class: 'collapsible__title' }, el('span', { class: 'collapsible__name' }, r.name?.[language] ?? r.name?.tr ?? r.id), el('span', { class: 'collapsible__extra text-sm text-muted' }, ...parts(extra))),
+      el('div', { class: 'collapsible__body' },
         ...(permissionEditable ? [el('div', { class: 'panel__body row row--wrap row--end' }, button('İzinleri düzenle', '', () => roleDialog(r)))] : []),
         ...(editable ? [el('div', { class: 'panel__body row row--wrap row--end' }, button('Düzenle', '', () => roleDialog(r)),
           button('Sil', 'danger', async () => { if (!await askConfirm(`“${r.id}” rolü silinsin mi?`, 'sil', { header: 'Rolü sil' })) return; try { await api(`/api/access/roles/${encodeURIComponent(r.id)}`, { method: 'DELETE' }); notify('Rol silindi', 'success'); reloadPermission(); } catch (e) { notify(e.message, 'danger'); } }))] : []),

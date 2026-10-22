@@ -5,8 +5,11 @@
  *
  * A migration is either `sql` (statements) or `run(conn)`: a data migration that runs inside ONE transaction together with its row in the
  * `migrations` table (an error rolls everything back). Data migrations are idempotent: converting an already converted value changes nothing.
+ * A data migration receives `(conn, { secret, log })`: the panel's secret key (Buffer; absent when only the schema is being prepared) and a logger.
  */
+import { createHmac, createHash } from 'node:crypto';
 import * as legacy from './legacy-names.mjs';
+import { auditSignature, devicePasswordKey, keyFingerprint, seal, unseal } from '../core/crypto-labels.mjs';
 
 const ENGINE = 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
 
@@ -103,6 +106,98 @@ export const MIGRATIONS = [
         const fresh = json(f)(row.value);
         if (fresh !== row.value) await c.query('UPDATE settings SET value = ? WHERE name = ?', [fresh, name]);
       }
+    },
+  },
+  {
+    // Cryptographic purpose labels -> English (src/core/crypto-labels.mjs). The PREVIOUS labels below are DATA: they are what the stored values were
+    // made with and must stay as written.
+    //  - device passwords: decrypted with the old key, encrypted again with the new one
+    //  - audit log chain: verified with the old signing, then every record is signed again in the same order (record text and order unchanged)
+    //  - key fingerprint (settings): recomputed
+    //  - API keys: stored only as a one-way hash, so they cannot be moved to the new label: every active key is REVOKED (logged with its count)
+    //  - session / sign-in flow cookies are short-lived and simply stop working
+    version: 3, name: 'english crypto labels',
+    run: async (c, { secret, log = console.log } = {}) => {
+      // previous labels (API keys: 'kamera2/api-anahtar', unused here: the hash cannot be moved; the audit chain had no label)
+      const OLD = { devicePassword: 'kamera2-cihaz-parola', fingerprint: 'cam/anahtar-izi' };
+      const needSecret = () => { if (!secret) throw new Error('Göç 3 gizli anahtarı ister (CAM_SECRET_KEY ya da data/secret.key)'); return secret; };
+      const WRONG_KEY = 'Gizli anahtar bu veritabanını dolduran anahtarla aynı değil (CAM_SECRET_KEY ya da data/secret.key). Doğru anahtarı verin; anahtar kaybolduysa kayıtlı cihaz parolaları yeniden girilmelidir.';
+      const done = { fingerprint: false, devices: 0, audit: 0, keys: 0 };
+
+      // 1) key fingerprint: checked FIRST, so a wrong key stops the migration before anything is rewritten
+      const [saved] = await c.query("SELECT value FROM settings WHERE name = 'key-fingerprint'");
+      if (saved.length) {
+        const current = JSON.parse(saved[0].value);
+        const previous = createHmac('sha256', needSecret()).update(OLD.fingerprint).digest('hex');
+        if (current !== previous && current !== keyFingerprint(secret)) throw new Error(WRONG_KEY);
+      }
+
+      // 2) audit log chain
+      const rows = async (after) => (await c.query('SELECT id, record FROM audit_log WHERE id > ? ORDER BY id LIMIT 500', [after]))[0];
+      const oldSign = (text) => createHmac('sha256', needSecret()).update(text).digest('hex');   // the chain used to be signed without a label
+      const walk = async (sign) => {
+        let previous = '', n = 0, last = 0;
+        for (let batch = await rows(last); batch.length; batch = await rows(last)) {
+          for (const r of batch) {
+            n++; last = r.id;
+            let k; try { k = JSON.parse(r.record); } catch { return { ok: false, record: n }; }
+            previous = legacy.auditChainStep(k, previous, sign);
+            if (previous === null) return { ok: false, record: n };
+          }
+        }
+        return { ok: true, record: n };
+      };
+      const [[total]] = await c.query('SELECT COUNT(*) AS n FROM audit_log');
+      if (Number(total.n) > 0) {
+        const newSign = (text) => auditSignature(needSecret(), text);
+        const before = await walk(oldSign);
+        if (before.ok) {
+          let previous = '', last = 0;
+          for (let batch = await rows(last); batch.length; batch = await rows(last)) {
+            for (const r of batch) {
+              last = r.id;
+              const k = JSON.parse(r.record), isLegacy = legacy.isLegacyAuditRecord(k);
+              const sigKey = isLegacy ? 'imza' : 'signature', prevKey = isLegacy ? 'onceki' : 'previous';
+              k[prevKey] = previous;                       // existing keys keep their position: the text differs only in these two values
+              const { [sigKey]: _old, ...rest } = k;
+              k[sigKey] = newSign(previous + JSON.stringify(rest));
+              await c.query('UPDATE audit_log SET previous_signature = ?, signature = ?, record = ? WHERE id = ?', [previous, k[sigKey], JSON.stringify(k), r.id]);
+              previous = k[sigKey]; done.audit++;
+            }
+          }
+          const after = await walk(newSign);
+          if (!after.ok || after.record !== before.record) throw new Error(`Göç 3: günlük zinciri yeniden imzalandıktan sonra doğrulanamadı (${after.record}. kayıt)`);
+        } else if (!(await walk(newSign)).ok) {
+          throw new Error(`Göç 3: günlük zinciri doğrulanamadı (${before.record}. kayıtta bozuk ya da farklı anahtar); göç durdu, hiçbir şey değişmedi`);
+        }   // else: zaten yeni etiketle imzalı
+      }
+
+      // 3) device passwords
+      const [devices] = await c.query('SELECT seq, id, password FROM devices');
+      if (devices.some((d) => d.password)) {
+        const oldKey = createHash('sha256').update(`${OLD.devicePassword}|${needSecret().toString('hex')}`).digest(), newKey = devicePasswordKey(secret);
+        for (const d of devices) {
+          let o = null; try { o = d.password ? JSON.parse(d.password) : null; } catch { /* not an envelope */ }
+          if (!o || typeof o !== 'object' || !o.iv || !o.tag || !o.data) continue;
+          let plain;
+          try { plain = unseal(oldKey, o); }
+          catch {
+            try { unseal(newKey, o); continue; } catch { /* neither: stop below */ }   // already moved
+            throw new Error(`Göç 3: ${d.id} cihazının parolası çözülemedi (gizli anahtar yanlış olabilir); göç durdu, hiçbir şey değişmedi`);
+          }
+          await c.query('UPDATE devices SET password = ? WHERE seq = ?', [JSON.stringify(seal(newKey, plain)), d.seq]); done.devices++;
+        }
+      }
+
+      // 4) API keys: not movable (one-way hash); revoke active ones once
+      const [keys] = await c.query('SELECT seq, revoked FROM api_keys');
+      const mark = JSON.stringify({ at: new Date().toISOString(), by: 'migration 3' });
+      for (const k of keys) if (!k.revoked) { await c.query('UPDATE api_keys SET revoked = ? WHERE seq = ?', [mark, k.seq]); done.keys++; }
+
+      // 5) fingerprint
+      if (saved.length) { await c.query("UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE name = 'key-fingerprint'", [JSON.stringify(keyFingerprint(secret))]); done.fingerprint = true; }
+
+      log(`goc 3 (kripto etiketleri): ${done.audit} günlük kaydı yeniden imzalandı, ${done.devices} cihaz parolası yeniden şifrelendi, ${done.keys} API anahtarı iptal edildi (karması etiketle taşınamaz; yenileri oluşturulmalı), parmak izi ${done.fingerprint ? 'güncellendi' : 'yok (yeni kurulum)'}`);
     },
   },
 ];

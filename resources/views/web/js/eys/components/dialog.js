@@ -46,9 +46,9 @@ function close(box) {
 
     box.querySelectorAll('form').forEach((form) => form.reset());
 
-    box.querySelectorAll('.field__error').forEach((hata) => hata.remove());
-    box.querySelectorAll('[aria-invalid="true"]').forEach((alan) => {
-        alan.setAttribute('aria-invalid', 'false');
+    box.querySelectorAll('.field__error').forEach((failure) => failure.remove());
+    box.querySelectorAll('[aria-invalid="true"]').forEach((field) => {
+        field.setAttribute('aria-invalid', 'false');
     });
 }
 
@@ -92,12 +92,12 @@ export function init() {
  * kalıyor, kullanıcı sayfanın başa atladığını görüyordu (ör. Gruplar ·
  * Yeni alt grup).
  */
-export function acilacaklariAc() {
+export function openPending() {
     // autofocus gövde yeniden yazılınca işlemiyor; odağı open() verir.
-    const acik = $('[data-modal-acik]');
+    const activeModal = $('[data-modal-active]');
 
-    if (acik) {
-        open(acik.id);
+    if (activeModal) {
+        open(activeModal.id);
     }
 
     /*
@@ -108,7 +108,7 @@ export function acilacaklariAc() {
      * gönderiliyor, sayfa yenileniyor, pencere kapanıyor ve ekranda "bir şey
      * olmadı" izlenimi kalıyor — oysa hata oradaydı, yalnızca görünmüyordu.
      *
-     * YUKARIDAKİ `data-modal-acik` YETMİYOR: onu her form ayrı ayrı
+     * YUKARIDAKİ `data-modal-active` YETMİYOR: onu her form ayrı ayrı
      * işaretlemek zorunda ve işaret genelde "adreste hangi pencere yazıyor"
      * bilgisine bağlanmış durumda, hataya değil. İşaretlemeyi unutan ya da
      * yönlendirmede adresi koruyamayan her form sessizce bu duruma düşüyordu.
@@ -116,11 +116,11 @@ export function acilacaklariAc() {
      * Kural GENELDİR: içinde hata olan pencere kendini açar. Yirmi forma tek
      * tek işaret koymak, birini unutmaya açık olurdu.
      */
-    const hatali = $('[data-modal] .field__error')?.closest('[data-modal]');
+    const invalid = $('[data-modal] .field__error')?.closest('[data-modal]');
 
-    if (hatali) {
-        hatali.hidden = false;
-        hatali.querySelector('.field__error')
+    if (invalid) {
+        invalid.hidden = false;
+        invalid.querySelector('.field__error')
             ?.closest('.field')
             ?.querySelector('input, select, textarea')
             ?.focus();

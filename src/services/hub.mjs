@@ -2,12 +2,12 @@
  * Kimlik Yonetim Merkezi (KYM) ile konusan istemci ve merkez baglari.
  *
  * AKIS: Authorization Code + PKCE. Kullanici merkezin kendi sayfasinda giris yapar, buraya tek kullanimlik bir
- * kod doner; kod sunucu tarafinda jetona cevrilir ve /oauth/kullanici ile kimlik okunur. Parola bu panele ugramaz.
+ * kod doner; kod sunucu tarafinda jetona cevrilir ve /oauth/userinfo ile kimlik okunur. Parola bu panele ugramaz.
  * EYS/NYS panellerindeki HubClient ile ayni protokol (bkz. KYM Uygulamalar ekrani).
  *
  * BAGLAR (merkez_baglari tablosu): merkezdeki kimlik (sub) -> buradaki uye adi. Merkezde erisimi kalkan ya da
  * rolu degisen kisi burada da ayni anda degismeli; durum, giriste ve her N dakikada bir arka kanaldan
- * (/api/kimlik-durumu) sorulur, merkez bildirim gonderirse (/api/kimlik/tazele) hemen sorulur.
+ * (/api/identity-status) sorulur, merkez bildirim gonderirse (/api/identity/refresh) hemen sorulur.
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Lock, Collection, writeOrRollback } from '../core/tables.mjs';
@@ -50,32 +50,32 @@ export class HubClient {
 
   /** Jetonun kime ait oldugu. 403: merkez bu uygulamaya kapiyi kapatmis (rol izinli degil) — ayri hata. */
   async username(token) {
-    const y = await this.#req('/oauth/kullanici', { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-    if (y.status === 403) { const j = await y.json().catch(() => ({})); throw new HubUnauthorizedError(j['hata'] ?? 'Bu panele erişim yetkiniz yok.'); }
+    const y = await this.#req('/oauth/userinfo', { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    if (y.status === 403) { const j = await y.json().catch(() => ({})); throw new HubUnauthorizedError(j.error ?? 'Bu panele erişim yetkiniz yok.'); }
     if (!y.ok) throw new Error(`Merkez kimliği vermedi (${y.status})`);
     const v = await y.json();
     if (!v.sub || !v.email) throw new Error('Merkezden gelen kimlik eksik');
-    return { sub: String(v.sub), name: String(v.name ?? ''), email: String(v.email), emailVerified: !!v.email_verified, role: v['rol'] ? String(v['rol']) : null, canCreateAccount: !!v['hesap_acilabilir'] };
+    return { sub: String(v.sub), name: String(v.name ?? ''), email: String(v.email), emailVerified: !!v.email_verified, role: v.role ? String(v.role) : null, canCreateAccount: !!v.can_create_account };
   }
 
   /** Merkezdeki kimliklerin SU ANKI durumu (arka kanal; istemci kimligi ve sirriyla). Yalnizca sorulanlar doner. */
   async identityStatuses(identities) {
     if (!identities.length) return {};
-    const y = await this.#req('/api/kimlik-durumu', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ client_id: this.k.client, client_secret: this.k.secret, 'kimlikler': identities }) });
+    const y = await this.#req('/api/identity-status', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ client_id: this.k.client, client_secret: this.k.secret, identities }) });
     if (!y.ok) throw new Error(`Merkez kimlik durumlarını vermedi (${y.status})`);
-    return (await y.json())['kimlikler'] ?? {};
+    return (await y.json()).identities ?? {};
   }
 
-  /** Ortak cikis: "bu kisi bende cikti" (merkez: /api/oturum-kapandi). Merkez ani yazar, kendi oturumunu ve diger panelleri kapatir. */
+  /** Ortak cikis: "bu kisi bende cikti" (merkez: /api/session-closed). Merkez ani yazar, kendi oturumunu ve diger panelleri kapatir. */
   async sessionClosed(subject) {
-    const y = await this.#req('/api/oturum-kapandi', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ client_id: this.k.client, client_secret: this.k.secret, subject }) });
+    const y = await this.#req('/api/session-closed', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ client_id: this.k.client, client_secret: this.k.secret, subject }) });
     if (!y.ok) throw new Error(`Merkez çıkışı almadı (${y.status})`);
   }
 
-  /** Merkezin cikis bildirimi: imza ANI da kapsar (`cikis|<subject>|<an>`), boylece an merkeze yeniden sorulmadan uygulanir. */
+  /** Merkezin cikis bildirimi: imza ANI da kapsar (`logout|<subject>|<time>`), boylece an merkeze yeniden sorulmadan uygulanir. */
   isLogoutSigned(subject, moment, signature) {
     if (!this.k.notifySecret || !subject || !Number.isSafeInteger(moment) || moment <= 0 || !signature) return false;
-    const expected = createHmac('sha256', this.k.notifySecret).update(`cikis|${subject}|${moment}`).digest('hex');
+    const expected = createHmac('sha256', this.k.notifySecret).update(`logout|${subject}|${moment}`).digest('hex');
     return signature.length === expected.length && timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
   }
 
@@ -198,18 +198,18 @@ export class HubLinks {
     catch (e) { this.auditLog.write('hub-role-error', link.name, req, { reason: e.message, hubRole }); }
   }
 
-  /** Merkezin verdigi durumu uygular: girebilir / rol. Merkezin (KYM) Turkce alan adlari sozlesmedir; tirnakli okunur, degismez. */
+  /** Merkezin verdigi durumu uygular: girebilir / rol. Alan adlari KYM sozlesmesidir. */
   async applyStatus(sub, status) {
     const link = this.find(sub); if (!link) return;
-    const canLogin = !!status['girebilir'];
-    if (link.canLogin && !canLogin) this.auditLog.write('hub-access-revoked', link.name, null, { hubStatus: status['durum'] ?? 'unknown' });
+    const canLogin = !!status.can_enter;
+    if (link.canLogin && !canLogin) this.auditLog.write('hub-access-revoked', link.name, null, { hubStatus: status.status ?? 'unknown' });
     if (!link.canLogin && canLogin) this.auditLog.write('hub-access-granted', link.name, null, {});
-    if (canLogin && status['rol'] !== undefined) await this.#applyRole(link, status['rol'] ?? null);
+    if (canLogin && status.role !== undefined) await this.#applyRole(link, status.role ?? null);
     await this.#transaction(() => {
       link.canLogin = canLogin; link.check = new Date().toISOString();
-      if (canLogin && status['rol'] !== undefined) link.role = status['rol'] ?? null;
+      if (canLogin && status['rol'] !== undefined) link.role = status.role ?? null;
       // Ortak cikis: bildirim kaybolduysa an buradan gelir (bkz. processLogout).
-      if (Number.isSafeInteger(status['son_cikis']) && status['son_cikis'] > (link.lastLogout ?? 0)) link.lastLogout = status['son_cikis'];
+      if (Number.isSafeInteger(status.last_logout) && status.last_logout > (link.lastLogout ?? 0)) link.lastLogout = status.last_logout;
     });
   }
 

@@ -6,31 +6,31 @@
  * ederdi (ve ikinci tur kilide takılıp "zaten sürüyor" diye düşerdi).
  */
 
-.ilerleme {
+.progress {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
 }
 
-.ilerleme__ust {
+.progress__top {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: var(--space-3);
 }
 
-.ilerleme__metin {
+.progress__text {
     font-size: var(--text-md);
     color: var(--color-text-secondary);
 }
 
-.ilerleme__adim {
+.progress__step {
     font-variant-numeric: tabular-nums;
     font-size: var(--text-sm);
     color: var(--color-text-muted);
 }
 
-.ilerleme__yol {
+.progress__track {
     position: relative;
     overflow: hidden;
     height: 6px;
@@ -38,7 +38,7 @@
     background: var(--color-sunken);
 }
 
-.ilerleme__cubuk {
+.progress__bar {
     height: 100%;
     border-radius: inherit;
     background: var(--color-accent);
@@ -55,29 +55,29 @@
  * boyunca duran bir çubuk "donmuş" diye okunuyor; hareket, işin sürdüğünü
  * söyleyen tek işaret.
  */
-.ilerleme__cubuk::after {
+.progress__bar::after {
     content: '';
     display: block;
     height: 100%;
     background: linear-gradient(90deg, transparent, rgb(255 255 255 / 35%), transparent);
-    animation: ilerleme-parilti 1.6s linear infinite;
+    animation: progress-shimmer 1.6s linear infinite;
 }
 
-@keyframes ilerleme-parilti {
+@keyframes progress-shimmer {
     from { transform: translateX(-100%); }
     to   { transform: translateX(100%); }
 }
 
 /* Hareketi azaltılmış arayüzde parıltı durur; çubuk yine dolar. */
 @media (prefers-reduced-motion: reduce) {
-    .ilerleme__cubuk::after { animation: none; }
-    .ilerleme__cubuk { transition: none; }
+    .progress__bar::after { animation: none; }
+    .progress__bar { transition: none; }
 }
 
 /*
  * Panelin başındaki yerleşim: başlıktan ayrılsın ama ayrı bir kutu gibi
  * durmasın — sürmekte olan işin başlığın devamı olduğu okunmalı.
  */
-.detail__ilerleme {
+.detail__progress {
     margin-top: var(--space-3);
 }

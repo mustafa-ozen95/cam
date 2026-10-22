@@ -7,6 +7,7 @@
  * ya da ayni adla yeni hesap acilinca eski cerez islemez — cerez uyenin olusturma damgasina ve oturum surumune baglidir).
  */
 import { createHmac, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto';
+import { LABELS, auditSignature } from '../core/crypto-labels.mjs';
 import { Lock, Collection, writeOrRollback } from '../core/tables.mjs';
 import { MEMBERS } from '../database/schema.mjs';
 import { normalizeExpiresAt, ipMatches, normalizeIps, normalizeScope } from './permission.mjs';
@@ -19,7 +20,7 @@ const hash = (password, salt) => scryptSync(password, salt, 32);
 const hashAsync = (password, salt) => new Promise((resolve, red) => scrypt(password, salt, 32, (e, k) => (e ? red(e) : resolve(k))));
 
 /** Gizli anahtarla imzalanan her seyin AMACI ayri etiketle baglanir: oturum cerezi, merkez akis cerezi, ... birbirinin yerine gecemez. */
-export const SESSION_LABEL = 'kamera2/oturum';   // eski adla SABIT (depo cam oldu): degisirse acik oturumlar duser
+export const SESSION_LABEL = LABELS.session;   // degisirse acik oturumlar duser
 const ERROR_TTL = 15 * 60_000;   // giris hata kaydi bu kadar sure sonra silinir
 const ERROR_MAX = 5000;       // kimliksiz istemci istedigi kadar yeni kullanici adiyla kayit sisirmesin
 const NAME_MAX = 64;             // hata anahtarina giren ad bu kadar kirpilir
@@ -169,8 +170,8 @@ export class Membership {
     return u;
   }
 
-  /** Gunluk zinciri icin HMAC imzasi. Etiketsiz kalir: eski zincir kayitlari dogrulanabilsin (oturum/akis cerezleri etiketli, bununla cakisamaz). */
-  signature(text) { return createHmac('sha256', this.secret).update(text).digest('hex'); }
+  /** Gunluk zinciri icin HMAC imzasi (etiket: cam/audit-log; degisirse zincir goc ile yeniden imzalanir). */
+  signature(text) { return auditSignature(this.secret, text); }
   /** Amaca bagli imza: etiket MAC girdisine eklenir, baska amacla uretilmis imza burada tutmaz. */
   labeledSignature(label, payload) { return createHmac('sha256', this.secret).update(`${label}|${payload}`).digest('base64url'); }
 
@@ -179,7 +180,7 @@ export class Membership {
 
   sessionCookie(u) {
     // g: acilis ani (ms) — merkezdeki son cikistan once acilan oturum islemez (ortak cikis, bkz. HubLinks.isLogoutAfter).
-    const payload = Buffer.from(JSON.stringify({ t: 'oturum', a: u.name, k: Membership.stamp(u), s: u.sessionVersion ?? 0, g: Date.now(), e: Date.now() + SESSION_DAYS * 864e5 })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({ t: 'session', a: u.name, k: Membership.stamp(u), s: u.sessionVersion ?? 0, g: Date.now(), e: Date.now() + SESSION_DAYS * 864e5 })).toString('base64url');
     return `${payload}.${this.labeledSignature(SESSION_LABEL, payload)}`;
   }
 
@@ -192,7 +193,7 @@ export class Membership {
     if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
     try {
       const { t, a, k, s, g, e } = JSON.parse(Buffer.from(payload, 'base64url').toString());
-      if (t !== 'oturum' || typeof a !== 'string' || typeof e !== 'number' || e < Date.now()) return null;
+      if (t !== 'session' || typeof a !== 'string' || typeof e !== 'number' || e < Date.now()) return null;
       const u = this.find(a);
       if (!u || u.name !== a || Membership.stamp(u) !== k || (u.sessionVersion ?? 0) !== s) return null;
       if (u.expiresAt && Date.parse(u.expiresAt) <= Date.now()) return null;

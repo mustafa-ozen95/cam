@@ -1,56 +1,22 @@
 /**
- * Veritabani katmani: goclerin tekrar kosmasi, gizli anahtar kurallari, bir kerelik JSON aktarimi (basari, tekrar, dolu tablo, bozuk dosya,
- * bozuk zincir), yazma hatasinda bellegin degismemesi, saglik yoklamasi, yeniden aciliste kalicilik, gunluk sirasi.
+ * Veritabani katmani: goclerin tekrar kosmasi, gizli anahtar kurallari, kripto etiketi gocu (surum 3), yazma hatasinda bellegin degismemesi, saglik yoklamasi, yeniden aciliste kalicilik, gunluk sirasi.
  * Gercek MariaDB gerekir (test/helpers.mjs: DB_HOST, DB_USERNAME, DB_PASSWORD).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHmac, randomBytes, scryptSync } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createCipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DeviceStore } from '../src/models/device.mjs';
 import { Database } from '../src/core/database.mjs';
 import { resolveSecretKey } from '../src/core/secret-key.mjs';
 import { MIGRATIONS } from '../src/database/migrations.mjs';
+import * as legacyNames from '../src/database/legacy-names.mjs';
+import { LABELS, auditSignature, devicePasswordKey, keyFingerprint, unseal } from '../src/core/crypto-labels.mjs';
 import { tempDb, openApp, openDb } from './helpers.mjs';
 
 const newFolder = () => mkdtempSync(join(tmpdir(), 'cam-db-'));
 const remove = (k) => rmSync(k, { recursive: true, force: true });
-const write = (k, name, o) => writeFileSync(join(k, name), typeof o === 'string' ? o : JSON.stringify(o, null, 2));
-
-/** Gecerli imza zincirli bir gunluk.jsonl metni. */
-function chain(secret, n = 3, current = false) {
-  const names = current
-    ? { time: 'time', local: 'localTime', event: 'event', user: 'username', previous: 'previous', signature: 'signature' }
-    : { time: 'z', local: 'yerel', event: 'olay', user: 'kullanici', previous: 'onceki', signature: 'imza' };   // JSON-era (Turkish) record keys
-  let previous = '', rows = [];
-  for (let i = 0; i < n; i++) {
-    const k = { [names.time]: `2026-10-0${i + 1}T08:00:00.000Z`, [names.local]: `2026-10-0${i + 1} 11:00:00 Europe/Istanbul`, [names.event]: i ? 'cikis' : 'giris', [names.user]: 'admin', ip: '192.0.2.1', port: 1, ua: 'x', [names.previous]: previous };
-    k[names.signature] = createHmac('sha256', secret).update(previous + JSON.stringify(k)).digest('hex');
-    previous = k[names.signature]; rows.push(JSON.stringify(k));
-  }
-  return rows.join('\n') + '\n';
-}
-
-/** Eski bicimde tam bir veri klasoru kurar (gizli.anahtar dahil). */
-function legacyFolder(secret) {
-  const k = newFolder();
-  writeFileSync(join(k, 'gizli.anahtar'), secret);
-  const salt = randomBytes(16);
-  write(k, 'kullanicilar.json', [{ name: 'admin', role: 'admin', salt: salt.toString('hex'), hash: scryptSync('eskiparola1', salt, 32).toString('hex'), createdAt: '2026-10-01T08:00:00.000Z', sessionVersion: 0, scope: null, expiresAt: null, ips: [] }]);
-  const repo = new DeviceStore(null, secret);
-  write(k, 'cihazlar.json', { version: 1, blockLimit: 8, devices: [{ id: 'aaaa1111', name: 'Eski A', type: 'mock', host: '127.0.0.31', username: 'a', password: repo.encrypt('b'), label: 'A', channelCount: 4, startIndex: 0, createdAt: '2026-10-01T08:00:00.000Z' }] });
-  write(k, 'yetki.json', { version: 1, roles: { viewer: { name: 'İzleyici', description: '', permissions: ['live.view'], createdBy: 'admin', createdAt: '2026-10-02T08:00:00.000Z' } }, builtinPermissions: {}, keys: [] });
-  write(k, 'kanallar.json', { 0: { name: 'Kapı', view: 'auto' } });
-  write(k, 'live-duzen.json', { column: 3, paths: ['k0'], savedBy: 'admin', time: '2026-10-03T08:00:00.000Z' });
-  write(k, 'guncelleme.json', { status: 'current', running: 'a'.repeat(40) });
-  write(k, 'merkez-baglari.json', { '5a0d0000-0000-7000-8000-000000000001': { name: 'admin', email: 'admin@ornek.test', role: 'admin', canLogin: true, check: null, lastLogin: null } });
-  write(k, 'gunluk.jsonl', chain(secret));
-  return k;
-}
-const LEGACY = ['kullanicilar.json', 'yetki.json', 'cihazlar.json', 'kanallar.json', 'gunluk.jsonl', 'merkez-baglari.json', 'guncelleme.json', 'live-duzen.json'];
-const count = async (t, table) => Number((await t.services.db.query(`SELECT COUNT(*) AS n FROM ${table}`))[0].n);
 
 test('goc: sema kurulur, tekrar kosunca bir sey yapmaz, surum tablosu dolu', async () => {
   const v = await openDb();
@@ -84,18 +50,6 @@ test('gizli anahtar: ortamdan, dosyadan; farkliysa ya da bozuksa acilis durur', 
   } finally { remove(k); }
 });
 
-test('gizli anahtar: eski ad (gizli.anahtar) secret.key olur, anahtar ayni kalir', () => {
-  const k = newFolder(), old = join(k, 'gizli.anahtar'), fresh = join(k, 'secret.key'), a = randomBytes(32);
-  try {
-    writeFileSync(old, a);
-    assert.deepEqual(resolveSecretKey({ env: '', file: fresh }), a);
-    assert.ok(existsSync(fresh) && !existsSync(old), 'eski ad yeniden adlandirildi');
-    writeFileSync(old, randomBytes(32));
-    assert.deepEqual(resolveSecretKey({ env: '', file: fresh }), a, 'yeni ad varsa eskiye dokunulmaz');
-    assert.ok(existsSync(old));
-  } finally { remove(k); }
-});
-
 test('gizli anahtar: veritabanini dolduran anahtardan farkliysa acilis durur (anahtar veritabanina girmez)', async () => {
   const g = await tempDb(), k = newFolder();
   try {
@@ -108,76 +62,6 @@ test('gizli anahtar: veritabanini dolduran anahtardan farkliysa acilis durur (an
     await assert.rejects(() => openApp({ data: newFolder(), database: g, secretKey: randomBytes(32).toString('base64') }), /Gizli anahtar bu veritabanını/);
     const t2 = await openApp({ data: k, database: g, secretKey: key });   // dogru anahtarla yeniden acilir
     await t2.close();
-  } finally { remove(k); await g.remove(); }
-});
-
-test('aktarim: eski dosyalar tek islemde tablolara gecer, sayilar ve zincir tutar, dosyalar .imported olur, tekrar acilista bir sey yapmaz', async () => {
-  const secret = randomBytes(32), k = legacyFolder(secret), g = await tempDb();
-  try {
-    const t = await openApp({ data: k, database: g });
-    assert.equal(await count(t, 'users'), 1); assert.equal(await count(t, 'devices'), 1); assert.equal(await count(t, 'roles'), 1);
-    assert.equal(await count(t, 'audit_log'), 3); assert.equal(await count(t, 'hub_links'), 1);
-    const setting = (await t.services.db.query('SELECT name FROM settings ORDER BY name')).map((r) => r.name);
-    assert.ok(['channels', 'device-block-limit', 'live-layout', 'update-status'].every((a) => setting.includes(a)), setting.join());
-    assert.equal(JSON.parse((await t.services.db.query("SELECT value FROM settings WHERE name = 'device-block-limit'"))[0].value), 8);
-    for (const d of LEGACY) { assert.ok(!existsSync(join(k, d)), `${d} yeniden adlandirilmali`); assert.ok(existsSync(join(k, `${d}.imported`)), `${d}.imported var olmali`); }
-    // giris eski parolayla, gunluk zinciri veritabanindan dogrulanir, cihaz parolasi eski anahtarla cozulur
-    await t.login('admin', 'eskiparola1');
-    const z = await t.req('/api/audit-log/verify');
-    assert.equal(z.json.ok, true); assert.ok(z.json.record >= 3);
-    assert.equal(t.services.devices.repo.setting('aaaa1111').password, 'b');
-    assert.equal((await t.req('/live/layout.json', { who: null })).status, 404, 'live kapali ama duzen kaydi hizmette');
-    assert.deepEqual(t.services.live.layout().paths, ['k0']);
-    assert.equal(t.services.devices.channelSetting[0].name, 'Kapı');
-    const counts = { u: await count(t, 'users'), d: await count(t, 'devices') };
-    await t.close();
-    // tekrar acilista aktarim bir sey yapmaz (dosyalar gitti, tablolar dolu)
-    const t2 = await openApp({ data: k, database: g, secretKey: '' });
-    assert.equal(await count(t2, 'users'), counts.u); assert.equal(await count(t2, 'devices'), counts.d);
-    await t2.close();
-  } finally { remove(k); await g.remove(); }
-});
-
-test('aktarim: tablolar doluysa ve eski dosyalar varsa dokunulmaz (dosyalar yerinde kalir)', async () => {
-  const g = await tempDb(), k = newFolder();
-  try {
-    const t = await openApp({ data: k, database: g });          // bos veritabani: admin olusur
-    const secret = readFileSync(join(k, 'secret.key'));
-    await t.close();
-    write(k, 'kullanicilar.json', [{ name: 'hayalet', role: 'admin', salt: '00', hash: '00', createdAt: '2026-10-01T08:00:00.000Z' }]);
-    const t2 = await openApp({ data: k, database: g });
-    assert.equal((await t2.services.db.query("SELECT name FROM users WHERE name = 'hayalet'")).length, 0);
-    assert.ok(existsSync(join(k, 'kullanicilar.json')), 'dosya yerinde');
-    assert.deepEqual(readFileSync(join(k, 'secret.key')), secret);
-    await t2.close();
-  } finally { remove(k); await g.remove(); }
-});
-
-test('aktarim: bozuk dosya ya da bozuk zincirde acilis durur, hicbir sey yazilmaz, dosyalar yerinde kalir', async () => {
-  for (const corrupt of [(k) => write(k, 'cihazlar.json', '{bozuk'), (k) => write(k, 'gunluk.jsonl', chain(readFileSync(join(k, 'gizli.anahtar'))).replace('"giris"', '"giriss"'))]) {
-    const secret = randomBytes(32), k = legacyFolder(secret), g = await tempDb();
-    try {
-      corrupt(k);
-      await assert.rejects(() => openApp({ data: k, database: g }));
-      const db = await new Database(g.setting).connect({ waitingSec: 5 });
-      for (const table of ['users', 'devices', 'roles', 'audit_log', 'hub_links']) assert.equal(Number((await db.query(`SELECT COUNT(*) AS n FROM ${table}`))[0].n), 0, `${table} bos kalmali`);
-      await db.close();
-      for (const d of LEGACY) assert.ok(existsSync(join(k, d)), `${d} yerinde olmali`);
-    } finally { remove(k); await g.remove(); }
-  }
-});
-
-test('aktarim: sayilar tutmazsa (ayni anahtarli iki kayit) islem geri alinir', async () => {
-  const secret = randomBytes(32), k = legacyFolder(secret), g = await tempDb();
-  try {
-    const u = JSON.parse(readFileSync(join(k, 'kullanicilar.json'), 'utf8'));
-    write(k, 'kullanicilar.json', [...u, { ...u[0], name: 'ADMIN' }]);       // buyuk/kucuk harf ayni ad: tabloda benzersiz degil
-    await assert.rejects(() => openApp({ data: k, database: g }));
-    const db = await new Database(g.setting).connect({ waitingSec: 5 });
-    assert.equal(Number((await db.query('SELECT COUNT(*) AS n FROM users'))[0].n), 0);
-    assert.equal(Number((await db.query('SELECT COUNT(*) AS n FROM audit_log'))[0].n), 0, 'zincir de geri alindi');
-    await db.close();
-    assert.ok(existsSync(join(k, 'gunluk.jsonl')));
   } finally { remove(k); await g.remove(); }
 });
 
@@ -280,7 +164,9 @@ const snapshot = async (q) => {
 
 test('goc v2: Turkce donem degerleri Ingilizceye cevrilir, tekrar kosunca degismez, cevrilmis veri aynen kalir', async () => {
   const v = await v1Database();
+  const original = MIGRATIONS.slice();
   try {
+    MIGRATIONS.length = 2;   // yalniz surum 1-2 (surum 3 gizli anahtar ister, ayri sinanir)
     assert.deepEqual(await v.db.runMigrations(), [2]);
     const s = await snapshot(v.q);
     const u = s.users.find((x) => x.name === 'teknisyen');
@@ -304,7 +190,7 @@ test('goc v2: Turkce donem degerleri Ingilizceye cevrilir, tekrar kosunca degism
     await v.q('DELETE FROM migrations WHERE version = 2');
     assert.deepEqual(await v.db.runMigrations(), [2]);
     assert.deepEqual(await snapshot(v.q), s);
-  } finally { await v.remove(); }
+  } finally { MIGRATIONS.length = 0; MIGRATIONS.push(...original); await v.remove(); }
 });
 
 test('goc v2: hata olursa tek islemde geri alinir (veri ve surum satiri degismez), kilit birakilir', async () => {
@@ -317,7 +203,7 @@ test('goc v2: hata olursa tek islemde geri alinir (veri ve surum satiri degismez
     await assert.rejects(() => v.db.runMigrations(), /bilerek/);
     assert.deepEqual(await snapshot(v.q), before, 'hicbir satir degismemeli');
     assert.deepEqual((await v.q('SELECT version FROM migrations'))[0].map((r) => r.version), [1]);
-    MIGRATIONS.length = 0; MIGRATIONS.push(...original);   // hata giderilince ayni veritabaninda goc basariyla biter (kilit birakilmisti)
+    MIGRATIONS.length = 0; MIGRATIONS.push(original[0], original[1]);   // hata giderilince ayni veritabaninda goc basariyla biter (kilit birakilmisti)
     assert.deepEqual(await v.db.runMigrations(), [2]);
   } finally { MIGRATIONS.length = 0; MIGRATIONS.push(...original); await v.remove(); }
 });
@@ -349,30 +235,114 @@ test('gunluk: eski (Turkce alan adli) kayitlar yeni kayitlarla ayni zincirde dog
   } finally { await t.close(); }
 });
 
-test('aktarim: tamamen Turkce alan adli JSON donemi dosyalari ve eski gunluk zinciri aktarilir', async () => {
-  const secret = randomBytes(32), k = newFolder(), g = await tempDb();
+// ---------------------------------------------------------------- goc v3 (kripto etiketleri -> Ingilizce)
+/** Surum 2'deki bir veritabani kurar ve ESKI etiketlerle imzali/sifreli sentetik veri koyar (gizli anahtar rastgele; gercek anahtar yok). */
+async function v2Database(secret, { chainRecords = 4, fingerprint = true } = {}) {
+  const v = await v1Database();
+  const original = MIGRATIONS.slice();
+  MIGRATIONS.length = 2;
+  try { await v.db.runMigrations(); } finally { MIGRATIONS.length = 0; MIGRATIONS.push(...original); }
+  await v.q('DELETE FROM api_keys'); await v.q('DELETE FROM devices');
+  const oldKey = createHash('sha256').update(`kamera2-cihaz-parola|${secret.toString('hex')}`).digest();
+  const oldEnvelope = (text) => { const iv = randomBytes(12), c = createCipheriv('aes-256-gcm', oldKey, iv); const data = Buffer.concat([c.update(text, 'utf8'), c.final()]); return JSON.stringify({ iv: iv.toString('base64'), tag: c.getAuthTag().toString('base64'), data: data.toString('base64') }); };
+  await v.q('INSERT INTO devices (id, name, type, host, password) VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)',
+    ['d1', 'A', 'mock', '192.0.2.1', oldEnvelope('parola-bir'), 'd2', 'B', 'mock', '192.0.2.2', oldEnvelope('parola-iki'), 'd3', 'C', 'mock', '192.0.2.3', null]);
+  const oldSign = (text) => createHmac('sha256', secret).update(text).digest('hex');
+  let previous = '';
+  for (let i = 0; i < chainRecords; i++) {
+    const turkish = i < 2;   // ilk iki kayit Turkce alan adli
+    const n = turkish ? { time: 'z', local: 'yerel', event: 'olay', user: 'kullanici', previous: 'onceki', signature: 'imza' } : { time: 'time', local: 'localTime', event: 'event', user: 'username', previous: 'previous', signature: 'signature' };
+    const k = { [n.time]: `2026-10-0${i + 1}T08:00:00.000Z`, [n.local]: `2026-10-0${i + 1} 11:00:00 Europe/Istanbul`, [n.event]: turkish ? 'giris' : 'login', [n.user]: 'admin', ip: '192.0.2.1', port: 1, [n.previous]: previous };
+    k[n.signature] = oldSign(previous + JSON.stringify(k));
+    await v.q('INSERT INTO audit_log (ts, local_time, event, username, ip, previous_signature, signature, record) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [k[n.time], k[n.local], k[n.event], 'admin', '192.0.2.1', previous, k[n.signature], JSON.stringify(k)]);
+    previous = k[n.signature];
+  }
+  await v.q('INSERT INTO api_keys (id, name, hash, revoked) VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)', ['k1', 'bir', 'a'.repeat(64), null, 'k2', 'iki', 'b'.repeat(64), null, 'k3', 'uc', 'c'.repeat(64), JSON.stringify({ at: '2026-10-01', by: 'admin' })]);
+  if (fingerprint) await v.q('INSERT INTO settings (name, value) VALUES (?, ?)', ['key-fingerprint', JSON.stringify(createHmac('sha256', secret).update('cam/anahtar-izi').digest('hex'))]);
+  return v;
+}
+const rowsOf = async (q) => (await snapshot(q));
+const auditRows = async (q) => (await q('SELECT * FROM audit_log ORDER BY id'))[0];
+
+test('etiketler: hepsi Ingilizce ve cam/ oneklidir, birbirinden farklidir', () => {
+  const values = Object.values(LABELS);
+  assert.ok(values.every((x) => /^cam\/[a-z-]+$/.test(x)), values.join());
+  assert.equal(new Set(values).size, values.length);
+});
+
+test('goc v3: eski etiketli cihaz parolasi, gunluk zinciri ve parmak izi yeni etikete gecer; API anahtarlari iptal olur; tekrar kosunca degismez', async () => {
+  const secret = randomBytes(32), v = await v2Database(secret), logs = [];
   try {
-    writeFileSync(join(k, 'gizli.anahtar'), secret);
-    const salt = randomBytes(16);
-    write(k, 'kullanicilar.json', [{ ad: 'admin', rol: 'admin', tuz: salt.toString('hex'), karma: scryptSync('eskiparola1', salt, 32).toString('hex'), olusturma: '2026-10-01T08:00:00.000Z', oturumSurum: 0, kapsam: null, bitis: null, ipler: [], tercih: { hepsiSayi: 4 } },
-      { ad: 'tekno', rol: 'teknik', tuz: salt.toString('hex'), karma: 'ab', olusturma: '2026-10-01T08:00:00.000Z', kapsam: { cihazlar: ['aaaa1111'] } }]);
-    write(k, 'cihazlar.json', { surum: 1, ustSinir: 8, cihazlar: [{ id: 'aaaa1111', ad: 'Eski A', tur: 'sahte', ana: '127.0.0.31', kullanici: 'a', parola: (({ iv, tag, data }) => ({ iv, etiket: tag, veri: data }))(new DeviceStore(null, secret).encrypt('b')), etiket: 'A', kanalSayisi: 4, baslangic: 0, olusturma: '2026-10-01T08:00:00.000Z' }] });
-    write(k, 'yetki.json', { surum: 1, roller: { izle: { ad: 'Izleyici', aciklama: '', izinler: ['canli.izle', 'kayit.*'], olusturan: 'admin', olusturma: '2026-10-02T08:00:00.000Z' } }, yerlesikIzinler: { kamera: ['canli.izle'] },
-      anahtarlar: [{ id: 'k1', ad: 'K', onek: 'ab', karma: 'cd', rol: 'kamera', izinler: ['cihaz.oku'], kapsam: null, bitis: null, ipler: [], hizLimiti: 60, eszamanliAkis: 2, sahip: null, olusturan: 'admin', olusturma: '2026-10-02T08:00:00.000Z', sonKullanim: { z: 't', ip: '192.0.2.1' }, sayac: 1, iptal: null, notlar: '', surum: 1 }] });
-    write(k, 'merkez-baglari.json', { '5a0d0000-0000-7000-8000-000000000001': { ad: 'admin', eposta: 'a@ornek.test', rol: 'teknik', girebilir: true, kontrol: null, sonGiris: null } });
-    write(k, 'kanallar.json', { 0: { ad: 'Kapi', gorunum: 'goster' } });
-    write(k, 'guncelleme.json', { durum: 'guncel' });
-    write(k, 'live-duzen.json', { sutun: 3, yollar: ['k0'], kaydeden: 'admin', zaman: 't' });
-    write(k, 'gunluk.jsonl', chain(secret));
-    const t = await openApp({ data: k, database: g });
-    assert.equal(await count(t, 'users'), 2); assert.equal(await count(t, 'devices'), 1); assert.equal(await count(t, 'audit_log'), 3);
-    await t.login('admin', 'eskiparola1');
-    assert.equal((await t.req('/api/audit-log/verify')).json.ok, true);
-    const row = (await t.services.db.query("SELECT role, scope, preferences FROM users WHERE name = 'tekno'"))[0];
-    assert.equal(row.role, 'technical'); assert.deepEqual(JSON.parse(row.scope), { devices: ['aaaa1111'] });
-    assert.equal((await t.services.db.query("SELECT type FROM devices"))[0].type, 'mock');
-    assert.equal((await t.services.db.query('SELECT role FROM api_keys'))[0].role, 'camera');
-    assert.deepEqual(JSON.parse((await t.services.db.query("SELECT value FROM settings WHERE name = 'live-layout'"))[0].value), { column: 3, paths: ['k0'], savedBy: 'admin', time: 't' });
-    await t.close();
-  } finally { remove(k); await g.remove(); }
+    const oldAudit = await auditRows(v.q);
+    assert.deepEqual(await v.db.runMigrations({ secret, log: (m) => logs.push(m) }), [3]);
+    // cihaz parolalari: yeni anahtarla cozulur, bos olan bos kalir
+    const key = devicePasswordKey(secret), dev = Object.fromEntries((await v.q('SELECT id, password FROM devices'))[0].map((d) => [d.id, d.password]));
+    assert.equal(unseal(key, JSON.parse(dev.d1)), 'parola-bir'); assert.equal(unseal(key, JSON.parse(dev.d2)), 'parola-iki'); assert.equal(dev.d3, null);
+    // gunluk zinciri: yeni etiketle dogrulanir, icerik ayni (yalniz onceki/imza degeri), sira ayni, Turkce alan adlari yerinde
+    const fresh = await auditRows(v.q);
+    assert.equal(fresh.length, oldAudit.length);
+    let previous = '';
+    for (const [i, r] of fresh.entries()) {
+      previous = legacyNames.auditChainStep(JSON.parse(r.record), previous, (t) => auditSignature(secret, t));
+      assert.equal(previous, r.signature, `${i + 1}. kayit yeni etiketle dogrulanmali`);
+      const was = JSON.parse(oldAudit[i].record), now = JSON.parse(r.record);
+      assert.deepEqual(Object.keys(now), Object.keys(was), 'alan sirasi ayni');
+      for (const f of Object.keys(was)) if (!['imza', 'signature', 'onceki', 'previous'].includes(f)) assert.deepEqual(now[f], was[f]);
+      assert.equal(r.event, oldAudit[i].event); assert.equal(r.ts, oldAudit[i].ts);
+    }
+    assert.ok('imza' in JSON.parse(fresh[0].record) && 'signature' in JSON.parse(fresh[3].record));
+    assert.notEqual(fresh[0].signature, oldAudit[0].signature);
+    assert.equal(fresh[1].previous_signature, fresh[0].signature, 'zincir bagli');
+    // parmak izi
+    assert.equal(JSON.parse((await v.q("SELECT value FROM settings WHERE name = 'key-fingerprint'"))[0][0].value), keyFingerprint(secret));
+    // API anahtarlari: etkin olanlar iptal, zaten iptal olan aynen
+    const keys = (await v.q('SELECT id, revoked FROM api_keys ORDER BY id'))[0];
+    assert.equal(JSON.parse(keys[0].revoked).by, 'migration 3'); assert.equal(JSON.parse(keys[1].revoked).by, 'migration 3');
+    assert.deepEqual(JSON.parse(keys[2].revoked), { at: '2026-10-01', by: 'admin' });
+    assert.match(logs.join('\n'), /4 günlük kaydı.*2 cihaz parolası.*2 API anahtarı iptal/);
+    // idempotent: surum satiri silinip tekrar kosulunca hicbir sey degismez
+    const before = await rowsOf(v.q), beforeAudit = await auditRows(v.q);
+    await v.q('DELETE FROM migrations WHERE version = 3');
+    assert.deepEqual(await v.db.runMigrations({ secret, log: () => {} }), [3]);
+    assert.deepEqual(await rowsOf(v.q), before); assert.deepEqual(await auditRows(v.q), beforeAudit);
+  } finally { await v.remove(); }
+});
+
+test('goc v3: yanlis gizli anahtar, bozuk zincir ya da cozulemeyen parola gocu durdurur; hicbir sey degismez, surum satiri yazilmaz', async () => {
+  const secret = randomBytes(32);
+  const cases = [
+    ['yanlis anahtar (parmak iziyle)', () => v2Database(secret), randomBytes(32), /Gizli anahtar bu veritabanını/],
+    ['yanlis anahtar (parmak izi yok)', () => v2Database(secret, { fingerprint: false }), randomBytes(32), /günlük zinciri doğrulanamadı/],
+    ['anahtar yok', () => v2Database(secret), undefined, /gizli anahtarı ister/],
+    ['bozuk zincir', async () => { const v = await v2Database(secret); await v.q("UPDATE audit_log SET record = REPLACE(record, 'admin', 'admiN') WHERE id = 3"); return v; }, secret, /günlük zinciri doğrulanamadı/],
+    ['cozulemeyen cihaz parolasi', async () => { const v = await v2Database(secret, { chainRecords: 0 }); await v.q("UPDATE devices SET password = ? WHERE id = 'd2'", [JSON.stringify({ iv: 'aa', tag: 'bb', data: 'cc' })]); return v; }, secret, /d2 cihazının parolası çözülemedi/],
+  ];
+  for (const [name, make, key, expected] of cases) {
+    const v = await make();
+    try {
+      const before = await rowsOf(v.q), beforeAudit = await auditRows(v.q);
+      await assert.rejects(() => v.db.runMigrations({ secret: key, log: () => {} }), expected, name);
+      assert.deepEqual(await rowsOf(v.q), before, name); assert.deepEqual(await auditRows(v.q), beforeAudit, name);
+      assert.deepEqual((await v.q('SELECT version FROM migrations'))[0].map((r) => r.version), [1, 2], name);
+    } finally { await v.remove(); }
+  }
+});
+
+test('goc v3: uygulamanin yeni etiketleri goc edilmis veriyle uyumlu (cihaz parolasi cozulur, gunluk dogrulanir, yeni anahtar calisir)', async () => {
+  const secret = randomBytes(32), v = await v2Database(secret), k = newFolder();
+  try {
+    await v.q('DELETE FROM users'); await v.q('DELETE FROM roles'); await v.q('DELETE FROM builtin_role_permissions'); await v.q('DELETE FROM hub_links'); await v.q('DELETE FROM settings WHERE name <> ?', ['key-fingerprint']);
+    await v.q("DELETE FROM devices WHERE password IS NULL");
+    const t = await openApp({ data: k, database: v.g, secretKey: secret.toString('base64'), devices: [] });
+    try {
+      await t.login('admin', 'adminparola1');
+      assert.equal(t.services.devices.repo.setting('d1').password, 'parola-bir');
+      const z = await t.req('/api/audit-log/verify');
+      assert.equal(z.json.ok, true); assert.ok(z.json.record >= 4);
+      const made = await t.req('/api/access/keys', { method: 'POST', body: { name: 'yeni', role: 'admin' } });
+      assert.equal(made.status, 200, made.text);
+      assert.equal((await t.req('/api/v1/me', { bearer: made.json.key, who: null })).status, 200, 'yeni anahtar yeni etiketle dogrulanir');
+      assert.equal((await t.services.db.query("SELECT COUNT(*) AS n FROM api_keys WHERE revoked IS NULL"))[0].n, 1, 'eski anahtarlar iptal, yalniz yenisi etkin');
+    } finally { await t.close(); }
+  } finally { remove(k); await v.remove(); }
 });
