@@ -5,90 +5,90 @@
 import { join } from 'node:path';
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { Uygulama } from './core/app.mjs';
-import { Veritabani } from './core/database.mjs';
-import { Ayarlar } from './core/tables.mjs';
-import { anahtarIzi, gizliAnahtarCoz } from './core/secret-key.mjs';
-import { eskiVeriyiAktar } from './database/import-legacy.mjs';
-import { basliklar, csrf } from './middleware/security.mjs';
-import { kimlikKur } from './middleware/identity.mjs';
-import { Uyelik } from './models/member.mjs';
-import { YetkiDeposu } from './models/permission.mjs';
-import { CihazHizmeti } from './services/devices.mjs';
-import { LiveHizmeti } from './services/live.mjs';
-import { Gunluk } from './services/audit-log.mjs';
-import { GuncellemeHizmeti } from './services/updates.mjs';
-import { MerkezBaglari, MerkezIstemcisi } from './services/hub.mjs';
-import { merkezDenetleyici } from './controllers/hub.mjs';
-import { girisDenetleyici } from './controllers/login.mjs';
-import { uyelerDenetleyici } from './controllers/members.mjs';
-import { cihazlarDenetleyici } from './controllers/devices.mjs';
-import { akisDenetleyici } from './controllers/streams.mjs';
-import { yetkiDenetleyici } from './controllers/permissions.mjs';
-import { gunlukDenetleyici } from './controllers/audit-log.mjs';
-import { guncellemeDenetleyici } from './controllers/updates.mjs';
-import { gorunumDenetleyici } from './controllers/views.mjs';
-import { liveDenetleyici } from './controllers/live.mjs';
-import { webRotalari } from '../routes/web.mjs';
-import { apiRotalari } from '../routes/api.mjs';
-import { apiV1Rotalari } from '../routes/api-v1.mjs';
+import { App } from './core/app.mjs';
+import { Database } from './core/database.mjs';
+import { Settings } from './core/tables.mjs';
+import { keyFingerprint, resolveSecretKey } from './core/secret-key.mjs';
+import { importLegacyData } from './database/import-legacy.mjs';
+import { headers, csrf } from './middleware/security.mjs';
+import { setupIdentity } from './middleware/identity.mjs';
+import { Membership } from './models/member.mjs';
+import { PermissionStore } from './models/permission.mjs';
+import { DeviceService } from './services/devices.mjs';
+import { LiveService } from './services/live.mjs';
+import { AuditLog } from './services/audit-log.mjs';
+import { UpdateService } from './services/updates.mjs';
+import { HubLinks, HubClient } from './services/hub.mjs';
+import { hubController } from './controllers/hub.mjs';
+import { loginController } from './controllers/login.mjs';
+import { membersController } from './controllers/members.mjs';
+import { devicesController } from './controllers/devices.mjs';
+import { streamController } from './controllers/streams.mjs';
+import { permissionController } from './controllers/permissions.mjs';
+import { auditLogController } from './controllers/audit-log.mjs';
+import { updateController } from './controllers/updates.mjs';
+import { viewController } from './controllers/views.mjs';
+import { liveController } from './controllers/live.mjs';
+import { webRoutes } from '../routes/web.mjs';
+import { apiRoutes } from '../routes/api.mjs';
+import { apiV1Routes } from '../routes/api-v1.mjs';
 
-export async function uygulamaKur(yapilandirma) {
-  mkdirSync(yapilandirma.veriKlasoru, { recursive: true });
-  const eskiIlkAdmin = join(yapilandirma.veriKlasoru, 'ilk-admin.txt'), yeniIlkAdmin = join(yapilandirma.veriKlasoru, 'initial-admin.txt');
-  if (existsSync(eskiIlkAdmin) && !existsSync(yeniIlkAdmin)) renameSync(eskiIlkAdmin, yeniIlkAdmin);
+export async function createApp(config) {
+  mkdirSync(config.dataDir, { recursive: true });
+  const oldInitialAdmin = join(config.dataDir, 'ilk-admin.txt'), newInitialAdmin = join(config.dataDir, 'initial-admin.txt');
+  if (existsSync(oldInitialAdmin) && !existsSync(newInitialAdmin)) renameSync(oldInitialAdmin, newInitialAdmin);
   // veritabani: gelene kadar bekler, gocleri kosturur, eski JSON verisini (varsa) bir kez aktarir
-  const vt = await new Veritabani(yapilandirma.veritabani).baglan({ beklemeSn: yapilandirma.veritabani.beklemeSn });
-  try { return await uygulamaKurVt(yapilandirma, vt); } catch (e) { await vt.kapat(); throw e; }
+  const db = await new Database(config.database).connect({ waitingSec: config.database.waitingSec });
+  try { return await createAppWithDb(config, db); } catch (e) { await db.close(); throw e; }
 }
 
-async function uygulamaKurVt(yapilandirma, vt) {
-  await vt.gocYap();
-  const ayarlar = new Ayarlar(vt);
-  const gizli = gizliAnahtarCoz({ ortam: yapilandirma.gizliAnahtar, dosya: join(yapilandirma.veriKlasoru, 'secret.key') });
+async function createAppWithDb(config, db) {
+  await db.runMigrations();
+  const settings = new Settings(db);
+  const secret = resolveSecretKey({ env: config.secretKey, file: join(config.dataDir, 'secret.key') });
   // Bu veritabani baska bir anahtarla dolduysa acilis durur: yanlis anahtarla cihaz parolalari cozulemez, oturumlar ve gunluk imzalari tutmaz.
-  const iz = anahtarIzi(gizli), kayitliIz = await ayarlar.oku('key-fingerprint');
-  if (kayitliIz !== undefined && kayitliIz !== iz) throw new Error('Gizli anahtar bu veritabanını dolduran anahtarla aynı değil (KAMERA_GIZLI_ANAHTAR ya da data/secret.key). Doğru anahtarı verin; anahtar kaybolduysa kayıtlı cihaz parolaları yeniden girilmelidir.');
-  await eskiVeriyiAktar({ vt, veriKlasoru: yapilandirma.veriKlasoru, gizli });
-  if (kayitliIz === undefined) await ayarlar.yaz('key-fingerprint', iz);
+  const fingerprint = keyFingerprint(secret), savedFingerprint = await settings.read('key-fingerprint');
+  if (savedFingerprint !== undefined && savedFingerprint !== fingerprint) throw new Error('Gizli anahtar bu veritabanını dolduran anahtarla aynı değil (CAM_SECRET_KEY ya da data/secret.key). Doğru anahtarı verin; anahtar kaybolduysa kayıtlı cihaz parolaları yeniden girilmelidir.');
+  await importLegacyData({ db, dataDir: config.dataDir, secret });
+  if (savedFingerprint === undefined) await settings.write('key-fingerprint', fingerprint);
   // modeller (veritabanindan bellege)
-  const uyeler = await new Uyelik(vt, gizli).yukle();
-  const yetki = await new YetkiDeposu(vt, uyeler.gizli, { rolKullanimda: (id) => uyeler.rolKullanimda(id) }).yukle();
-  uyeler.rolGecerli = (r) => yetki.rolVar(r);
-  if (uyeler.bos()) {
-    const parola = yapilandirma.yetki.ilkAdminParola || randomBytes(9).toString('base64url');
-    await uyeler.ekle('admin', parola, 'admin');
-    if (!yapilandirma.yetki.ilkAdminParola) { writeFileSync(join(yapilandirma.veriKlasoru, 'initial-admin.txt'), `Kullanıcı adı: admin\nParola: ${parola}\n\nGiriş yaptıktan sonra Üyeler sekmesinden parolayı değiştirin ve bu dosyayı silin.\n`, { mode: 0o600 }); console.log('İlk admin hesabı oluşturuldu: veri/ilk-admin.txt'); }
+  const members = await new Membership(db, secret).load();
+  const permissions = await new PermissionStore(db, members.secret, { roleInUse: (id) => members.roleInUse(id) }).load();
+  members.roleValid = (r) => permissions.roleVar(r);
+  if (members.empty()) {
+    const password = config.permissions.initialAdminPassword || randomBytes(9).toString('base64url');
+    await members.add('admin', password, 'admin');
+    if (!config.permissions.initialAdminPassword) { writeFileSync(join(config.dataDir, 'initial-admin.txt'), `Kullanıcı adı: admin\nParola: ${password}\n\nGiriş yaptıktan sonra Üyeler sekmesinden parolayı değiştirin ve bu dosyayı silin.\n`, { mode: 0o600 }); console.log('İlk admin hesabı oluşturuldu: veri/ilk-admin.txt'); }
   }
   // hizmetler
-  const cihazlar = new CihazHizmeti({ yapilandirma, gizli: uyeler.gizli, vt, ayarlar });
-  await cihazlar.sahteyiKaydet();
-  await cihazlar.baslat();
-  const gunluk = await new Gunluk(vt, (m) => uyeler.imza(m), yapilandirma.sunucu.guvenilenIpBasligi).yukle();
-  cihazlar.grup.olay = (olay, ayrinti) => gunluk.yaz(olay, 'sistem', null, ayrinti);
+  const devices = new DeviceService({ config, secret: members.secret, db, settings });
+  await devices.saveMock();
+  await devices.start();
+  const auditLog = await new AuditLog(db, (m) => members.signature(m), config.server.trustedIpHeader).load();
+  devices.group.event = (event, detail) => auditLog.write(event, 'system', null, detail);
   // Kimlik Yonetim Merkezi: istemci (OAuth akisi) ve baglar (merkezdeki kimlik -> buradaki uye). Yapilandirilmamissa akis kapali, baglar bos.
-  const merkez = new MerkezIstemcisi(yapilandirma.kimlik);
-  const baglar = await new MerkezBaglari(vt, { merkez, uyeler, gunluk, yapilandirma }).yukle();
-  const live = await new LiveHizmeti({ yapilandirma, cihazlar, ayarlar }).yukle();
-  const guncelleme = await new GuncellemeHizmeti({ ayarlar, ayar: yapilandirma.guncelleme }).yukle();
-  const hizmetler = { vt, uyeler, yetki, cihazlar, gunluk, yapilandirma, merkez, baglar, live, guncelleme };
+  const hub = new HubClient(config.identity);
+  const links = await new HubLinks(db, { hub, members, auditLog, config }).load();
+  const live = await new LiveService({ config, devices, settings }).load();
+  const updates = await new UpdateService({ settings, setting: config.updates }).load();
+  const services = { db, members, permissions, devices, auditLog, config, hub, links, live, updates };
 
   // denetleyiciler + ara katmanlar
   const d = {
-    giris: girisDenetleyici(hizmetler), uyeler: uyelerDenetleyici(hizmetler), cihazlar: cihazlarDenetleyici(hizmetler),
-    akis: akisDenetleyici(hizmetler), yetki: yetkiDenetleyici(hizmetler), gunluk: gunlukDenetleyici(hizmetler), gorunum: gorunumDenetleyici(hizmetler),
-    merkez: merkezDenetleyici(hizmetler), live: liveDenetleyici(hizmetler), guncelleme: guncellemeDenetleyici(hizmetler),
+    login: loginController(services), members: membersController(services), devices: devicesController(services),
+    stream: streamController(services), permissions: permissionController(services), auditLog: auditLogController(services), view: viewController(services),
+    hub: hubController(services), live: liveController(services), updates: updateController(services),
   };
-  const ara = kimlikKur(hizmetler);
+  const middleware = setupIdentity(services);
 
-  const uygulama = new Uygulama({ yapilandirma, hizmetler });
-  uygulama.kullan(basliklar).kullan(csrf);
-  webRotalari(uygulama.yonlendirici, d, ara);
-  apiRotalari(uygulama.yonlendirici, d, ara);
-  apiV1Rotalari(uygulama.yonlendirici, d, ara, hizmetler);
-  live.baslat();
-  guncelleme.baslat();
+  const app = new App({ config, services });
+  app.use(headers).use(csrf);
+  webRoutes(app.router, d, middleware);
+  apiRoutes(app.router, d, middleware);
+  apiV1Routes(app.router, d, middleware, services);
+  live.start();
+  updates.start();
   // Kapanis: bekleyen gunluk yazimlari ve ertelenmis yetki yazimi veritabanina islenir, sonra havuz kapanir.
-  uygulama.kapat = async () => { guncelleme.kapat(); live.kapat(); cihazlar.kapat(); await yetki.kapat(); await gunluk.bekle(); await vt.kapat(); };
-  return uygulama;
+  app.close = async () => { updates.close(); live.close(); devices.close(); await permissions.close(); await auditLog.wait(); await db.close(); };
+  return app;
 }

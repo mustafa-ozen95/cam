@@ -2,36 +2,36 @@
  * Table definitions (for the Koleksiyon in src/core/tables.mjs): database column <-> field of the in-memory object.
  * A schema change goes into migrations.mjs as a new version; this file only holds the mapping.
  */
-const s = (column, field, empty) => ({ s: column, a: field ?? column, t: 's', bos: empty });
-const i = (column, field, empty) => ({ s: column, a: field, t: 'i', bos: empty });
-const j = (column, field, empty) => ({ s: column, a: field, t: 'j', bos: empty });
+const s = (column, field, empty) => ({ s: column, a: field ?? column, t: 's', empty: empty });
+const i = (column, field, empty) => ({ s: column, a: field, t: 'i', empty: empty });
+const j = (column, field, empty) => ({ s: column, a: field, t: 'j', empty: empty });
 
-export const UYELER = {
-  tablo: 'users', anahtar: 'ad',
-  sutunlar: [s('name', 'ad'), s('role', 'rol'), s('salt', 'tuz'), s('hash', 'karma'), s('created_at', 'olusturma'), i('session_version', 'oturumSurum', 0), j('scope', 'kapsam', null),
-    s('expires_at', 'bitis', null), j('ips', 'ipler', []), j('preferences', 'tercih')],
+export const MEMBERS = {
+  table: 'users', key: 'name',
+  columns: [s('name', 'name'), s('role', 'role'), s('salt', 'salt'), s('hash', 'hash'), s('created_at', 'createdAt'), i('session_version', 'sessionVersion', 0), j('scope', 'scope', null),
+    s('expires_at', 'expiresAt', null), j('ips', 'ips', []), j('preferences', 'preferences')],
 };
-export const CIHAZLAR = {
-  tablo: 'devices', anahtar: 'id',
-  sutunlar: [s('id'), s('name', 'ad', ''), s('type', 'tur'), s('host', 'ana'), s('username', 'kullanici'), j('password', 'parola'), s('label', 'etiket'), i('channel_count', 'kanalSayisi'),
-    i('http_port', 'httpPort'), i('rtsp_port', 'rtspPort'), i('port', 'port'), s('template', 'sablon'), s('path', 'yol'), i('start_index', 'baslangic'), s('created_at', 'olusturma')],
+export const DEVICES = {
+  table: 'devices', key: 'id',
+  columns: [s('id'), s('name', 'name', ''), s('type', 'type'), s('host', 'host'), s('username', 'username'), j('password', 'password'), s('label', 'label'), i('channel_count', 'channelCount'),
+    i('http_port', 'httpPort'), i('rtsp_port', 'rtspPort'), i('port', 'port'), s('template', 'template'), s('path', 'path'), i('start_index', 'startIndex'), s('created_at', 'createdAt')],
 };
-export const ROLLER = {
-  tablo: 'roles', anahtar: 'id',
-  sutunlar: [s('id'), s('name', 'ad'), s('description', 'aciklama'), j('permissions', 'izinler', []), s('created_by', 'olusturan'), s('created_at', 'olusturma')],
+export const ROLES = {
+  table: 'roles', key: 'id',
+  columns: [s('id'), s('name', 'name'), s('description', 'description'), j('permissions', 'permissions', []), s('created_by', 'createdBy'), s('created_at', 'createdAt')],
 };
-export const YERLESIK_IZINLER = {
-  tablo: 'builtin_role_permissions', anahtar: 'rol',
-  sutunlar: [s('role', 'rol'), j('permissions', 'izinler', [])],
+export const BUILTIN_PERMISSIONS = {
+  table: 'builtin_role_permissions', key: 'role',
+  columns: [s('role', 'role'), j('permissions', 'permissions', [])],
 };
-export const ANAHTARLAR = {
-  tablo: 'api_keys', anahtar: 'id',
-  sutunlar: [s('id'), s('name', 'ad'), s('prefix', 'onek'), s('hash', 'karma'), s('role', 'rol', null), j('permissions', 'izinler', []), j('scope', 'kapsam', null), s('expires_at', 'bitis', null),
-    j('ips', 'ipler', []), i('rate_limit', 'hizLimiti'), i('concurrent_streams', 'eszamanliAkis'), s('owner', 'sahip', null), s('created_by', 'olusturan'), s('created_at', 'olusturma'),
-    j('last_used', 'sonKullanim', null), i('counter', 'sayac', 0), j('revoked', 'iptal', null), s('notes', 'notlar', ''), i('version', 'surum')],
+export const API_KEYS = {
+  table: 'api_keys', key: 'id',
+  columns: [s('id'), s('name', 'name'), s('prefix', 'prefix'), s('hash', 'hash'), s('role', 'role', null), j('permissions', 'permissions', []), j('scope', 'scope', null), s('expires_at', 'expiresAt', null),
+    j('ips', 'ips', []), i('rate_limit', 'rateLimit'), i('concurrent_streams', 'concurrentStreams'), s('owner', 'owner', null), s('created_by', 'createdBy'), s('created_at', 'createdAt'),
+    j('last_used', 'lastUsed', null), i('counter', 'counter', 0), j('revoked', 'revoked', null), s('notes', 'notes', ''), i('version', 'version')],
 };
-export const MERKEZ_BAGLARI = {
-  tablo: 'hub_links', anahtar: 'sub',
-  sutunlar: [s('sub'), s('username', 'ad'), s('user_stamp', 'uyeKimlik'), s('email', 'eposta'), s('role', 'rol', null), { s: 'can_login', a: 'girebilir', t: 'b' }, s('checked_at', 'kontrol', null),
-    s('last_login', 'sonGiris', null), i('last_logout_ms', 'sonCikis')],
+export const HUB_LINKS = {
+  table: 'hub_links', key: 'sub',
+  columns: [s('sub'), s('username', 'name'), s('user_stamp', 'userStamp'), s('email', 'email'), s('role', 'role', null), { s: 'can_login', a: 'canLogin', t: 'b' }, s('checked_at', 'check', null),
+    s('last_login', 'lastLogin', null), i('last_logout_ms', 'lastLogout')],
 };

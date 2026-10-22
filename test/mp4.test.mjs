@@ -5,96 +5,96 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { Fmp4Ayirici, hvc1Yap, kodekAdi, kutuBul, kutular } from '../src/drivers/fmp4.mjs';
-import { CEVIR_BIT, MP4_CIKIS } from '../src/drivers/mp4-stream.mjs';
-import { mp4Argumanlari } from '../src/drivers/rtsp.mjs';
-import { uygulamaAc } from './helpers.mjs';
+import { Fmp4Splitter, makeHvc1, codecName, findBox, boxes } from '../src/drivers/fmp4.mjs';
+import { CONVERT_BITRATE, MP4_OUTPUT } from '../src/drivers/mp4-stream.mjs';
+import { mp4Args } from '../src/drivers/rtsp.mjs';
+import { openApp } from './helpers.mjs';
 
-const ornek = (kodlayici) => {
-  const r = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=10', '-t', '3', ...kodlayici, '-g', '10', '-pix_fmt', 'yuv420p', ...MP4_CIKIS], { maxBuffer: 64e6 });
+const example = (encoder) => {
+  const r = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=10', '-t', '3', ...encoder, '-g', '10', '-pix_fmt', 'yuv420p', ...MP4_OUTPUT], { maxBuffer: 64e6 });
   assert.equal(r.status, 0, String(r.stderr));
   return r.stdout;
 };
 /** Akisi rastgele boyda dilimlerle verir (borudan gelen veri kutu sinirina denk gelmez). */
-const ayir = (b) => { const a = new Fmp4Ayirici(), cikti = []; for (let i = 0; i < b.length;) { const n = 1 + Math.floor(Math.random() * 5000); cikti.push(...a.ekle(b.subarray(i, i + n))); i += n; } return cikti; };
+const split = (b) => { const a = new Fmp4Splitter(), output = []; for (let i = 0; i < b.length;) { const n = 1 + Math.floor(Math.random() * 5000); output.push(...a.add(b.subarray(i, i + n))); i += n; } return output; };
 
 test('H.264: baslangic once, parcalar anahtar karede baslar, kodek adi avcC baytlari', () => {
-  const p = ayir(ornek(['-c:v', 'libx264', '-profile:v', 'main', '-level', '3.0']));
-  assert.equal(p[0].tur, 'init');
-  assert.deepEqual(kutular(p[0].veri).map((k) => k.tur), ['ftyp', 'moov']);
-  assert.equal(kodekAdi(p[0].veri), 'avc1.4d401e');
-  const parca = p.slice(1);
-  assert.ok(parca.length >= 3 && parca.every((x) => x.tur === 'parca'));
-  assert.equal(parca[0].anahtar, true);
-  assert.ok(parca.some((x) => !x.anahtar), 'anahtar olmayan parca da var (200 ms bolme)');
-  assert.equal(parca.filter((x) => x.anahtar).length, 3, '3 sn, 10 kare/sn, -g 10');
-  for (const x of parca) assert.deepEqual(kutular(x.veri).map((k) => k.tur), ['moof', 'mdat']);
+  const p = split(example(['-c:v', 'libx264', '-profile:v', 'main', '-level', '3.0']));
+  assert.equal(p[0].type, 'init');
+  assert.deepEqual(boxes(p[0].data).map((k) => k.type), ['ftyp', 'moov']);
+  assert.equal(codecName(p[0].data), 'avc1.4d401e');
+  const part = p.slice(1);
+  assert.ok(part.length >= 3 && part.every((x) => x.type === 'chunk'));
+  assert.equal(part[0].key, true);
+  assert.ok(part.some((x) => !x.key), 'anahtar olmayan parca da var (200 ms bolme)');
+  assert.equal(part.filter((x) => x.key).length, 3, '3 sn, 10 kare/sn, -g 10');
+  for (const x of part) assert.deepEqual(boxes(x.data).map((k) => k.type), ['moof', 'mdat']);
 });
 
 test('H.265: hev1 -> hvc1, kodek adi profil/uyum/seviye', () => {
-  const init = ayir(ornek(['-c:v', 'libx265', '-x265-params', 'log-level=none']))[0].veri;
-  const tur = () => { const s = kutuBul(init, ['moov', 'trak', 'mdia', 'minf', 'stbl', 'stsd']); return kutular(init, s.ic + 8, s.son)[0].tur; };
-  assert.equal(tur(), 'hev1');
-  hvc1Yap(init);
-  assert.equal(tur(), 'hvc1');
-  assert.match(kodekAdi(init), /^hvc1\.1\.6\.L\d+(\.[0-9a-f]{2})*$/);
+  const init = split(example(['-c:v', 'libx265', '-x265-params', 'log-level=none']))[0].data;
+  const type = () => { const s = findBox(init, ['moov', 'trak', 'mdia', 'minf', 'stbl', 'stsd']); return boxes(init, s.inner + 8, s.last)[0].type; };
+  assert.equal(type(), 'hev1');
+  makeHvc1(init);
+  assert.equal(type(), 'hvc1');
+  assert.match(codecName(init), /^hvc1\.1\.6\.L\d+(\.[0-9a-f]{2})*$/);
 });
 
-test('/akis/canli-mp4: kimliksiz 401; X-Kodek; ikinci izleyici baslangic + anahtar kareyle baslar', async () => {
-  const u = await uygulamaAc();
+test('/stream/canli-mp4: kimliksiz 401; X-Codec; ikinci izleyici baslangic + anahtar kareyle baslar', async () => {
+  const u = await openApp();
   try {
-    assert.equal((await fetch(`${u.B}/akis/canli-mp4?kanal=0`)).status, 401);
-    await u.giris('admin', 'adminparola1');
-    const ac = async () => {
+    assert.equal((await fetch(`${u.B}/stream/live-mp4?channel=0`)).status, 401);
+    await u.login('admin', 'adminparola1');
+    const open = async () => {
       const ctrl = new AbortController();
-      const r = await fetch(`${u.B}/akis/canli-mp4?kanal=0&tur=Extra1`, { headers: { Cookie: u.cerezler.get('admin') }, signal: ctrl.signal });
+      const r = await fetch(`${u.B}/stream/live-mp4?channel=0&type=Extra1`, { headers: { Cookie: u.cookies.get('admin') }, signal: ctrl.signal });
       assert.equal(r.status, 200);
       assert.equal(r.headers.get('content-type'), 'video/mp4');
-      assert.match(r.headers.get('x-kodek'), /^avc1\.[0-9a-f]{6}$/);
-      const a = new Fmp4Ayirici(), oku = r.body.getReader(), p = [];
-      while (p.length < 3) { const { value, done } = await oku.read(); if (done) break; p.push(...a.ekle(Buffer.from(value))); }
+      assert.match(r.headers.get('x-codec'), /^avc1\.[0-9a-f]{6}$/);
+      const a = new Fmp4Splitter(), read = r.body.getReader(), p = [];
+      while (p.length < 3) { const { value, done } = await read.read(); if (done) break; p.push(...a.add(Buffer.from(value))); }
       ctrl.abort();
       return p;
     };
-    const ilk = await ac();
-    assert.equal(ilk[0].tur, 'init'); assert.equal(ilk[1].anahtar, true);
-    const ikinci = await ac();   // ayni yayin (paylasilan) — sonradan katilan
-    assert.equal(ikinci[0].tur, 'init'); assert.equal(ikinci[1].anahtar, true, 'yarim GOP verilmez');
-    assert.equal((await fetch(`${u.B}/akis/canli-mp4?kanal=99`, { headers: { Cookie: u.cerezler.get('admin') } })).status, 400);
-  } finally { await u.kapat(); }
+    const first = await open();
+    assert.equal(first[0].type, 'init'); assert.equal(first[1].key, true);
+    const second = await open();   // ayni yayin (paylasilan) — sonradan katilan
+    assert.equal(second[0].type, 'init'); assert.equal(second[1].key, true, 'yarim GOP verilmez');
+    assert.equal((await fetch(`${u.B}/stream/live-mp4?channel=99`, { headers: { Cookie: u.cookies.get('admin') } })).status, 400);
+  } finally { await u.close(); }
 });
 
 test('ffmpeg baslatilamazsa (ENOENT) MP4 yayini hata ile kapanir, surec dusmez', async () => {
-  const { Mp4Yayin } = await import('../src/drivers/mp4-stream.mjs');
-  let bitti = false;
-  const y = new Mp4Yayin({ ffmpeg: '/yok/ffmpeg', argumanlar: [], bitince: () => { bitti = true; } }).baslat();
-  await y.hazir;
-  assert.match(y.hata, /ffmpeg başlatılamadı/); assert.equal(y.init, null); assert.ok(bitti && y.durduruldu);
+  const { Mp4Feed } = await import('../src/drivers/mp4-stream.mjs');
+  let finished = false;
+  const y = new Mp4Feed({ ffmpeg: '/yok/ffmpeg', args: [], onEnd: () => { finished = true; } }).start();
+  await y.ready;
+  assert.match(y.error, /ffmpeg başlatılamadı/); assert.equal(y.init, null); assert.ok(finished && y.stopped);
 });
 
 test('ffmpeg: kopya ya da kaynak kalitede H.264 (olcek/kare hizi suzgeci YOK)', () => {
-  const kopya = mp4Argumanlari('rtsp://x/a', 'Main', false);
-  assert.deepEqual(kopya.slice(kopya.indexOf('-c:v'), kopya.indexOf('-c:v') + 2), ['-c:v', 'copy']);
-  for (const tur of ['Main', 'Extra1']) {
-    const a = mp4Argumanlari('rtsp://x/a', tur, true);
+  const copy = mp4Args('rtsp://x/a', 'Main', false);
+  assert.deepEqual(copy.slice(copy.indexOf('-c:v'), copy.indexOf('-c:v') + 2), ['-c:v', 'copy']);
+  for (const type of ['Main', 'Extra1']) {
+    const a = mp4Args('rtsp://x/a', type, true);
     assert.equal(a[a.indexOf('-c:v') + 1], 'libx264');
-    assert.equal(a[a.indexOf('-b:v') + 1], `${CEVIR_BIT[tur]}k`);
+    assert.equal(a[a.indexOf('-b:v') + 1], `${CONVERT_BITRATE[type]}k`);
     assert.ok(!a.includes('-vf') && !a.includes('-r'), 'cozunurluk ve kare hizi kaynaktaki gibi');
     assert.equal(a[a.indexOf('-bf') + 1], '0');
   }
 });
 
-test('/akis/canli-mp4?h264=1 ayri yayin; MJPEG web rotasi yok', async () => {
-  const u = await uygulamaAc();
+test('/stream/live-mp4?h264=1 ayri yayin; MJPEG web rotasi yok', async () => {
+  const u = await openApp();
   try {
-    await u.giris('admin', 'adminparola1');
-    const h = { Cookie: u.cerezler.get('admin') };
+    await u.login('admin', 'adminparola1');
+    const h = { Cookie: u.cookies.get('admin') };
     const ctrl = new AbortController();
-    const r = await fetch(`${u.B}/akis/canli-mp4?kanal=1&tur=Main&h264=1`, { headers: h, signal: ctrl.signal });
-    assert.equal(r.status, 200); assert.match(r.headers.get('x-kodek'), /^avc1\./);
-    const anahtarlar = u.hizmetler.cihazlar.grup.cihazlar.flatMap((c) => [...c.yayinlar.keys()]);
+    const r = await fetch(`${u.B}/stream/live-mp4?channel=1&type=Main&h264=1`, { headers: h, signal: ctrl.signal });
+    assert.equal(r.status, 200); assert.match(r.headers.get('x-codec'), /^avc1\./);
+    const keys = u.services.devices.group.devices.flatMap((c) => [...c.feeds.keys()]);
     ctrl.abort();
-    assert.ok(anahtarlar.includes('mp4:1/Main/h264'), anahtarlar.join(','));
-    assert.equal((await fetch(`${u.B}/akis/canli?kanal=0&ham=1`, { headers: h })).status, 404);
-  } finally { await u.kapat(); }
+    assert.ok(keys.includes('mp4:1/Main/h264'), keys.join(','));
+    assert.equal((await fetch(`${u.B}/stream/live?channel=0&raw=1`, { headers: h })).status, 404);
+  } finally { await u.close(); }
 });

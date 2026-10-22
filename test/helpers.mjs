@@ -12,70 +12,70 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import assert from 'node:assert/strict';
 import mysql from 'mysql2/promise';
-import { uygulamaKur } from '../src/bootstrap.mjs';
-import { Veritabani } from '../src/core/database.mjs';
-import { yapilandirma as temel } from '../config/app.mjs';
+import { createApp } from '../src/bootstrap.mjs';
+import { Database } from '../src/core/database.mjs';
+import { config as base } from '../config/app.mjs';
 
-export const CIHAZLAR = [
-  { ad: 'Sahte A', tur: 'sahte', ana: '127.0.0.11', kullanici: 'a', parola: 'b', etiket: 'A' },
-  { ad: 'Sahte B', tur: 'sahte', ana: '127.0.0.12', kullanici: 'a', parola: 'b', etiket: 'B' },
+export const DEVICES = [
+  { name: 'Sahte A', type: 'mock', host: '127.0.0.11', username: 'a', password: 'b', label: 'A' },
+  { name: 'Sahte B', type: 'mock', host: '127.0.0.12', username: 'a', password: 'b', label: 'B' },
 ];
 
-const sunucuAyari = () => ({
+const serverSetting = () => ({
   host: process.env.DB_HOST || '127.0.0.1', port: Number(process.env.DB_PORT || 3306),
   username: process.env.DB_USERNAME || 'root', password: process.env.DB_PASSWORD ?? '',
 });
 
 /** Yeni gecici veritabani olusturur. Dondurur: { ayar (uygulama icin), sil() }. */
-export async function gecicivt() {
-  const s = sunucuAyari(), ad = `cam_t_${randomBytes(6).toString('hex')}`;
+export async function tempDb() {
+  const s = serverSetting(), name = `cam_t_${randomBytes(6).toString('hex')}`;
   const c = await mysql.createConnection({ host: s.host, port: s.port, user: s.username, password: s.password });
-  await c.query(`CREATE DATABASE \`${ad}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  await c.query(`CREATE DATABASE \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   await c.end();
-  const sil = async () => { const k = await mysql.createConnection({ host: s.host, port: s.port, user: s.username, password: s.password }); await k.query(`DROP DATABASE IF EXISTS \`${ad}\``); await k.end(); };
-  return { ad, ayar: { ...s, database: ad, beklemeSn: 5, havuz: 4 }, sil };
+  const remove = async () => { const k = await mysql.createConnection({ host: s.host, port: s.port, user: s.username, password: s.password }); await k.query(`DROP DATABASE IF EXISTS \`${name}\``); await k.end(); };
+  return { name, setting: { ...s, database: name, waitingSec: 5, pool: 4 }, remove };
 }
 
 /** Modelleri tek basina sinamak icin: baglanmis, gocleri yapilmis Veritabani + sil(). */
-export async function vtAc() {
-  const g = await gecicivt();
-  const vt = await new Veritabani(g.ayar).baglan({ beklemeSn: 5 });
-  await vt.gocYap();
-  return { vt, ad: g.ad, ayar: g.ayar, sil: async () => { await vt.kapat(); await g.sil(); } };
+export async function openDb() {
+  const g = await tempDb();
+  const db = await new Database(g.setting).connect({ waitingSec: 5 });
+  await db.runMigrations();
+  return { db, name: g.name, setting: g.setting, remove: async () => { await db.close(); await g.remove(); } };
 }
 
 /**
- * ek: { veri (hazir klasor), veritabani ({ ayar } onceki bir kurulumdan: ayni veritabaninda yeniden acis), sunucu, kimlik, cihazlar, live, gizliAnahtar, bekleme }
+ * ek: { veri (hazir klasor), veritabani ({ ayar } onceki bir kurulumdan: ayni veritabaninda yeniden acis), sunucu, kimlik, cihazlar, live, secretKey, bekleme }
  * Verilmezse yeni gecici klasor ve yeni gecici veritabani (kapat() ikisini de siler).
  */
-export async function uygulamaAc(ek = {}) {
-  const veri = ek.veri ?? mkdtempSync(join(tmpdir(), 'cam-gvn-'));
-  const g = ek.veritabani ?? await gecicivt();
-  const y = { ...temel, veriKlasoru: veri, veritabani: g.ayar, gizliAnahtar: ek.gizliAnahtar ?? '', sunucu: { ...temel.sunucu, port: 0, adres: '127.0.0.1', ...ek.sunucu },
-    cihaz: { ...temel.cihaz, test: true, tohum: JSON.stringify(ek.cihazlar ?? CIHAZLAR) },
-    yetki: { ...temel.yetki, ilkAdminParola: 'adminparola1' }, kimlik: { ...temel.kimlik, ...ek.kimlik }, live: { ...temel.live, ...ek.live } };
-  let uygulama;
-  try { uygulama = await uygulamaKur(y); } catch (e) { if (!ek.veritabani) await g.sil(); if (!ek.veri) rmSync(veri, { recursive: true, force: true }); throw e; }
-  const sunucu = uygulama.dinle();
-  await new Promise((r) => sunucu.once('listening', r));
-  const B = `http://127.0.0.1:${sunucu.address().port}`;
-  const cerezler = new Map();
-  const istek = async (yol, { yontem = 'GET', govde, kim = 'admin', bearer, basliklar = {}, cerez } = {}) => {
-    const h = { ...basliklar };
-    if (govde !== undefined) h['Content-Type'] = 'application/json';
-    if (bearer) h.Authorization = `Bearer ${bearer}`; else { h['X-Kamera'] = '1'; const c = cerez ?? (kim && cerezler.get(kim)); if (c) h.Cookie = c; }
-    const r = await fetch(B + yol, { method: yontem, headers: h, body: govde === undefined ? undefined : (typeof govde === 'string' ? govde : JSON.stringify(govde)), redirect: 'manual' });
+export async function openApp(extra = {}) {
+  const data = extra.data ?? mkdtempSync(join(tmpdir(), 'cam-gvn-'));
+  const g = extra.database ?? await tempDb();
+  const y = { ...base, dataDir: data, database: g.setting, secretKey: extra.secretKey ?? '', server: { ...base.server, port: 0, address: '127.0.0.1', ...extra.server },
+    device: { ...base.device, test: true, seed: JSON.stringify(extra.devices ?? DEVICES) },
+    permissions: { ...base.permissions, initialAdminPassword: 'adminparola1' }, identity: { ...base.identity, ...extra.identity }, live: { ...base.live, ...extra.live } };
+  let app;
+  try { app = await createApp(y); } catch (e) { if (!extra.database) await g.remove(); if (!extra.data) rmSync(data, { recursive: true, force: true }); throw e; }
+  const server = app.listen();
+  await new Promise((r) => server.once('listening', r));
+  const B = `http://127.0.0.1:${server.address().port}`;
+  const cookies = new Map();
+  const req = async (path, { method = 'GET', body, who = 'admin', bearer, headers = {}, cookie } = {}) => {
+    const h = { ...headers };
+    if (body !== undefined) h['Content-Type'] = 'application/json';
+    if (bearer) h.Authorization = `Bearer ${bearer}`; else { h['X-Cam'] = '1'; const c = cookie ?? (who && cookies.get(who)); if (c) h.Cookie = c; }
+    const r = await fetch(B + path, { method: method, headers: h, body: body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)), redirect: 'manual' });
     const sc = r.headers.get('set-cookie');
-    if (sc && kim && !bearer && !cerez) cerezler.set(kim, sc.split(';')[0]);
-    const metin = await r.text(); let json = null; try { json = JSON.parse(metin); } catch {}
-    return { durum: r.status, json, metin, basliklar: r.headers };
+    if (sc && who && !bearer && !cookie) cookies.set(who, sc.split(';')[0]);
+    const text = await r.text(); let json = null; try { json = JSON.parse(text); } catch {}
+    return { status: r.status, json, text, headers: r.headers };
   };
-  const giris = async (ad, parola) => { const r = await istek('/api/giris', { yontem: 'POST', govde: { ad, parola }, kim: ad }); assert.equal(r.durum, 200, r.metin); return r; };
+  const login = async (name, password) => { const r = await req('/api/login', { method: 'POST', body: { name, password }, who: name }); assert.equal(r.status, 200, r.text); return r; };
   /** kalici: veritabani silinmez (ayni veritabaninda yeniden acmak icin); varsayilan: silinir. */
-  const kapat = async ({ kalici = false } = {}) => {
-    sunucu.close(); sunucu.closeAllConnections?.(); await uygulama.kapat();
-    if (!ek.veri) rmSync(veri, { recursive: true, force: true });
-    if (!ek.veritabani && !kalici) await g.sil();
+  const close = async ({ permanent = false } = {}) => {
+    server.close(); server.closeAllConnections?.(); await app.close();
+    if (!extra.data) rmSync(data, { recursive: true, force: true });
+    if (!extra.database && !permanent) await g.remove();
   };
-  return { uygulama, sunucu, B, veri, istek, giris, cerezler, kapat, hizmetler: uygulama.hizmetler, veritabani: g };
+  return { app, server, B, data, req, login, cookies, close, services: app.services, database: g };
 }

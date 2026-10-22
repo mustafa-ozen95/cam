@@ -1,8 +1,8 @@
 {
-  "kaynak": "eys",
+  "source": "eys",
   "commit": null,
-  "zaman": "2026-10-21T13:46:31.848Z",
-  "dosyalar": {
+  "time": "2026-10-21T13:46:31.848Z",
+  "files": {
     "css/eys/app.css": "74b4c882d3c62ca52fc2fa86880cae0acbaa3c68fe760f486478f63065598431",
     "css/eys/base.css": "5bb0ec8309c17365bc2a4c27f63eba37a443f8f034fbf9d8068ff244e1112cff",
     "css/eys/components/alert.css": "b34efa475aa771d0df4f2ac021697014aabd3dac1f86113dac4580a66bcc54bf",

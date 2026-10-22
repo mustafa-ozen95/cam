@@ -3,7 +3,7 @@
   "info": {
     "title": "Kamera Paneli API",
     "version": "1.0.0",
-    "description": "Ayrıntılı rehber: /dokuman/api-v1.tr.md (TR), /dokuman/api-v1.en.md (EN). Her uç noktanın gerekli izni x-izinler alanında."
+    "description": "Ayrıntılı rehber: /docs/api-v1.tr.md (TR), /docs/api-v1.en.md (EN). Her uç noktanın gerekli izni x-permissions alanında."
   },
   "servers": [
     {
@@ -12,35 +12,35 @@
   ],
   "components": {
     "securitySchemes": {
-      "apiAnahtari": {
+      "apiKey": {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "kp_<id>_<gizli>"
       },
-      "oturum": {
+      "session": {
         "type": "apiKey",
         "in": "cookie",
-        "name": "kamera_oturum"
+        "name": "cam_session"
       }
     },
     "responses": {
-      "Hata": {
+      "Error": {
         "description": "Hata",
         "content": {
           "application/json": {
             "schema": {
               "type": "object",
               "properties": {
-                "hata": {
+                "error": {
                   "type": "string"
                 },
-                "kod": {
+                "code": {
                   "type": "string"
                 },
-                "gerekenIzin": {
+                "requiredPermission": {
                   "type": "string"
                 },
-                "yenidenDenemeSn": {
+                "retryAfterSec": {
                   "type": "integer"
                 }
               }
@@ -50,43 +50,43 @@
       }
     }
   },
-  "x-izinler": {
-    "canli.izle": "Canlı görüntü ve anlık görüntü (kare)",
-    "kayit.listele": "Kayıt listesini görme",
-    "kayit.izle": "Kayıttan oynatma",
-    "kayit.indir": "Kayıt indirme",
-    "cihaz.oku": "Cihaz, disk ve saat bilgisini görme",
-    "cihaz.saat": "Cihaz saatini sunucu saatine eşitleme",
-    "cihaz.yonet": "Cihaz ekleme/düzenleme/silme ve NVR'a kamera ekleme",
-    "kanal.yonet": "Kanal adı ve görünürlük ayarı",
-    "uye.yonet": "Üyeleri yönetme",
-    "gunluk.oku": "Denetim günlüğünü okuma ve doğrulama",
-    "yetki.yonet": "Rolleri ve tüm API anahtarlarını yönetme",
-    "api.anahtar": "Yalnız kendi API anahtarlarını yönetme",
-    "guncelleme.denetle": "Güncelleme durumunu görme ve kontrol etme"
+  "x-permissions": {
+    "live.view": "Canlı görüntü ve anlık görüntü (kare)",
+    "recording.list": "Kayıt listesini görme",
+    "recording.play": "Kayıttan oynatma",
+    "recording.download": "Kayıt indirme",
+    "device.read": "Cihaz, disk ve saat bilgisini görme",
+    "device.clock": "Cihaz saatini sunucu saatine eşitleme",
+    "device.manage": "Cihaz ekleme/düzenleme/silme ve NVR'a kamera ekleme",
+    "channel.manage": "Kanal adı ve görünürlük ayarı",
+    "member.manage": "Üyeleri yönetme",
+    "audit.read": "Denetim günlüğünü okuma ve doğrulama",
+    "permission.manage": "Rolleri ve tüm API anahtarlarını yönetme",
+    "api.key": "Yalnız kendi API anahtarlarını yönetme",
+    "update.check": "Güncelleme durumunu görme ve kontrol etme"
   },
   "paths": {
-    "/api/v1/saglik": {
+    "/api/v1/health": {
       "get": {
         "summary": "Canlılık denetimi (yalnız konteynerin kendi 127.0.0.1 adresinden; diğerlerine 404)",
         "tags": [
-          "saglik"
+          "health"
         ],
         "security": [],
-        "x-izinler": [],
+        "x-permissions": [],
         "parameters": [],
         "responses": {
           "200": {
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -95,84 +95,84 @@
       "get": {
         "summary": "Sürüm ve bağlantılar",
         "tags": [
-          "genel"
+          "general"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [],
+        "x-permissions": [],
         "parameters": [],
         "responses": {
           "200": {
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/ben": {
+    "/api/v1/me": {
       "get": {
         "summary": "Kimlik: tür, yöntem, izinler, kapsam",
         "tags": [
-          "ben"
+          "me"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [],
+        "x-permissions": [],
         "parameters": [],
         "responses": {
           "200": {
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/izinler": {
+    "/api/v1/permissions": {
       "get": {
         "summary": "İzin kataloğu",
         "tags": [
-          "izinler"
+          "permissions"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "yetki.yonet",
-          "api.anahtar",
-          "uye.yonet"
+        "x-permissions": [
+          "ssion:permission.manage",
+          "api.key",
+          "member.manage"
         ],
         "parameters": [],
         "responses": {
@@ -180,36 +180,36 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/kameralar": {
+    "/api/v1/cameras": {
       "get": {
         "summary": "Kapsamdaki kameralar",
         "tags": [
-          "kameralar"
+          "cameras"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "canli.izle",
-          "kayit.listele",
-          "kayit.izle",
-          "cihaz.oku"
+        "x-permissions": [
+          "ssion:live.view",
+          "recording.list",
+          "recording.play",
+          "device.read"
         ],
         "parameters": [],
         "responses": {
@@ -217,37 +217,37 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/kameralar/{kanal}/goruntu": {
+    "/api/v1/cameras/{channel}/snapshot": {
       "get": {
         "summary": "Anlık görüntü (image/jpeg)",
         "tags": [
-          "kameralar"
+          "cameras"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "canli.izle"
+        "x-permissions": [
+          "ssion:live.view"
         ],
         "parameters": [
           {
-            "name": "kanal",
+            "name": "channel",
             "in": "path",
             "required": true,
             "schema": {
@@ -260,37 +260,37 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/kameralar/{kanal}/canli": {
+    "/api/v1/cameras/{channel}/live": {
       "get": {
-        "summary": "Canlı MJPEG akışı (tur=Main|Extra1|Mini, ham=1)",
+        "summary": "Canlı MJPEG akışı (type=Main|Extra1|Mini, raw=1)",
         "tags": [
-          "kameralar"
+          "cameras"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "canli.izle"
+        "x-permissions": [
+          "ssion:live.view"
         ],
         "parameters": [
           {
-            "name": "kanal",
+            "name": "channel",
             "in": "path",
             "required": true,
             "schema": {
@@ -298,14 +298,14 @@
             }
           },
           {
-            "name": "tur",
+            "name": "type",
             "in": "query",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "ham",
+            "name": "raw",
             "in": "query",
             "schema": {
               "type": "string"
@@ -324,37 +324,37 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/kameralar/{kanal}/kayitlar": {
+    "/api/v1/cameras/{channel}/recordings": {
       "get": {
-        "summary": "Kayıt dilimleri (gun, gun2)",
+        "summary": "Kayıt dilimleri (day, dayEnd)",
         "tags": [
-          "kameralar"
+          "cameras"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "kayit.listele"
+        "x-permissions": [
+          "ssion:recording.list"
         ],
         "parameters": [
           {
-            "name": "kanal",
+            "name": "channel",
             "in": "path",
             "required": true,
             "schema": {
@@ -362,14 +362,14 @@
             }
           },
           {
-            "name": "gun",
+            "name": "day",
             "in": "query",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "gun2",
+            "name": "dayEnd",
             "in": "query",
             "schema": {
               "type": "string"
@@ -381,37 +381,37 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/kameralar/{kanal}/oynat": {
+    "/api/v1/cameras/{channel}/playback": {
       "get": {
-        "summary": "Kayıttan oynatma MJPEG (bas, bit)",
+        "summary": "Kayıttan oynatma MJPEG (from, to)",
         "tags": [
-          "kameralar"
+          "cameras"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "kayit.izle"
+        "x-permissions": [
+          "ssion:recording.play"
         ],
         "parameters": [
           {
-            "name": "kanal",
+            "name": "channel",
             "in": "path",
             "required": true,
             "schema": {
@@ -419,21 +419,14 @@
             }
           },
           {
-            "name": "bas",
+            "name": "from",
             "in": "query",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "bit",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "ham",
+            "name": "to",
             "in": "query",
             "schema": {
               "type": "string"
@@ -452,37 +445,37 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/kameralar/{kanal}/indir": {
+    "/api/v1/cameras/{channel}/download": {
       "get": {
-        "summary": "Kayıt indirme mp4 (dosya, bas, bit)",
+        "summary": "Kayıt indirme mp4 (file, from, to)",
         "tags": [
-          "kameralar"
+          "cameras"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "kayit.indir"
+        "x-permissions": [
+          "ssion:recording.download"
         ],
         "parameters": [
           {
-            "name": "kanal",
+            "name": "channel",
             "in": "path",
             "required": true,
             "schema": {
@@ -490,21 +483,21 @@
             }
           },
           {
-            "name": "dosya",
+            "name": "file",
             "in": "query",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "bas",
+            "name": "from",
             "in": "query",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "bit",
+            "name": "to",
             "in": "query",
             "schema": {
               "type": "string"
@@ -516,33 +509,33 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/cihazlar": {
+    "/api/v1/devices": {
       "get": {
         "summary": "Cihaz listesi ve tür kataloğu",
         "tags": [
-          "cihazlar"
+          "devices"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "cihaz.oku"
+        "x-permissions": [
+          "ssion:device.read"
         ],
         "parameters": [],
         "responses": {
@@ -550,31 +543,31 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       },
       "post": {
         "summary": "Cihaz ekle (bağlantı denenir)",
         "tags": [
-          "cihazlar"
+          "devices"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "cihaz.yonet"
+        "x-permissions": [
+          "ssion:device.manage"
         ],
         "parameters": [],
         "responses": {
@@ -582,13 +575,13 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         },
         "requestBody": {
@@ -597,25 +590,25 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "tur": {
+                  "type": {
                     "type": "string"
                   },
-                  "ana": {
+                  "host": {
                     "type": "string"
                   },
-                  "kullanici": {
+                  "username": {
                     "type": "string"
                   },
-                  "parola": {
+                  "password": {
                     "type": "string"
                   },
-                  "ad": {
+                  "name": {
                     "type": "string"
                   },
-                  "etiket": {
+                  "label": {
                     "type": "string"
                   },
-                  "kanalSayisi": {
+                  "channelCount": {
                     "type": "integer"
                   },
                   "httpPort": {
@@ -627,10 +620,10 @@
                   "port": {
                     "type": "integer"
                   },
-                  "sablon": {
+                  "template": {
                     "type": "string"
                   },
-                  "yol": {
+                  "path": {
                     "type": "string"
                   }
                 }
@@ -640,22 +633,22 @@
         }
       }
     },
-    "/api/v1/cihazlar/bilgi": {
+    "/api/v1/devices/info": {
       "get": {
         "summary": "Birleşik cihaz bilgisi",
         "tags": [
-          "cihazlar"
+          "devices"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "cihaz.oku"
+        "x-permissions": [
+          "ssion:device.read"
         ],
         "parameters": [],
         "responses": {
@@ -663,33 +656,33 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/cihazlar/{id}": {
+    "/api/v1/devices/{id}": {
       "patch": {
         "summary": "Cihaz düzenle",
         "tags": [
-          "cihazlar"
+          "devices"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "cihaz.yonet"
+        "x-permissions": [
+          "ssion:device.manage"
         ],
         "parameters": [
           {
@@ -706,13 +699,13 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         },
         "requestBody": {
@@ -721,22 +714,22 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "ana": {
+                  "host": {
                     "type": "string"
                   },
-                  "kullanici": {
+                  "username": {
                     "type": "string"
                   },
-                  "parola": {
+                  "password": {
                     "type": "string"
                   },
-                  "ad": {
+                  "name": {
                     "type": "string"
                   },
-                  "etiket": {
+                  "label": {
                     "type": "string"
                   },
-                  "kanalSayisi": {
+                  "channelCount": {
                     "type": "integer"
                   },
                   "httpPort": {
@@ -748,10 +741,10 @@
                   "port": {
                     "type": "integer"
                   },
-                  "sablon": {
+                  "template": {
                     "type": "string"
                   },
-                  "yol": {
+                  "path": {
                     "type": "string"
                   }
                 }
@@ -763,18 +756,18 @@
       "delete": {
         "summary": "Cihazı panelden kaldır",
         "tags": [
-          "cihazlar"
+          "devices"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "cihaz.yonet"
+        "x-permissions": [
+          "ssion:device.manage"
         ],
         "parameters": [
           {
@@ -791,33 +784,33 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/cihazlar/{id}/kameralar": {
+    "/api/v1/devices/{id}/cameras": {
       "post": {
         "summary": "NVR'a kamera kaydet",
         "tags": [
-          "cihazlar"
+          "devices"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "cihaz.yonet"
+        "x-permissions": [
+          "ssion:device.manage"
         ],
         "parameters": [
           {
@@ -834,13 +827,13 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         },
         "requestBody": {
@@ -849,19 +842,19 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "ad": {
+                  "name": {
                     "type": "string"
                   },
                   "ip": {
                     "type": "string"
                   },
-                  "kullanici": {
+                  "username": {
                     "type": "string"
                   },
-                  "parola": {
+                  "password": {
                     "type": "string"
                   },
-                  "protokol": {
+                  "protocol": {
                     "type": "string"
                   },
                   "port": {
@@ -874,22 +867,22 @@
         }
       }
     },
-    "/api/v1/cihazlar/saat": {
+    "/api/v1/devices/clock": {
       "post": {
         "summary": "Cihaz saatini eşitle",
         "tags": [
-          "cihazlar"
+          "devices"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "cihaz.saat"
+        "x-permissions": [
+          "ssion:device.clock"
         ],
         "parameters": [],
         "responses": {
@@ -897,13 +890,13 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         },
         "requestBody": {
@@ -912,7 +905,7 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "cihaz": {
+                  "device": {
                     "type": "string"
                   }
                 }
@@ -922,22 +915,22 @@
         }
       }
     },
-    "/api/v1/kanallar": {
+    "/api/v1/channels": {
       "put": {
         "summary": "Kanal adı/görünürlük ayarı",
         "tags": [
-          "kanallar"
+          "channels"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "kanal.yonet"
+        "x-permissions": [
+          "ssion:channel.manage"
         ],
         "parameters": [],
         "responses": {
@@ -945,13 +938,13 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         },
         "requestBody": {
@@ -960,13 +953,13 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "ayar": {
+                  "setting": {
                     "type": "object"
                   },
-                  "bas": {
+                  "from": {
                     "type": "integer"
                   },
-                  "son": {
+                  "last": {
                     "type": "integer"
                   }
                 }
@@ -976,22 +969,22 @@
         }
       }
     },
-    "/api/v1/uyeler": {
+    "/api/v1/members": {
       "get": {
         "summary": "Üyeler",
         "tags": [
-          "uyeler"
+          "members"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "uye.yonet"
+        "x-permissions": [
+          "ssion:member.manage"
         ],
         "parameters": [],
         "responses": {
@@ -999,31 +992,31 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       },
       "post": {
         "summary": "Üye ekle",
         "tags": [
-          "uyeler"
+          "members"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "uye.yonet"
+        "x-permissions": [
+          "ssion:member.manage"
         ],
         "parameters": [],
         "responses": {
@@ -1031,13 +1024,13 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         },
         "requestBody": {
@@ -1046,22 +1039,22 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "ad": {
+                  "name": {
                     "type": "string"
                   },
-                  "parola": {
+                  "password": {
                     "type": "string"
                   },
-                  "rol": {
+                  "role": {
                     "type": "string"
                   },
-                  "kapsam": {
+                  "scope": {
                     "type": "object"
                   },
-                  "bitis": {
+                  "expiresAt": {
                     "type": "string"
                   },
-                  "ipler": {
+                  "ips": {
                     "type": "array"
                   }
                 }
@@ -1071,26 +1064,26 @@
         }
       }
     },
-    "/api/v1/uyeler/{ad}": {
+    "/api/v1/members/{name}": {
       "patch": {
         "summary": "Üye düzenle",
         "tags": [
-          "uyeler"
+          "members"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "uye.yonet"
+        "x-permissions": [
+          "ssion:member.manage"
         ],
         "parameters": [
           {
-            "name": "ad",
+            "name": "name",
             "in": "path",
             "required": true,
             "schema": {
@@ -1103,13 +1096,13 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         },
         "requestBody": {
@@ -1118,19 +1111,19 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "parola": {
+                  "password": {
                     "type": "string"
                   },
-                  "rol": {
+                  "role": {
                     "type": "string"
                   },
-                  "kapsam": {
+                  "scope": {
                     "type": "object"
                   },
-                  "bitis": {
+                  "expiresAt": {
                     "type": "string"
                   },
-                  "ipler": {
+                  "ips": {
                     "type": "array"
                   }
                 }
@@ -1142,22 +1135,22 @@
       "delete": {
         "summary": "Üye sil",
         "tags": [
-          "uyeler"
+          "members"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "uye.yonet"
+        "x-permissions": [
+          "ssion:member.manage"
         ],
         "parameters": [
           {
-            "name": "ad",
+            "name": "name",
             "in": "path",
             "required": true,
             "schema": {
@@ -1170,58 +1163,58 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/gunluk": {
+    "/api/v1/audit-log": {
       "get": {
         "summary": "Denetim günlüğü",
         "tags": [
-          "gunluk"
+          "audit-log"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "gunluk.oku"
+        "x-permissions": [
+          "ssion:audit.read"
         ],
         "parameters": [
           {
-            "name": "sayfa",
+            "name": "page",
             "in": "query",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "boyut",
+            "name": "size",
             "in": "query",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "olay",
+            "name": "event",
             "in": "query",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "kullanici",
+            "name": "username",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1235,7 +1228,7 @@
             }
           },
           {
-            "name": "gun",
+            "name": "day",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1247,33 +1240,33 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/gunluk/dogrula": {
+    "/api/v1/audit-log/verify": {
       "get": {
         "summary": "Günlük zincirini doğrula",
         "tags": [
-          "gunluk"
+          "audit-log"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "gunluk.oku"
+        "x-permissions": [
+          "ssion:audit.read"
         ],
         "parameters": [],
         "responses": {
@@ -1281,35 +1274,35 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/roller": {
+    "/api/v1/roles": {
       "get": {
         "summary": "Roller",
         "tags": [
-          "roller"
+          "roles"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "yetki.yonet",
-          "api.anahtar",
-          "uye.yonet"
+        "x-permissions": [
+          "ssion:permission.manage",
+          "api.key",
+          "member.manage"
         ],
         "parameters": [],
         "responses": {
@@ -1317,31 +1310,31 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       },
       "post": {
         "summary": "Özel rol ekle",
         "tags": [
-          "roller"
+          "roles"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "yetki.yonet"
+        "x-permissions": [
+          "ssion:permission.manage"
         ],
         "parameters": [],
         "responses": {
@@ -1349,13 +1342,13 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         },
         "requestBody": {
@@ -1367,13 +1360,13 @@
                   "id": {
                     "type": "string"
                   },
-                  "ad": {
+                  "name": {
                     "type": "string"
                   },
-                  "aciklama": {
+                  "description": {
                     "type": "string"
                   },
-                  "izinler": {
+                  "permissions": {
                     "type": "array"
                   }
                 }
@@ -1383,22 +1376,22 @@
         }
       }
     },
-    "/api/v1/roller/{id}": {
+    "/api/v1/roles/{id}": {
       "patch": {
         "summary": "Rol düzenle",
         "tags": [
-          "roller"
+          "roles"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "yetki.yonet"
+        "x-permissions": [
+          "ssion:permission.manage"
         ],
         "parameters": [
           {
@@ -1415,13 +1408,13 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         },
         "requestBody": {
@@ -1430,13 +1423,13 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "ad": {
+                  "name": {
                     "type": "string"
                   },
-                  "aciklama": {
+                  "description": {
                     "type": "string"
                   },
-                  "izinler": {
+                  "permissions": {
                     "type": "array"
                   }
                 }
@@ -1448,18 +1441,18 @@
       "delete": {
         "summary": "Rol sil",
         "tags": [
-          "roller"
+          "roles"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "yetki.yonet"
+        "x-permissions": [
+          "ssion:permission.manage"
         ],
         "parameters": [
           {
@@ -1476,38 +1469,38 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/anahtarlar": {
+    "/api/v1/keys": {
       "get": {
         "summary": "API anahtarları",
         "tags": [
-          "anahtarlar"
+          "keys"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "yetki.yonet",
-          "api.anahtar"
+        "x-permissions": [
+          "ssion:permission.manage",
+          "api.key"
         ],
         "parameters": [
           {
-            "name": "sahip",
+            "name": "owner",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1519,32 +1512,32 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       },
       "post": {
         "summary": "Anahtar oluştur (gizli bir kez döner)",
         "tags": [
-          "anahtarlar"
+          "keys"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "yetki.yonet",
-          "api.anahtar"
+        "x-permissions": [
+          "ssion:permission.manage",
+          "api.key"
         ],
         "parameters": [],
         "responses": {
@@ -1552,13 +1545,13 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         },
         "requestBody": {
@@ -1567,34 +1560,34 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "ad": {
+                  "name": {
                     "type": "string"
                   },
-                  "rol": {
+                  "role": {
                     "type": "string"
                   },
-                  "izinler": {
+                  "permissions": {
                     "type": "array"
                   },
-                  "kapsam": {
+                  "scope": {
                     "type": "object"
                   },
-                  "bitis": {
+                  "expiresAt": {
                     "type": "string"
                   },
-                  "ipler": {
+                  "ips": {
                     "type": "array"
                   },
-                  "hizLimiti": {
+                  "rateLimit": {
                     "type": "integer"
                   },
-                  "eszamanliAkis": {
+                  "concurrentStreams": {
                     "type": "integer"
                   },
-                  "notlar": {
+                  "notes": {
                     "type": "string"
                   },
-                  "sahip": {
+                  "owner": {
                     "type": "string"
                   }
                 }
@@ -1604,23 +1597,23 @@
         }
       }
     },
-    "/api/v1/anahtarlar/{id}": {
+    "/api/v1/keys/{id}": {
       "get": {
         "summary": "Anahtar kaydı",
         "tags": [
-          "anahtarlar"
+          "keys"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "yetki.yonet",
-          "api.anahtar"
+        "x-permissions": [
+          "ssion:permission.manage",
+          "api.key"
         ],
         "parameters": [
           {
@@ -1637,32 +1630,32 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       },
       "patch": {
         "summary": "Anahtar düzenle",
         "tags": [
-          "anahtarlar"
+          "keys"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "yetki.yonet",
-          "api.anahtar"
+        "x-permissions": [
+          "ssion:permission.manage",
+          "api.key"
         ],
         "parameters": [
           {
@@ -1679,13 +1672,13 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         },
         "requestBody": {
@@ -1694,31 +1687,31 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "ad": {
+                  "name": {
                     "type": "string"
                   },
-                  "rol": {
+                  "role": {
                     "type": "string"
                   },
-                  "izinler": {
+                  "permissions": {
                     "type": "array"
                   },
-                  "kapsam": {
+                  "scope": {
                     "type": "object"
                   },
-                  "bitis": {
+                  "expiresAt": {
                     "type": "string"
                   },
-                  "ipler": {
+                  "ips": {
                     "type": "array"
                   },
-                  "hizLimiti": {
+                  "rateLimit": {
                     "type": "integer"
                   },
-                  "eszamanliAkis": {
+                  "concurrentStreams": {
                     "type": "integer"
                   },
-                  "notlar": {
+                  "notes": {
                     "type": "string"
                   }
                 }
@@ -1730,19 +1723,19 @@
       "delete": {
         "summary": "Anahtar kaydını sil",
         "tags": [
-          "anahtarlar"
+          "keys"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "yetki.yonet",
-          "api.anahtar"
+        "x-permissions": [
+          "ssion:permission.manage",
+          "api.key"
         ],
         "parameters": [
           {
@@ -1759,34 +1752,34 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/anahtarlar/{id}/yenile": {
+    "/api/v1/keys/{id}/rotate": {
       "post": {
         "summary": "Gizliyi yenile",
         "tags": [
-          "anahtarlar"
+          "keys"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "yetki.yonet",
-          "api.anahtar"
+        "x-permissions": [
+          "ssion:permission.manage",
+          "api.key"
         ],
         "parameters": [
           {
@@ -1803,34 +1796,34 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
     },
-    "/api/v1/anahtarlar/{id}/iptal": {
+    "/api/v1/keys/{id}/revoke": {
       "post": {
         "summary": "Anahtarı iptal et",
         "tags": [
-          "anahtarlar"
+          "keys"
         ],
         "security": [
           {
-            "apiAnahtari": []
+            "apiKey": []
           },
           {
-            "oturum": []
+            "session": []
           }
         ],
-        "x-izinler": [
-          "yetki.yonet",
-          "api.anahtar"
+        "x-permissions": [
+          "ssion:permission.manage",
+          "api.key"
         ],
         "parameters": [
           {
@@ -1847,13 +1840,13 @@
             "description": "Başarılı"
           },
           "401": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Hata"
+            "$ref": "#/components/responses/Error"
           }
         }
       }

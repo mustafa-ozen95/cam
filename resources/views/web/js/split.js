@@ -8,12 +8,12 @@
  * Gorunmeyen bolmeler (gizli detay) sayilmaz. Genis ekranda serit tasmaz ve hicbir sey yapilmaz;
  * kullanicinin kendi kaydirmasina karisilmaz, yalniz secim degisince cagrilir.
  */
-export function bolmeyeIn(serit, derinlik) {
-  if (!serit) return;
+export function toSplitIn(bar, depth) {
+  if (!bar) return;
   requestAnimationFrame(() => {
-    const bolmeler = [...serit.querySelectorAll(':scope > .column, :scope > .detail')].filter((b) => getComputedStyle(b).display !== 'none');
-    const hedef = bolmeler[Math.max(0, Math.min(derinlik, bolmeler.length - 1))];
-    if (!hedef || serit.scrollWidth <= serit.clientWidth) return;
-    serit.scrollTo({ left: hedef.offsetLeft - serit.offsetLeft, behavior: 'auto' });
+    const splits = [...bar.querySelectorAll(':scope > .column, :scope > .detail')].filter((b) => getComputedStyle(b).display !== 'none');
+    const target = splits[Math.max(0, Math.min(depth, splits.length - 1))];
+    if (!target || bar.scrollWidth <= bar.clientWidth) return;
+    bar.scrollTo({ left: target.offsetLeft - bar.offsetLeft, behavior: 'auto' });
   });
 }

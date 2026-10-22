@@ -2,10 +2,10 @@
  * Dil desteği (TR varsayılan, EN). Sözlük tabanlı: arayüz Türkçe yazılır; EN seçiliyse metin düğümleri ve
  * placeholder/title/aria-label nitelikleri sözlükten çevrilir, sonradan eklenen öğeler MutationObserver ile yakalanır.
  * Sayı/ad içeren dinamik metinler KURALLAR (regex) ile çevrilir. Çeviri idempotenttir (İngilizce metin tekrar çevrilmez).
- * Seçim localStorage 'kamera_dil' içinde; window.DIL.gecerli ana betiğe dili verir.
+ * Seçim localStorage 'cam_lang' içinde; window.DIL.gecerli ana betiğe dili verir.
  */
 (function () {
-  const SOZLUK = {
+  const DICT = {
     // gezinme / genel
     'Kamera Paneli': 'Camera Panel', 'Kamera paneli': 'Camera panel', 'Canlı': 'Live', 'Kayıtlar': 'Recordings', 'İndirmeler': 'Downloads', 'Cihaz': 'Device', 'Üyeler': 'Members', 'Günlük': 'Audit log', 'Yetki': 'Access',
     'Çıkış': 'Sign out', 'bağlanıyor…': 'connecting…', 'Bağlı': 'Connected', 'Bağlantı yok, yeniden deneniyor…': 'No connection, retrying…', 'Cihaza ulaşılamıyor, yeniden deneniyor…': 'Device unreachable, retrying…',
@@ -77,7 +77,7 @@
     "Süzgeç": "Filter",
   };
   // Dinamik metinler: [regex, değiştirme]
-  const KURALLAR = [
+  const RULES = [
     [/^Çalışan sürüm (\d+) commit geride\.$/, 'The running version is $1 commits behind.'],
     [/^ve (\d+) commit daha\.$/, 'and $1 more commits.'],
     [/^(\d+) \/ (\d+) kayıt · (.+)$/, '$1 / $2 recordings · $3'], [/^(\d+) kayıt seçili · (.+)$/, '$1 selected · $2'], [/^(\d+) kayıt$/, '$1 entries'],
@@ -103,49 +103,49 @@
     [/^(\S+) kaydını seç$/, "Select the $1 recording"], [/^(\S+) adı$/, "$1 name"],
   ];
   // Sözlükte boş değer: "öğe parça parça çevrilir" demektir (HTML karışık içerik); kuralsız geçer.
-  const gecerli = (() => { try { const v = localStorage.getItem('kamera_dil'); return v === 'en' ? 'en' : 'tr'; } catch { return 'tr'; } })();
-  const cevir = (metin) => {
-    if (gecerli !== 'en' || !metin) return metin;
-    const on = metin.match(/^\s*/)[0], son = metin.match(/\s*$/)[0], t = metin.trim();
-    if (!t) return metin;
-    if (Object.prototype.hasOwnProperty.call(SOZLUK, t) && SOZLUK[t]) return on + SOZLUK[t] + son;
-    for (const [re, y] of KURALLAR) if (re.test(t)) return on + t.replace(re, y) + son;
-    return metin;
+  const valid = (() => { try { const v = localStorage.getItem('cam_lang'); return v === 'en' ? 'en' : 'tr'; } catch { return 'tr'; } })();
+  const convert = (text) => {
+    if (valid !== 'en' || !text) return text;
+    const on = text.match(/^\s*/)[0], last = text.match(/\s*$/)[0], t = text.trim();
+    if (!t) return text;
+    if (Object.prototype.hasOwnProperty.call(DICT, t) && DICT[t]) return on + DICT[t] + last;
+    for (const [re, y] of RULES) if (re.test(t)) return on + t.replace(re, y) + last;
+    return text;
   };
-  const NITELIKLER = ['placeholder', 'title', 'aria-label', 'alt'];
-  const ATLA = new Set(['SCRIPT', 'STYLE', 'CODE', 'PRE', 'TEXTAREA']);
+  const ATTRIBUTES = ['placeholder', 'title', 'aria-label', 'alt'];
+  const SKIP = new Set(['SCRIPT', 'STYLE', 'CODE', 'PRE', 'TEXTAREA']);
   // translate="no" tasiyan oge (hesap menusundeki dil secenegi gibi) cevrilmez.
-  const cevrilmez = (n) => !!(n.nodeType === 1 ? n : n.parentElement)?.closest?.('[translate="no"]');
-  const dugumCevir = (n) => { if (cevrilmez(n)) return; const y = cevir(n.data); if (y !== n.data) n.data = y; };
-  const ogeCevir = (e) => {
-    if (!(e instanceof Element) || ATLA.has(e.tagName) || cevrilmez(e)) return;
-    for (const a of NITELIKLER) if (e.hasAttribute(a)) { const v = e.getAttribute(a), y = cevir(v); if (y !== v) e.setAttribute(a, y); }
-    if (e.tagName === 'INPUT' && (e.type === 'button' || e.type === 'submit') && e.value) { const y = cevir(e.value); if (y !== e.value) e.value = y; }
-    if (e.tagName === 'OPTION' && e.firstChild?.nodeType === 3) dugumCevir(e.firstChild);
+  const notConverted = (n) => !!(n.nodeType === 1 ? n : n.parentElement)?.closest?.('[translate="no"]');
+  const convertNode = (n) => { if (notConverted(n)) return; const y = convert(n.data); if (y !== n.data) n.data = y; };
+  const convertItem = (e) => {
+    if (!(e instanceof Element) || SKIP.has(e.tagName) || notConverted(e)) return;
+    for (const a of ATTRIBUTES) if (e.hasAttribute(a)) { const v = e.getAttribute(a), y = convert(v); if (y !== v) e.setAttribute(a, y); }
+    if (e.tagName === 'INPUT' && (e.type === 'button' || e.type === 'submit') && e.value) { const y = convert(e.value); if (y !== e.value) e.value = y; }
+    if (e.tagName === 'OPTION' && e.firstChild?.nodeType === 3) convertNode(e.firstChild);
   };
-  const altAgacCevir = (kok) => {
-    if (kok.nodeType === 3) return dugumCevir(kok);
-    if (!(kok instanceof Element) || ATLA.has(kok.tagName)) return;
-    ogeCevir(kok);
-    const w = document.createTreeWalker(kok, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, { acceptNode: (n) => (n.nodeType === 1 ? (ATLA.has(n.tagName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) : NodeFilter.FILTER_ACCEPT) });
-    let n; while ((n = w.nextNode())) { if (n.nodeType === 3) dugumCevir(n); else ogeCevir(n); }
+  const convertSubTree = (root) => {
+    if (root.nodeType === 3) return convertNode(root);
+    if (!(root instanceof Element) || SKIP.has(root.tagName)) return;
+    convertItem(root);
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, { acceptNode: (n) => (n.nodeType === 1 ? (SKIP.has(n.tagName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) : NodeFilter.FILTER_ACCEPT) });
+    let n; while ((n = w.nextNode())) { if (n.nodeType === 3) convertNode(n); else convertItem(n); }
   };
-  const baslat = () => {
-    document.documentElement.lang = gecerli;
-    if (gecerli !== 'en') return;
-    altAgacCevir(document.body);
+  const start = () => {
+    document.documentElement.lang = valid;
+    if (valid !== 'en') return;
+    convertSubTree(document.body);
     if (document.title) document.title = document.title.replace('Giriş · ', 'Sign in · ').replace('Kamera Paneli', 'Camera Panel');
-    new MutationObserver((kayitlar) => {
-      for (const k of kayitlar) {
-        if (k.type === 'childList') k.addedNodes.forEach(altAgacCevir);
-        else if (k.type === 'characterData') dugumCevir(k.target);
-        else if (k.type === 'attributes') ogeCevir(k.target);
+    new MutationObserver((records) => {
+      for (const k of records) {
+        if (k.type === 'childList') k.addedNodes.forEach(convertSubTree);
+        else if (k.type === 'characterData') convertNode(k.target);
+        else if (k.type === 'attributes') convertItem(k.target);
       }
-    }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: NITELIKLER });
+    }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRIBUTES });
   };
-  window.DIL = {
-    gecerli, cevir,
-    degistir(yeni) { try { localStorage.setItem('kamera_dil', yeni === 'en' ? 'en' : 'tr'); } catch {} location.reload(); },
+  window.LANG = {
+    valid, convert,
+    change(fresh) { try { localStorage.setItem('cam_lang', fresh === 'en' ? 'en' : 'tr'); } catch {} location.reload(); },
   };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', baslat); else baslat();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();

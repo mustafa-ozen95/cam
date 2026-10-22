@@ -5,7 +5,7 @@
 #  (.env ya da ortam değişkenleri); liste .env.example'da.
 #
 #  Veri MariaDB'dedir (db servisi, kendi hacmi). Dışarıdaki bir veritabanı
-#  kullanmak için DB_HOST ve kimlik bilgilerini verin, VT_KOPYA=0 ile db
+#  kullanmak için DB_HOST ve kimlik bilgilerini verin, DB_REPLICAS=0 ile db
 #  servisi hiç kalkmaz. JSON dönemindeki data/ klasörü varsa ilk açılışta bir
 #  kez veritabanına aktarılır (README).
 #
@@ -13,60 +13,60 @@
 #  vekil verir, panele konteyner ağından 80'den ulaşır. Vekilsiz, doğrudan
 #  porttan kullanmak için docker-compose.override.example.yml.
 #
-#  /live: görüntüyü kamera-rtc (mediamtx) verir. Tarayıcının bağlantı isteği
+#  /live: görüntüyü cam-rtc (mediamtx) verir. Tarayıcının bağlantı isteği
 #  panele gelir, panel onu mediamtx'e geçirir; vekilde ayrı kural gerekmez.
 #  Görüntünün kendisi tarayıcıyla mediamtx arasında 8189/udp'den akar.
 #
-#  Aynı sunucuda ikinci kurulum: ayrı klasör ve ayrı .env (KAMERA_KONTEYNER,
-#  KAMERA_RTC_KONTEYNER, KAMERA_DB_KONTEYNER, KAMERA_DATA_VOLUME, KAMERA_DB_VOLUME, KAMERA_RTC_PORT, KAMERA_CEREZ).
+#  Aynı sunucuda ikinci kurulum: ayrı klasör ve ayrı .env (CAM_CONTAINER,
+#  CAM_RTC_CONTAINER, CAM_DB_CONTAINER, CAM_DATA_VOLUME, CAM_DB_VOLUME, CAM_RTC_PORT, CAM_COOKIE).
 # =============================================================================
 
 services:
   cam:
     build: .
-    container_name: ${KAMERA_KONTEYNER:-cam}
+    container_name: ${CAM_CONTAINER:-cam}
     restart: unless-stopped
     stop_grace_period: 1m
     expose: ["80"]
     environment:
-      KAMERA_BASLIK: ${KAMERA_BASLIK:-Kamera Paneli · NVR}
-      KAMERA_CEREZ: ${KAMERA_CEREZ:-nvr_oturum}
-      KAMERA_CIHAZLAR: ${KAMERA_CIHAZLAR:-}
-      KAMERA_ADMIN_PAROLA: ${KAMERA_ADMIN_PAROLA:-}
+      CAM_TITLE: ${CAM_TITLE:-Kamera Paneli · NVR}
+      CAM_COOKIE: ${CAM_COOKIE:-cam_session}
+      CAM_DEVICES: ${CAM_DEVICES:-}
+      CAM_ADMIN_PASSWORD: ${CAM_ADMIN_PASSWORD:-}
       # Vekilin gerçek istemci adresini yazdığı başlık (Caddy, nginx, Traefik: X-Real-IP).
-      KAMERA_IP_BASLIGI: ${KAMERA_IP_BASLIGI:-X-Real-IP}
+      CAM_IP_HEADER: ${CAM_IP_HEADER:-X-Real-IP}
       # Boş = /live yalnız panelin içinde gömülebilir; tanımsızsa her yer (harici izleme panosu).
-      KAMERA_LIVE_CERCEVE: ${KAMERA_LIVE_CERCEVE-*}
+      CAM_LIVE_EMBED: ${CAM_LIVE_EMBED-*}
       # /live kayıtlı düzen yokken: virgülle kanal no (1'den), sırayla. Boş = ilk 12 kamera.
-      KAMERA_LIVE_VARSAYILAN: ${KAMERA_LIVE_VARSAYILAN:-}
-      # Boş bırakılırsa /live kapanır; kamera-rtc servisi o zaman gereksizdir.
-      KAMERA_RTC_API: ${KAMERA_RTC_API-http://kamera-rtc:9997}
-      KAMERA_KIMLIK_ADRES: ${KAMERA_KIMLIK_ADRES:-}
-      KAMERA_KIMLIK_ISTEMCI: ${KAMERA_KIMLIK_ISTEMCI:-}
-      KAMERA_KIMLIK_SIR: ${KAMERA_KIMLIK_SIR:-}
-      KAMERA_KIMLIK_DONUS: ${KAMERA_KIMLIK_DONUS:-}
-      KAMERA_KIMLIK_BILDIRIM_SIR: ${KAMERA_KIMLIK_BILDIRIM_SIR:-}
-      KAMERA_KIMLIK_AD: ${KAMERA_KIMLIK_AD:-}
-      KAMERA_KIMLIK_DOGRULAMA_DAKIKA: ${KAMERA_KIMLIK_DOGRULAMA_DAKIKA:-}
-      KAMERA_KIMLIK_ROL_ESLEME: ${KAMERA_KIMLIK_ROL_ESLEME:-}
-      KAMERA_KIMLIK_VARSAYILAN_ROL: ${KAMERA_KIMLIK_VARSAYILAN_ROL:-}
-      GUNCELLEME_JETONU: ${GUNCELLEME_JETONU:-}
+      CAM_LIVE_DEFAULT: ${CAM_LIVE_DEFAULT:-}
+      # Boş bırakılırsa /live kapanır; cam-rtc servisi o zaman gereksizdir.
+      CAM_RTC_API: ${CAM_RTC_API-http://cam-rtc:9997}
+      CAM_HUB_URL: ${CAM_HUB_URL:-}
+      CAM_HUB_CLIENT_ID: ${CAM_HUB_CLIENT_ID:-}
+      CAM_HUB_CLIENT_SECRET: ${CAM_HUB_CLIENT_SECRET:-}
+      CAM_HUB_REDIRECT_URI: ${CAM_HUB_REDIRECT_URI:-}
+      CAM_HUB_NOTIFY_SECRET: ${CAM_HUB_NOTIFY_SECRET:-}
+      CAM_HUB_NAME: ${CAM_HUB_NAME:-}
+      CAM_HUB_CHECK_MINUTES: ${CAM_HUB_CHECK_MINUTES:-}
+      CAM_HUB_ROLE_MAP: ${CAM_HUB_ROLE_MAP:-}
+      CAM_HUB_DEFAULT_ROLE: ${CAM_HUB_DEFAULT_ROLE:-}
+      UPDATE_TOKEN: ${UPDATE_TOKEN:-}
       DB_HOST: ${DB_HOST:-db}
       DB_PORT: ${DB_PORT:-3306}
       DB_DATABASE: ${DB_DATABASE:-cam}
       DB_USERNAME: ${DB_USERNAME:-cam}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD gerekli (.env.example)}
       # base64, 32 bayt (openssl rand -base64 32). Boşsa data/secret.key dosyası kullanılır. Veritabanına girmez.
-      KAMERA_GIZLI_ANAHTAR: ${KAMERA_GIZLI_ANAHTAR:-}
+      CAM_SECRET_KEY: ${CAM_SECRET_KEY:-}
     volumes:
       - data:/app/data
-    # VT_KOPYA=0 (dışarıdaki veritabanı) iken db servisi yoktur; bağımlılık o zaman aranmaz.
+    # DB_REPLICAS=0 (dışarıdaki veritabanı) iken db servisi yoktur; bağımlılık o zaman aranmaz.
     depends_on:
       db:
         condition: service_healthy
         required: false
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1/api/v1/saglik').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 20s
@@ -74,11 +74,11 @@ services:
 
   db:
     image: mariadb:11.4
-    container_name: ${KAMERA_DB_KONTEYNER:-cam-db}
+    container_name: ${CAM_DB_CONTAINER:-cam-db}
     restart: unless-stopped
     # 0: dışarıdaki bir veritabanı kullanılıyor (DB_HOST).
     deploy:
-      replicas: ${VT_KOPYA:-1}
+      replicas: ${DB_REPLICAS:-1}
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
     environment:
       MARIADB_DATABASE: ${DB_DATABASE:-cam}
@@ -95,30 +95,30 @@ services:
       start_period: 60s
       retries: 6
 
-  kamera-rtc:
+  cam-rtc:
     build:
       context: .
       dockerfile: docker/rtc.Dockerfile
-    container_name: ${KAMERA_RTC_KONTEYNER:-cam-rtc}
+    container_name: ${CAM_RTC_CONTAINER:-cam-rtc}
     restart: unless-stopped
     environment:
       # Tarayıcıya verilecek sunucu adresi (IP ya da ad, virgülle birden çok).
       # Boşsa mediamtx konteynerin kendi adresini verir ve dışarıdan görüntü gelmez.
-      MTX_WEBRTCADDITIONALHOSTS: ${KAMERA_RTC_ADRES:-}
+      MTX_WEBRTCADDITIONALHOSTS: ${CAM_RTC_HOST:-}
     ports:
       # WebRTC medyası; HTTP değil, vekil taşımaz.
-      - "${KAMERA_RTC_PORT:-8189}:8189/udp"
+      - "${CAM_RTC_PORT:-8189}:8189/udp"
 
 networks:
   default:
     # Ağ yalıtımı: true iken konteynerler NVR'lara ve dışarıya bağlanamaz
     # (taşıma ya da deneme kurulumunda canlı cihazlara dokunmamak için).
-    internal: ${AG_YALITIMI:-false}
+    internal: ${CAM_NETWORK_ISOLATED:-false}
 
 volumes:
   data:
     # Gizli anahtar dosyası, ilk admin parolası ve (varsa) JSON dönemi verisi; mevcut bir kurulumun hacmi için adını verin.
-    name: ${KAMERA_DATA_VOLUME:-cam_data}
+    name: ${CAM_DATA_VOLUME:-cam_data}
   database:
     # MariaDB verisi (üyeler, cihazlar, günlük, roller, anahtarlar...).
-    name: ${KAMERA_DB_VOLUME:-cam_database}
+    name: ${CAM_DB_VOLUME:-cam_database}

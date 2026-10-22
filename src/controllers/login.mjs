@@ -1,59 +1,59 @@
 /** Giris / cikis / ben. */
-import { cerezOku, cerezYaz, govdeOku, json } from '../core/http.mjs';
-import { VeritabaniHatasi } from '../core/errors.mjs';
-import { HataKisiti, izinGenislet } from '../models/permission.mjs';
+import { readCookie, writeCookie, readBody, json } from '../core/http.mjs';
+import { DatabaseError } from '../core/errors.mjs';
+import { ErrorLimit, expandPermission } from '../models/permission.mjs';
 
-export function girisDenetleyici({ uyeler, gunluk, yapilandirma, merkez = null, baglar = null }) {
+export function loginController({ members, auditLog, config, hub = null, links = null }) {
   /**
    * IP basina giris kisiti: parola karmasi (scrypt) HESAPLANMADAN once bakilir. Uye adi basina kilit (uyeler.dogrula) kullanici adini
    * degistirerek asilabiliyordu; bu kisit istemcinin yaptirabilecegi isi adlardan bagimsiz sinirlar. Ters vekil arkasinda gercek IP icin
-   * KAMERA_IP_BASLIGI verilmeli (yoksa bu kisit vekil adresine uygulanir).
+   * CAM_IP_HEADER verilmeli (yoksa bu kisit vekil adresine uygulanir).
    */
-  const ipKisit = new HataKisiti({ en: 20, pencereMs: 60_000, kilitMs: 60_000 });
-  const temizlik = setInterval(() => { const s = Date.now(); for (const [ip, d] of ipKisit.ipler) if (s - d.ilk > ipKisit.pencereMs && d.kilit < s) ipKisit.ipler.delete(ip); }, 60_000);
-  temizlik.unref?.();
+  const ipThrottle = new ErrorLimit({ maxErrors: 20, windowMs: 60_000, lockMs: 60_000 });
+  const cleanup = setInterval(() => { const s = Date.now(); for (const [ip, d] of ipThrottle.ips) if (s - d.first > ipThrottle.windowMs && d.lock < s) ipThrottle.ips.delete(ip); }, 60_000);
+  cleanup.unref?.();
   return {
-    async giris(ctx) {
-      const { istek, res } = ctx;
-      const bekle = ipKisit.kilitliMi(ctx.ip);
-      if (bekle) { res.setHeader('Retry-After', String(bekle)); return json(res, 429, { hata: `Çok fazla deneme. ${bekle} sn sonra tekrar deneyin.`, kod: 'COK_FAZLA_DENEME' }); }
-      const g = await govdeOku(istek, 4096);
+    async login(ctx) {
+      const { req, res } = ctx;
+      const wait = ipThrottle.isLocked(ctx.ip);
+      if (wait) { res.setHeader('Retry-After', String(wait)); return json(res, 429, { error: `Çok fazla deneme. ${wait} sn sonra tekrar deneyin.`, code: 'TOO_MANY_ATTEMPTS' }); }
+      const g = await readBody(req, 4096);
       try {
-        const u = await uyeler.dogrula(g.ad, g.parola, ctx.ip);
-        ipKisit.basari(ctx.ip);
-        cerezYaz(res, yapilandirma.oturum.cerez, uyeler.oturumCerezi(u), yapilandirma.oturum.gun * 86400, yapilandirma.sunucu.vekil || !!res.socket?.encrypted);
-        gunluk.yaz('giris', u.ad, istek);
-        return json(res, 200, { ad: u.ad, rol: u.rol });
-      } catch (err) { ipKisit.hata(ctx.ip); gunluk.yaz('giris-hata', String(g.ad ?? '').slice(0, 40), istek, { neden: err.message }); return json(res, 401, { hata: err.message, kod: 'GIRIS' }); }
+        const u = await members.verify(g.name, g.password, ctx.ip);
+        ipThrottle.success(ctx.ip);
+        writeCookie(res, config.session.cookie, members.sessionCookie(u), config.session.day * 86400, config.server.proxy || !!res.socket?.encrypted);
+        auditLog.write('login', u.name, req);
+        return json(res, 200, { name: u.name, role: u.role });
+      } catch (err) { ipThrottle.error(ctx.ip); auditLog.write('login-failed', String(g.name ?? '').slice(0, 40), req, { reason: err.message }); return json(res, 401, { error: err.message, code: 'LOGIN' }); }
     },
     /**
      * Cikis yalniz cerezi silmez: uyenin oturum surumu artar, calinmis/kopyalanmis cerezler de gecersiz olur.
      * ORTAK CIKIS: merkezden bagli uyenin cikisi merkeze bildirilir; merkez kendi oturumunu ve diger panelleri kapatir.
      * Beklenmez: merkeze ulasilamasa da cikis olur, yalniz ortak kalmaz.
      */
-    async cikis(ctx) {
-      const kim = uyeler.oturumCoz(cerezOku(ctx.istek.headers.cookie, yapilandirma.oturum.cerez));
-      if (kim) {
-        await uyeler.oturumuKapat(kim.ad); gunluk.yaz('cikis', kim.ad, ctx.istek);
-        const bag = baglar?.adaGore(kim.ad);
-        if (bag && merkez?.acikMi()) merkez.oturumKapandi(bag.sub).catch((e) => console.error('merkeze çıkış bildirilemedi:', e.message));
+    async logout(ctx) {
+      const who = members.resolveSession(readCookie(ctx.req.headers.cookie, config.session.cookie));
+      if (who) {
+        await members.endSession(who.name); auditLog.write('logout', who.name, ctx.req);
+        const link = links?.byName(who.name);
+        if (link && hub?.isEnabled()) hub.sessionClosed(link.sub).catch((e) => console.error('merkeze çıkış bildirilemedi:', e.message));
       }
-      cerezYaz(ctx.res, yapilandirma.oturum.cerez, '', 0, yapilandirma.sunucu.vekil || !!ctx.res.socket?.encrypted);
-      return json(ctx.res, 200, { tamam: true });
+      writeCookie(ctx.res, config.session.cookie, '', 0, config.server.proxy || !!ctx.res.socket?.encrypted);
+      return json(ctx.res, 200, { ok: true });
     },
-    async ben(ctx) {
-      const a = ctx.asal;
-      return json(ctx.res, 200, { ad: a.ad, rol: a.rol, tur: a.tur, yontem: a.yontem, izinler: izinGenislet(a.izinler), kapsam: a.kapsam, bitis: a.bitis, hizLimiti: a.hizLimiti, anahtarId: a.anahtarId });
+    async me(ctx) {
+      const a = ctx.principal;
+      return json(ctx.res, 200, { name: a.name, role: a.role, type: a.type, method: a.method, permissions: expandPermission(a.permissions), scope: a.scope, expiresAt: a.expiresAt, rateLimit: a.rateLimit, keyId: a.keyId });
     },
     /** Uyenin kendi gorunum tercihleri. API anahtari bir kisi degil: tercihi yok (403). */
-    async tercih(ctx) {
-      if (ctx.asal.tur !== 'uye') return json(ctx.res, 403, { hata: 'Tercih yalnız üye oturumunda', kod: 'YASAK' });
-      return json(ctx.res, 200, uyeler.tercih(ctx.asal.ad));
+    async preferences(ctx) {
+      if (ctx.principal.type !== 'member') return json(ctx.res, 403, { error: 'Tercih yalnız üye oturumunda', code: 'FORBIDDEN' });
+      return json(ctx.res, 200, members.preferences(ctx.principal.name));
     },
-    async tercihYaz(ctx) {
-      if (ctx.asal.tur !== 'uye') return json(ctx.res, 403, { hata: 'Tercih yalnız üye oturumunda', kod: 'YASAK' });
-      const g = await govdeOku(ctx.istek, 16_384);
-      try { return json(ctx.res, 200, await uyeler.tercihYaz(ctx.asal.ad, g)); } catch (e) { if (e instanceof VeritabaniHatasi) throw e; return json(ctx.res, 404, { hata: e.message, kod: 'BULUNAMADI' }); }
+    async savePreferences(ctx) {
+      if (ctx.principal.type !== 'member') return json(ctx.res, 403, { error: 'Tercih yalnız üye oturumunda', code: 'FORBIDDEN' });
+      const g = await readBody(ctx.req, 16_384);
+      try { return json(ctx.res, 200, await members.savePreferences(ctx.principal.name, g)); } catch (e) { if (e instanceof DatabaseError) throw e; return json(ctx.res, 404, { error: e.message, code: 'NOT_FOUND' }); }
     },
   };
 }

@@ -1,5 +1,5 @@
 /**
- * Uyelik: kullanici adi + parola. Uyeyi yalniz yetkili olan (uye.yonet) olusturur.
+ * Uyelik: kullanici adi + parola. Uyeyi yalniz yetkili olan (member.manage) olusturur.
  * Her uyenin bir ROLU (permission.mjs: yerlesik ya da ozel rol), istege bagli KAPSAMI (hangi kameralari gorebilir),
  * hesap BITIS tarihi ve IP/CIDR listesi vardir.
  * Parolalar scrypt ile tuzlanip saklanir (uyeler tablosu; bellekte onbellekli, yazma veritabanina islenince degisir); oturum, gizli
@@ -7,201 +7,201 @@
  * ya da ayni adla yeni hesap acilinca eski cerez islemez — cerez uyenin olusturma damgasina ve oturum surumune baglidir).
  */
 import { createHmac, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto';
-import { Kilit, Koleksiyon, yazGeriAl } from '../core/tables.mjs';
-import { UYELER } from '../database/schema.mjs';
-import { bitisNormalle, ipEslesir, iplerNormalle, kapsamNormalle } from './permission.mjs';
+import { Lock, Collection, writeOrRollback } from '../core/tables.mjs';
+import { MEMBERS } from '../database/schema.mjs';
+import { normalizeExpiresAt, ipMatches, normalizeIps, normalizeScope } from './permission.mjs';
 
-const AD_KURALI = /^[a-zA-Z0-9._@-]{3,64}$/;   // @: merkezden gelen uye adi e-posta (diger paneller gibi)
-const OTURUM_GUN = 30;
+const NAME_RULE = /^[a-zA-Z0-9._@-]{3,64}$/;   // @: merkezden gelen uye adi e-posta (diger paneller gibi)
+const SESSION_DAYS = 30;
 
-const karma = (parola, tuz) => scryptSync(parola, tuz, 32);
+const hash = (password, salt) => scryptSync(password, salt, 32);
 /** Giris yolunda zaman uyumsuz karma: scryptSync tek olay dongusunu onlarca ms kilitliyordu (kimliksiz istemci bunu tetikleyebilir). */
-const karmaAsync = (parola, tuz) => new Promise((coz, red) => scrypt(parola, tuz, 32, (e, k) => (e ? red(e) : coz(k))));
+const hashAsync = (password, salt) => new Promise((resolve, red) => scrypt(password, salt, 32, (e, k) => (e ? red(e) : resolve(k))));
 
 /** Gizli anahtarla imzalanan her seyin AMACI ayri etiketle baglanir: oturum cerezi, merkez akis cerezi, ... birbirinin yerine gecemez. */
-export const ETIKET_OTURUM = 'kamera2/oturum';   // eski adla SABIT (depo cam oldu): degisirse acik oturumlar duser
-const HATA_TTL = 15 * 60_000;   // giris hata kaydi bu kadar sure sonra silinir
-const HATA_EN_COK = 5000;       // kimliksiz istemci istedigi kadar yeni kullanici adiyla kayit sisirmesin
-const AD_UZUN = 64;             // hata anahtarina giren ad bu kadar kirpilir
+export const SESSION_LABEL = 'kamera2/oturum';   // eski adla SABIT (depo cam oldu): degisirse acik oturumlar duser
+const ERROR_TTL = 15 * 60_000;   // giris hata kaydi bu kadar sure sonra silinir
+const ERROR_MAX = 5000;       // kimliksiz istemci istedigi kadar yeni kullanici adiyla kayit sisirmesin
+const NAME_MAX = 64;             // hata anahtarina giren ad bu kadar kirpilir
 
 // Kayit cihazi ayni anda en cok 16 canli goruntu veriyor (17. kareden sonrasi baglanamaz); sayfa bunu asmaz.
-export const HEPSI_SAYI = { en: 4, cok: 16, varsayilan: 16 };
-const SIRA_EN_COK = 1024;
+export const ALL_COUNT = { min: 4, max: 16, fallback: 16 };
+const ORDER_MAX = 1024;
 /** Tercih kaydi: bilinen alanlar, sinirli degerler; disaridan gelen baska alan kayda girmez. */
-export function tercihNormalle(t) {
+export function normalizePreferences(t) {
   const g = t && typeof t === 'object' ? t : {};
-  const sayi = Number.isInteger(g.hepsiSayi) ? Math.min(HEPSI_SAYI.cok, Math.max(HEPSI_SAYI.en, g.hepsiSayi)) : HEPSI_SAYI.varsayilan;
-  const sira = Array.isArray(g.hepsiSira) ? [...new Set(g.hepsiSira.filter((k) => Number.isInteger(k) && k >= 0 && k < 100_000))].slice(0, SIRA_EN_COK) : [];
-  return { hepsiSayi: sayi, hepsiSira: sira, arkaPlandaDurdur: g.arkaPlandaDurdur !== false, izgaraAkis: g.izgaraAkis === 'ana' ? 'ana' : 'alt' };
+  const count = Number.isInteger(g.allCount) ? Math.min(ALL_COUNT.max, Math.max(ALL_COUNT.min, g.allCount)) : ALL_COUNT.fallback;
+  const order = Array.isArray(g.allOrder) ? [...new Set(g.allOrder.filter((k) => Number.isInteger(k) && k >= 0 && k < 100_000))].slice(0, ORDER_MAX) : [];
+  return { allCount: count, allOrder: order, pauseInBackground: g.pauseInBackground !== false, gridStream: g.gridStream === 'main' ? 'main' : 'sub' };
 }
 
-export class Uyelik {
+export class Membership {
   /** vt: Veritabani; gizli: panelin gizli anahtari (Buffer). Veriyi yukle() getirir. */
-  constructor(vt, gizli) {
-    this.vt = vt; this.kol = new Koleksiyon(vt, UYELER); this.kilit = new Kilit();
-    this.liste = []; this.gizli = gizli;
-    this.hatalar = new Map(); // ip|ad -> { sayi, kilitli, z }
-    this.temizlik = setInterval(() => this.#hataTemizle(), 60_000); this.temizlik.unref?.();
+  constructor(db, secret) {
+    this.db = db; this.coll = new Collection(db, MEMBERS); this.lock = new Lock();
+    this.list = []; this.secret = secret;
+    this.errors = new Map(); // ip|ad -> { sayi, kilitli, z }
+    this.cleanup = setInterval(() => this.#cleanErrors(), 60_000); this.cleanup.unref?.();
     /** Rol kimligi gecerli mi? sunucu, yetki deposunun rol listesine baglar. */
-    this.rolGecerli = (r) => r === 'admin' || r === 'kullanici';
+    this.roleValid = (r) => r === 'admin' || r === 'user';
   }
 
   /** Acilista veritabanindan belleğe. Olusturma damgasi olmayan kayda bir kez damga verilir ve yazilir: oturum ve KYM bagi bu damgaya baglanir (ad tek basina yeniden kullanilabilir). */
-  async yukle() {
-    this.liste = await this.kol.yukle();
-    if (this.liste.some((u) => !u.olusturma)) await this.#islem(() => { for (const u of this.liste) u.olusturma ??= new Date().toISOString(); });
+  async load() {
+    this.list = await this.coll.load();
+    if (this.list.some((u) => !u.createdAt)) await this.#transaction(() => { for (const u of this.list) u.createdAt ??= new Date().toISOString(); });
     return this;
   }
-  /** Bellek degisikligi (fn, esinkron) + veritabani yazimi tek parca ve sirayla; yazim basarisizsa bellek eski haline doner, VeritabaniHatasi firlar. */
-  #islem(fn) {
-    return this.kilit.calistir(async () => {
-      const sonuc = fn();
-      await yazGeriAl(() => this.kol.kaydet(this.liste), () => { this.liste = this.kol.geriAl(); }, 'uyeler');
-      return sonuc;
+  /** Bellek degisikligi (fn, esinkron) + veritabani yazimi tek parca ve sirayla; yazim basarisizsa bellek eski haline doner, DatabaseError firlar. */
+  #transaction(fn) {
+    return this.lock.run(async () => {
+      const result = fn();
+      await writeOrRollback(() => this.coll.save(this.list), () => { this.list = this.coll.rollback(); }, 'members');
+      return result;
     });
   }
-  #adminSayisi() { return this.liste.filter((x) => x.rol === 'admin').length; }
+  #adminCount() { return this.list.filter((x) => x.role === 'admin').length; }
 
-  #hataTemizle(simdi = Date.now()) { for (const [k, h] of this.hatalar) if (simdi - h.z > HATA_TTL && !(h.kilitli > simdi)) this.hatalar.delete(k); }
+  #cleanErrors(now = Date.now()) { for (const [k, h] of this.errors) if (now - h.z > ERROR_TTL && !(h.locked > now)) this.errors.delete(k); }
 
-  bos() { return this.liste.length === 0; }
-  herkes() { return this.liste.map(({ ad, rol, olusturma, kapsam, bitis, ipler }) => ({ ad, rol, olusturma, kapsam: kapsam ?? null, bitis: bitis ?? null, ipler: ipler ?? [] })); }
-  bul(ad) { return this.liste.find((u) => u.ad.toLowerCase() === String(ad).toLowerCase()) ?? null; }
+  empty() { return this.list.length === 0; }
+  everyone() { return this.list.map(({ name, role, createdAt, scope, expiresAt, ips }) => ({ name, role, createdAt, scope: scope ?? null, expiresAt: expiresAt ?? null, ips: ips ?? [] })); }
+  find(name) { return this.list.find((u) => u.name.toLowerCase() === String(name).toLowerCase()) ?? null; }
   /** Bu rolu kullanan uye var mi? (rol silmeden once) */
-  rolKullanimda(id) { return this.liste.some((u) => u.rol === id); }
+  roleInUse(id) { return this.list.some((u) => u.role === id); }
 
   /** Uyenin kendi gorunum tercihleri (canli "Hepsi" sirasi ve sayisi, arka planda durdurma). Yetki tasimaz; yalniz sahibi okur/yazar. */
-  tercih(ad) { return tercihNormalle(this.bul(ad)?.tercih); }
+  preferences(name) { return normalizePreferences(this.find(name)?.preferences); }
   /** Verilen alanlar degisir, verilmeyen kalir. Gecersiz deger hata degil, sinira cekilir ya da yok sayilir. */
-  tercihYaz(ad, g) {
-    return this.#islem(() => {
-      const u = this.bul(ad);
+  savePreferences(name, g) {
+    return this.#transaction(() => {
+      const u = this.find(name);
       if (!u) throw new Error('Kullanıcı yok');
-      u.tercih = tercihNormalle({ ...u.tercih, ...(g && typeof g === 'object' ? g : {}) });
-      return u.tercih;
+      u.preferences = normalizePreferences({ ...u.preferences, ...(g && typeof g === 'object' ? g : {}) });
+      return u.preferences;
     });
   }
 
-  ekle(ad, parola, rol, ek = {}) {
-    return this.#islem(() => {
-    if (!AD_KURALI.test(ad ?? '')) throw new Error('Kullanıcı adı 3-64 karakter olmalı (harf, rakam, . _ - @)');
-    if (typeof parola !== 'string' || parola.length < 8 || parola.length > 128) throw new Error('Parola en az 8 karakter olmalı');
-    if (!this.rolGecerli(rol)) throw new Error('Rol geçersiz');
-    if (this.bul(ad)) throw new Error('Bu kullanıcı adı kullanılıyor');
-    const tuz = randomBytes(16);
-    this.liste.push({
-      ad, rol, tuz: tuz.toString('hex'), karma: karma(parola, tuz).toString('hex'), olusturma: new Date().toISOString(), oturumSurum: 0,
-      kapsam: kapsamNormalle(ek.kapsam), bitis: bitisNormalle(ek.bitis), ipler: iplerNormalle(ek.ipler),
+  add(name, password, role, extra = {}) {
+    return this.#transaction(() => {
+    if (!NAME_RULE.test(name ?? '')) throw new Error('Kullanıcı adı 3-64 karakter olmalı (harf, rakam, . _ - @)');
+    if (typeof password !== 'string' || password.length < 8 || password.length > 128) throw new Error('Parola en az 8 karakter olmalı');
+    if (!this.roleValid(role)) throw new Error('Rol geçersiz');
+    if (this.find(name)) throw new Error('Bu kullanıcı adı kullanılıyor');
+    const salt = randomBytes(16);
+    this.list.push({
+      name, role, salt: salt.toString('hex'), hash: hash(password, salt).toString('hex'), createdAt: new Date().toISOString(), sessionVersion: 0,
+      scope: normalizeScope(extra.scope), expiresAt: normalizeExpiresAt(extra.expiresAt), ips: normalizeIps(extra.ips),
     });
     });
   }
 
-  /** g: { parola, rol, kapsam, bitis, ipler } (verilmeyen alan degismez). yapanIp: islemi yapanin IP'si (kendini kilitlemeyi onler). */
-  guncelle(ad, g, yapan, yapanIp = null) {
-    return this.#islem(() => {
-    const { parola, rol } = g;
-    const u = this.bul(ad);
+  /** g: { parola, rol, kapsam, bitis, ipler } (verilmeyen alan degismez). actorIp: islemi yapanin IP'si (kendini kilitlemeyi onler). */
+  update(name, g, actor, actorIp = null) {
+    return this.#transaction(() => {
+    const { password, role } = g;
+    const u = this.find(name);
     if (!u) throw new Error('Kullanıcı yok');
-    const sonAdmin = u.rol === 'admin' && this.#adminSayisi() < 2;
-    const yeni = {};
-    if (rol !== undefined) {
-      if (!this.rolGecerli(rol)) throw new Error('Rol geçersiz');
-      if (sonAdmin && rol !== 'admin') throw new Error('Son admin kullanıcıya çevrilemez');
-      if (u.ad === yapan && rol !== u.rol) throw new Error('Kendi rolünüzü değiştiremezsiniz');
-      yeni.rol = rol;
+    const isLastAdmin = u.role === 'admin' && this.#adminCount() < 2;
+    const fresh = {};
+    if (role !== undefined) {
+      if (!this.roleValid(role)) throw new Error('Rol geçersiz');
+      if (isLastAdmin && role !== 'admin') throw new Error('Son admin kullanıcıya çevrilemez');
+      if (u.name === actor && role !== u.role) throw new Error('Kendi rolünüzü değiştiremezsiniz');
+      fresh.role = role;
     }
-    if (g.kapsam !== undefined) {
-      if (sonAdmin) throw new Error('Son admin hesabına kapsam kısıtı konamaz');
-      yeni.kapsam = kapsamNormalle(g.kapsam);
+    if (g.scope !== undefined) {
+      if (isLastAdmin) throw new Error('Son admin hesabına kapsam kısıtı konamaz');
+      fresh.scope = normalizeScope(g.scope);
     }
-    if (g.bitis !== undefined) {
-      const bitis = bitisNormalle(g.bitis);
-      if (bitis && (sonAdmin || (u.ad === yapan && u.rol === 'admin' && this.#adminSayisi() < 2))) throw new Error('Son admin hesabına bitiş tarihi konamaz');
-      if (bitis && Date.parse(bitis) <= Date.now()) throw new Error('Bitiş tarihi geçmişte');
-      yeni.bitis = bitis;
+    if (g.expiresAt !== undefined) {
+      const expiresAt = normalizeExpiresAt(g.expiresAt);
+      if (expiresAt && (isLastAdmin || (u.name === actor && u.role === 'admin' && this.#adminCount() < 2))) throw new Error('Son admin hesabına bitiş tarihi konamaz');
+      if (expiresAt && Date.parse(expiresAt) <= Date.now()) throw new Error('Bitiş tarihi geçmişte');
+      fresh.expiresAt = expiresAt;
     }
-    if (g.ipler !== undefined) {
-      const ipler = iplerNormalle(g.ipler);
-      if (ipler.length && u.ad === yapan && yapanIp && !ipEslesir(yapanIp, ipler)) throw new Error('Şu anki IP adresiniz listede yok; kendinizi kilitlerdiniz');
-      yeni.ipler = ipler;
+    if (g.ips !== undefined) {
+      const ips = normalizeIps(g.ips);
+      if (ips.length && u.name === actor && actorIp && !ipMatches(actorIp, ips)) throw new Error('Şu anki IP adresiniz listede yok; kendinizi kilitlerdiniz');
+      fresh.ips = ips;
     }
-    if (parola !== undefined) {
-      if (typeof parola !== 'string' || parola.length < 8 || parola.length > 128) throw new Error('Parola en az 8 karakter olmalı');
-      const tuz = randomBytes(16); yeni.tuz = tuz.toString('hex'); yeni.karma = karma(parola, tuz).toString('hex');
-      yeni.oturumSurum = (u.oturumSurum ?? 0) + 1;      // parola degisince eldeki butun cerezler gecersiz
+    if (password !== undefined) {
+      if (typeof password !== 'string' || password.length < 8 || password.length > 128) throw new Error('Parola en az 8 karakter olmalı');
+      const salt = randomBytes(16); fresh.salt = salt.toString('hex'); fresh.hash = hash(password, salt).toString('hex');
+      fresh.sessionVersion = (u.sessionVersion ?? 0) + 1;      // parola degisince eldeki butun cerezler gecersiz
     }
-    Object.assign(u, yeni);
+    Object.assign(u, fresh);
     });
   }
 
-  sil(ad, yapan) {
-    return this.#islem(() => {
-    const u = this.bul(ad);
+  remove(name, actor) {
+    return this.#transaction(() => {
+    const u = this.find(name);
     if (!u) throw new Error('Kullanıcı yok');
-    if (u.ad === yapan) throw new Error('Kendinizi silemezsiniz');
-    if (u.rol === 'admin' && this.#adminSayisi() < 2) throw new Error('Son admin silinemez');
-    this.liste = this.liste.filter((x) => x !== u);
+    if (u.name === actor) throw new Error('Kendinizi silemezsiniz');
+    if (u.role === 'admin' && this.#adminCount() < 2) throw new Error('Son admin silinemez');
+    this.list = this.list.filter((x) => x !== u);
     });
   }
 
   /** Cikis / "her yerden cik": uyenin eldeki butun oturum cerezleri gecersiz olur (sunucuda oturum tablosu yok, surum sayaci var). */
-  oturumuKapat(ad) { return this.#islem(() => { const u = this.bul(ad); if (!u) return; u.oturumSurum = (u.oturumSurum ?? 0) + 1; }); }
+  endSession(name) { return this.#transaction(() => { const u = this.find(name); if (!u) return; u.sessionVersion = (u.sessionVersion ?? 0) + 1; }); }
 
   /** Giris denemesi: yanlis parolada artan bekleme (5 hatadan sonra 60 sn kilit). Dondurur kullanici ya da firlatir. */
-  async dogrula(ad, parola, ip) {
-    const anahtar = `${ip}|${String(ad ?? '').slice(0, AD_UZUN).toLowerCase()}`;
-    const h = this.hatalar.get(anahtar);
-    if (h?.kilitli > Date.now()) throw new Error(`Çok fazla deneme. ${Math.ceil((h.kilitli - Date.now()) / 1000)} sn sonra tekrar deneyin.`);
-    const u = this.bul(ad);
+  async verify(name, password, ip) {
+    const key = `${ip}|${String(name ?? '').slice(0, NAME_MAX).toLowerCase()}`;
+    const h = this.errors.get(key);
+    if (h?.locked > Date.now()) throw new Error(`Çok fazla deneme. ${Math.ceil((h.locked - Date.now()) / 1000)} sn sonra tekrar deneyin.`);
+    const u = this.find(name);
     // kullanici yoksa da ayni isi yap (zamanlama farki kullanici adini sizdirmasin)
-    const tuz = u ? Buffer.from(u.tuz, 'hex') : Buffer.alloc(16);
-    const k = await karmaAsync(String(parola ?? '').slice(0, 128), tuz);
-    const dogru = u && timingSafeEqual(k, Buffer.from(u.karma, 'hex'));
-    if (!dogru) {
-      const sayi = (h?.sayi ?? 0) + 1;
-      if (!h && this.hatalar.size >= HATA_EN_COK) { this.#hataTemizle(); if (this.hatalar.size >= HATA_EN_COK) this.hatalar.delete(this.hatalar.keys().next().value); }   // dolunca en eski kayit gider
-      this.hatalar.set(anahtar, { sayi, kilitli: sayi >= 5 ? Date.now() + 60_000 : 0, z: Date.now() });
+    const salt = u ? Buffer.from(u.salt, 'hex') : Buffer.alloc(16);
+    const k = await hashAsync(String(password ?? '').slice(0, 128), salt);
+    const correct = u && timingSafeEqual(k, Buffer.from(u.hash, 'hex'));
+    if (!correct) {
+      const count = (h?.count ?? 0) + 1;
+      if (!h && this.errors.size >= ERROR_MAX) { this.#cleanErrors(); if (this.errors.size >= ERROR_MAX) this.errors.delete(this.errors.keys().next().value); }   // dolunca en eski kayit gider
+      this.errors.set(key, { count, locked: count >= 5 ? Date.now() + 60_000 : 0, z: Date.now() });
       throw new Error('Kullanıcı adı ya da parola yanlış');
     }
-    this.hatalar.delete(anahtar);
-    if (u.bitis && Date.parse(u.bitis) <= Date.now()) throw new Error('Hesabın süresi dolmuş');
-    if (u.ipler?.length && !ipEslesir(ip, u.ipler)) throw new Error('Bu IP adresinden giriş yapılamaz');
+    this.errors.delete(key);
+    if (u.expiresAt && Date.parse(u.expiresAt) <= Date.now()) throw new Error('Hesabın süresi dolmuş');
+    if (u.ips?.length && !ipMatches(ip, u.ips)) throw new Error('Bu IP adresinden giriş yapılamaz');
     return u;
   }
 
   /** Gunluk zinciri icin HMAC imzasi. Etiketsiz kalir: eski zincir kayitlari dogrulanabilsin (oturum/akis cerezleri etiketli, bununla cakisamaz). */
-  imza(metin) { return createHmac('sha256', this.gizli).update(metin).digest('hex'); }
+  signature(text) { return createHmac('sha256', this.secret).update(text).digest('hex'); }
   /** Amaca bagli imza: etiket MAC girdisine eklenir, baska amacla uretilmis imza burada tutmaz. */
-  etiketliImza(etiket, yuk) { return createHmac('sha256', this.gizli).update(`${etiket}|${yuk}`).digest('base64url'); }
+  labeledSignature(label, payload) { return createHmac('sha256', this.secret).update(`${label}|${payload}`).digest('base64url'); }
 
   /** Uye kimligi: ad + olusturma damgasi. Ayni adla yeniden acilan hesap eskisinin cerezini/bagini devralamaz. */
-  static damga(u) { return u.olusturma ?? ''; }
+  static stamp(u) { return u.createdAt ?? ''; }
 
-  oturumCerezi(u) {
-    // g: acilis ani (ms) — merkezdeki son cikistan once acilan oturum islemez (ortak cikis, bkz. MerkezBaglari.cikisSonrasiMi).
-    const yuk = Buffer.from(JSON.stringify({ t: 'oturum', a: u.ad, k: Uyelik.damga(u), s: u.oturumSurum ?? 0, g: Date.now(), e: Date.now() + OTURUM_GUN * 864e5 })).toString('base64url');
-    return `${yuk}.${this.etiketliImza(ETIKET_OTURUM, yuk)}`;
+  sessionCookie(u) {
+    // g: acilis ani (ms) — merkezdeki son cikistan once acilan oturum islemez (ortak cikis, bkz. HubLinks.isLogoutAfter).
+    const payload = Buffer.from(JSON.stringify({ t: 'oturum', a: u.name, k: Membership.stamp(u), s: u.sessionVersion ?? 0, g: Date.now(), e: Date.now() + SESSION_DAYS * 864e5 })).toString('base64url');
+    return `${payload}.${this.labeledSignature(SESSION_LABEL, payload)}`;
   }
 
   /** Cerezi cozer; gecerliyse GUNCEL kullaniciyi ({ad, rol, kapsam, bitis, ipler}) dondurur (suresi dolmus hesap = null). */
-  oturumCoz(cerez) {
-    if (!cerez) return null;
-    const [yuk, imza, fazla] = cerez.split('.');
-    if (!yuk || !imza || fazla !== undefined) return null;
-    const beklenen = this.etiketliImza(ETIKET_OTURUM, yuk);
-    if (imza.length !== beklenen.length || !timingSafeEqual(Buffer.from(imza), Buffer.from(beklenen))) return null;
+  resolveSession(cookie) {
+    if (!cookie) return null;
+    const [payload, signature, extra] = cookie.split('.');
+    if (!payload || !signature || extra !== undefined) return null;
+    const expected = this.labeledSignature(SESSION_LABEL, payload);
+    if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
     try {
-      const { t, a, k, s, g, e } = JSON.parse(Buffer.from(yuk, 'base64url').toString());
+      const { t, a, k, s, g, e } = JSON.parse(Buffer.from(payload, 'base64url').toString());
       if (t !== 'oturum' || typeof a !== 'string' || typeof e !== 'number' || e < Date.now()) return null;
-      const u = this.bul(a);
-      if (!u || u.ad !== a || Uyelik.damga(u) !== k || (u.oturumSurum ?? 0) !== s) return null;
-      if (u.bitis && Date.parse(u.bitis) <= Date.now()) return null;
-      return { ad: u.ad, rol: u.rol, kapsam: u.kapsam ?? null, bitis: u.bitis ?? null, ipler: u.ipler ?? [], acilis: typeof g === 'number' ? g : 0 };
+      const u = this.find(a);
+      if (!u || u.name !== a || Membership.stamp(u) !== k || (u.sessionVersion ?? 0) !== s) return null;
+      if (u.expiresAt && Date.parse(u.expiresAt) <= Date.now()) return null;
+      return { name: u.name, role: u.role, scope: u.scope ?? null, expiresAt: u.expiresAt ?? null, ips: u.ips ?? [], openedAt: typeof g === 'number' ? g : 0 };
     } catch { return null; }
   }
 }
 
-export const cerezOku = (baslik, ad) => {
-  for (const p of (baslik ?? '').split(';')) { const [k, ...v] = p.trim().split('='); if (k === ad) return v.join('='); }
+export const readCookie = (header, name) => {
+  for (const p of (header ?? '').split(';')) { const [k, ...v] = p.trim().split('='); if (k === name) return v.join('='); }
   return null;
 };

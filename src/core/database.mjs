@@ -3,79 +3,84 @@
  * Baglanti ortamdan gelir (config/app.mjs: DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD). Karakter kumesi utf8mb4.
  */
 import mysql from 'mysql2/promise';
-export { VeritabaniHatasi } from './errors.mjs';
+export { DatabaseError } from './errors.mjs';
 import { MIGRATIONS } from '../database/migrations.mjs';
 
-const bekle = (ms) => new Promise((r) => setTimeout(r, ms));
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export class Veritabani {
-  constructor(ayar) { this.ayar = ayar; this.havuz = null; }
+export class Database {
+  constructor(setting) { this.setting = setting; this.pool = null; }
 
-  #havuzKur() {
-    const a = this.ayar;
+  #setupPool() {
+    const a = this.setting;
     return mysql.createPool({
       host: a.host, port: a.port, database: a.database, user: a.username, password: a.password, charset: 'utf8mb4',
-      connectionLimit: a.havuz ?? 8, waitForConnections: true, dateStrings: true, multipleStatements: false, timezone: 'Z',
+      connectionLimit: a.pool ?? 8, waitForConnections: true, dateStrings: true, multipleStatements: false, timezone: 'Z',
     });
   }
 
   /** Veritabani gelene kadar dener (compose'ta db servisi sonra kalkabilir); sure dolarsa son hatayla firlatir. */
-  async baglan({ beklemeSn = 60, aralikMs = 2000 } = {}) {
-    const bitis = Date.now() + beklemeSn * 1000;
-    let son;
+  async connect({ waitingSec = 60, rangeMs = 2000 } = {}) {
+    const expiresAt = Date.now() + waitingSec * 1000;
+    let last;
     for (let n = 1; ; n++) {
-      const havuz = this.#havuzKur();
-      try { await havuz.query('SELECT 1'); this.havuz = havuz; return this; }
+      const pool = this.#setupPool();
+      try { await pool.query('SELECT 1'); this.pool = pool; return this; }
       catch (e) {
-        son = e; await havuz.end().catch(() => {});
+        last = e; await pool.end().catch(() => {});
         if (['ER_ACCESS_DENIED_ERROR', 'ER_BAD_DB_ERROR', 'ER_DBACCESS_DENIED_ERROR'].includes(e.code)) break;   // yanlis kimlik/veritabani adi bekleyince duzelmez
-        if (Date.now() + aralikMs > bitis) break;
-        if (n === 1 || n % 5 === 0) console.log(`veritabani bekleniyor (${this.ayar.host}:${this.ayar.port}/${this.ayar.database}): ${e.code ?? e.message}`);
-        await bekle(aralikMs);
+        if (Date.now() + rangeMs > expiresAt) break;
+        if (n === 1 || n % 5 === 0) console.log(`veritabani bekleniyor (${this.setting.host}:${this.setting.port}/${this.setting.database}): ${e.code ?? e.message}`);
+        await wait(rangeMs);
       }
     }
-    throw new Error(`Veritabanına bağlanılamadı (${this.ayar.host}:${this.ayar.port}/${this.ayar.database}): ${son?.code ?? son?.message}`);
+    throw new Error(`Veritabanına bağlanılamadı (${this.setting.host}:${this.setting.port}/${this.setting.database}): ${last?.code ?? last?.message}`);
   }
 
-  async sorgu(sql, parametre = []) { const [satirlar] = await this.havuz.query(sql, parametre); return satirlar; }
+  async query(sql, param = []) { const [rows] = await this.pool.query(sql, param); return rows; }
 
   /** fn(conn) tek islemde kosar; hata olursa geri alinir. */
-  async islem(fn) {
-    const c = await this.havuz.getConnection();
+  async transaction(fn) {
+    const c = await this.pool.getConnection();
     try {
       await c.beginTransaction();
-      const sonuc = await fn(c);
+      const result = await fn(c);
       await c.commit();
-      return sonuc;
+      return result;
     } catch (e) { try { await c.rollback(); } catch { /* baglanti kopmus olabilir */ } throw e; }
     finally { c.release(); }
   }
 
-  async saglikli() { try { await this.havuz.query('SELECT 1'); return true; } catch { return false; } }
+  async healthy() { try { await this.pool.query('SELECT 1'); return true; } catch { return false; } }
 
   /**
    * Gocler: surum tablosu (migrations), sirali, uygulananlar tekrar kosmaz. Es zamanli iki acilis (iki kopya) ayni goce girmesin diye
    * veritabani kilidi (GET_LOCK) altinda calisir. Dondurur: bu acilista uygulananlarin surumleri.
    */
-  async gocYap() {
-    const c = await this.havuz.getConnection();
-    const uygulanan = [];
+  async runMigrations() {
+    const c = await this.pool.getConnection();
+    const applied = [];
     try {
       const [[k]] = await c.query("SELECT GET_LOCK('cam-migrate', 60) AS k");
       if (k.k !== 1) throw new Error('Göç kilidi alınamadı (başka bir kopya göç yapıyor)');
       await c.query('CREATE TABLE IF NOT EXISTS migrations (version INT NOT NULL PRIMARY KEY, name VARCHAR(100) NOT NULL, applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
-      const [yapilan] = await c.query('SELECT version FROM migrations');
-      const yapildi = new Set(yapilan.map((x) => x.version));
+      const [made] = await c.query('SELECT version FROM migrations');
+      const done = new Set(made.map((x) => x.version));
       for (const g of MIGRATIONS) {
-        if (yapildi.has(g.version)) continue;
-        for (const sql of g.sql) await c.query(sql);
-        await c.query('INSERT INTO migrations (version, name) VALUES (?, ?)', [g.version, g.name]);
-        uygulanan.push(g.version);
+        if (done.has(g.version)) continue;
+        if (g.run) {       // veri goci: kendi satiri ile birlikte TEK islemde; hata olursa hicbir sey degismez
+          await c.beginTransaction();
+          try { await g.run(c); await c.query('INSERT INTO migrations (version, name) VALUES (?, ?)', [g.version, g.name]); await c.commit(); }
+          catch (e) { await c.rollback(); throw e; }
+        } else {
+          for (const sql of g.sql) await c.query(sql);
+          await c.query('INSERT INTO migrations (version, name) VALUES (?, ?)', [g.version, g.name]);
+        }
+        applied.push(g.version);
       }
-      await c.query("SELECT RELEASE_LOCK('cam-migrate')");
-    } finally { c.release(); }
-    return uygulanan;
+    } finally { try { await c.query("SELECT RELEASE_LOCK('cam-migrate')"); } catch { /* baglanti kopmus olabilir */ } c.release(); }
+    return applied;
   }
 
-  async kapat() { if (this.havuz) { const h = this.havuz; this.havuz = null; await h.end().catch(() => {}); } }
+  async close() { if (this.pool) { const h = this.pool; this.pool = null; await h.end().catch(() => {}); } }
 }

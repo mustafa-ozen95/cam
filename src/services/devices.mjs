@@ -4,94 +4,94 @@
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { VeritabaniHatasi } from '../core/errors.mjs';
+import { DatabaseError } from '../core/errors.mjs';
 import { Uniview } from '../drivers/uniview.mjs';
 import { Hikvision } from '../drivers/hikvision.mjs';
 import { Xiongmai } from '../drivers/xiongmai.mjs';
-import { IpKamera } from '../drivers/ip-camera.mjs';
-import { CihazGrubu } from '../drivers/group.mjs';
-import { CihazDeposu, TURLER } from '../models/device.mjs';
+import { IpCamera } from '../drivers/ip-camera.mjs';
+import { DeviceGroup } from '../drivers/group.mjs';
+import { DeviceStore, TYPES } from '../models/device.mjs';
 
-function ffmpegBul(tercih) {
-  for (const a of [tercih, 'ffmpeg'].filter(Boolean)) if (spawnSync(a, ['-version'], { stdio: 'ignore' }).status === 0) return a;
+function findFfmpeg(preferences) {
+  for (const a of [preferences, 'ffmpeg'].filter(Boolean)) if (spawnSync(a, ['-version'], { stdio: 'ignore' }).status === 0) return a;
   return null;
 }
 
-export class CihazHizmeti {
+export class DeviceService {
   /** vt: Veritabani; ayarlar: Ayarlar. Veriyi baslat() getirir. */
-  constructor({ yapilandirma, gizli, vt, ayarlar }) {
-    this.vt = vt; this.ayarlar = ayarlar;
-    this.y = yapilandirma;
-    mkdirSync(yapilandirma.veriKlasoru, { recursive: true });
-    this.ffmpeg = ffmpegBul(yapilandirma.cihaz.ffmpeg);
+  constructor({ config, secret, db, settings }) {
+    this.db = db; this.settings = settings;
+    this.y = config;
+    mkdirSync(config.dataDir, { recursive: true });
+    this.ffmpeg = findFfmpeg(config.device.ffmpeg);
     if (!this.ffmpeg) throw new Error('ffmpeg bulunamadı');
-    this.suruculer = { uniview: Uniview, hikvision: Hikvision, xiongmai: Xiongmai, kamera: IpKamera };
-    this.turler = { ...TURLER };
-    this.grup = new CihazGrubu({ ayar: {}, ffmpeg: this.ffmpeg, veriKlasoru: yapilandirma.veriKlasoru });
-    this.gizli = gizli;
-    this.kanalAyar = {};
-    this.#adlariUygula();
+    this.drivers = { uniview: Uniview, hikvision: Hikvision, xiongmai: Xiongmai, camera: IpCamera };
+    this.types = { ...TYPES };
+    this.group = new DeviceGroup({ setting: {}, ffmpeg: this.ffmpeg, dataDir: config.dataDir });
+    this.secret = secret;
+    this.channelSetting = {};
+    this.#applyNames();
   }
   /** Testler icin sahte surucu kaydi (yalniz yapilandirma.cihaz.test). */
-  async sahteyiKaydet() { if (!this.y.cihaz.test) return; const { Sahte } = await import('../drivers/mock.mjs'); this.suruculer.sahte = Sahte; this.turler.sahte = TURLER.sahte = { ad: 'Sahte (test)', kanal: 4, etiket: 'T' }; }
-  /** Depoyu acar (tohumlar) ve cihazlari baslatir. sahteyiKaydet()'ten SONRA cagrilir. */
-  async baslat() {
-    let tohum = []; try { tohum = JSON.parse(this.y.cihaz.tohum); } catch (e) { throw new Error(`KAMERA_CIHAZLAR okunamadı: ${e.message}`); }
-    this.depo = await new CihazDeposu(this.vt, this.gizli, tohum).yukle();
-    this.kanalAyar = (await this.ayarlar.oku('channels')) ?? {}; this.#adlariUygula();
-    for (const a of this.depo.ayarlar()) this.grup.ekle(this.olustur(a));
+  async saveMock() { if (!this.y.device.test) return; const { Mock } = await import('../drivers/mock.mjs'); this.drivers.mock = Mock; this.types.mock = TYPES.mock = { name: 'Sahte (test)', channel: 4, label: 'T' }; }
+  /** Depoyu acar (tohumlar) ve cihazlari baslatir. saveMock()'ten SONRA cagrilir. */
+  async start() {
+    let seed = []; try { seed = JSON.parse(this.y.device.seed); } catch (e) { throw new Error(`CAM_DEVICES okunamadı: ${e.message}`); }
+    this.repo = await new DeviceStore(this.db, this.secret, seed).load();
+    this.channelSetting = (await this.settings.read('channels')) ?? {}; this.#applyNames();
+    for (const a of this.repo.settings()) this.group.add(this.create(a));
   }
 
-  olustur(a) {
-    const S = this.suruculer[a.tur]; if (!S) throw new Error(`Bilinmeyen cihaz türü: ${a.tur}`);
-    const c = new S({ ayar: a, ffmpeg: this.ffmpeg, veriKlasoru: this.y.veriKlasoru }); c.id = a.id; c.baslangic = a.baslangic; return c;
+  create(a) {
+    const S = this.drivers[a.type]; if (!S) throw new Error(`Bilinmeyen cihaz türü: ${a.type}`);
+    const c = new S({ setting: a, ffmpeg: this.ffmpeg, dataDir: this.y.dataDir }); c.id = a.id; c.startIndex = a.startIndex; return c;
   }
-  baglantiDene(c) {
-    return Promise.race([c.bilgi(), new Promise((_, r) => setTimeout(() => r(new Error('cihaz yanıt vermedi (zaman aşımı)')), 25_000))])
-      .catch((e) => { try { c.kapat(); } catch {} throw new Error(`Cihaza bağlanılamadı: ${e.message}`); });
+  attemptConnection(c) {
+    return Promise.race([c.info(), new Promise((_, r) => setTimeout(() => r(new Error('cihaz yanıt vermedi (zaman aşımı)')), 25_000))])
+      .catch((e) => { try { c.close(); } catch {} throw new Error(`Cihaza bağlanılamadı: ${e.message}`); });
   }
 
   // ---- cihaz CRUD (depo + grup birlikte)
-  liste() { return this.depo.liste().map((c) => ({ ...c, hata: this.grup.hatalar.get(c.id) ?? null })); }
-  async ekle(g) { const k = this.depo.hazirla(g); const inst = this.olustur(k); await this.baglantiDene(inst); await this.depo.ekle(k); this.grup.ekle(inst); return k; }
-  async guncelle(id, g) {
-    const k = this.depo.guncellemeHazirla(id, g), eski = this.depo.ayar(id), inst = this.olustur(k);
-    if (['ana', 'kullanici', 'parola', 'httpPort', 'rtspPort', 'port', 'sablon', 'yol'].some((a) => String(k[a] ?? '') !== String(eski[a] ?? ''))) await this.baglantiDene(inst);
-    await this.depo.guncelle(k); this.grup.degistir(id, inst); return k;
+  list() { return this.repo.list().map((c) => ({ ...c, error: this.group.errors.get(c.id) ?? null })); }
+  async add(g) { const k = this.repo.prepare(g); const inst = this.create(k); await this.attemptConnection(inst); await this.repo.add(k); this.group.add(inst); return k; }
+  async update(id, g) {
+    const k = this.repo.updatePrepare(id, g), old = this.repo.setting(id), inst = this.create(k);
+    if (['host', 'username', 'password', 'httpPort', 'rtspPort', 'port', 'template', 'path'].some((a) => String(k[a] ?? '') !== String(old[a] ?? ''))) await this.attemptConnection(inst);
+    await this.repo.update(k); this.group.change(id, inst); return k;
   }
-  async sil(id) { const eski = this.depo.ayar(id); await this.depo.sil(id); this.grup.cikar(id); return eski; }
-  bul(id) { return this.grup.cihazlar.find((x) => x.id === id) ?? null; }
+  async remove(id) { const old = this.repo.setting(id); await this.repo.remove(id); this.group.detach(id); return old; }
+  find(id) { return this.group.devices.find((x) => x.id === id) ?? null; }
 
   // ---- kanal ayarlari (ad, goster/gizle)
-  #adlariUygula() { this.grup.adlarGecersiz = Object.fromEntries(Object.entries(this.kanalAyar).filter(([, v]) => v.ad).map(([k, v]) => [k, v.ad])); }
+  #applyNames() { this.group.nameOverrides = Object.fromEntries(Object.entries(this.channelSetting).filter(([, v]) => v.name).map(([k, v]) => [k, v.name])); }
   /** Cihaz bilgisine kanal ayarlarini uygular: "D1 (Kanal adı)" bicimi, zorla goster/gizle. */
-  kanalUygula(b) {
-    const ka = this.kanalAyar;
+  applyChannel(b) {
+    const ka = this.channelSetting;
     return {
       ...b,
-      kanalAdlari: b.kanalAdlari.map((a, i) => (b.kanalKodlar ? `${b.kanalKodlar[i]} (${ka[i]?.ad || a})` : ka[i]?.ad || a)),
-      kanalCihazAdi: b.kanalAdlari,
-      kanalBos: b.kanalBos.map((x, i) => (ka[i]?.gorunum === 'gizle' ? true : ka[i]?.gorunum === 'goster' ? false : x)),
-      kanalOtomatikBos: b.kanalBos, kanalAyar: ka,
+      channelNames: b.channelNames.map((a, i) => (b.channelCodes ? `${b.channelCodes[i]} (${ka[i]?.name || a})` : ka[i]?.name || a)),
+      channelDeviceName: b.channelNames,
+      channelEmpty: b.channelEmpty.map((x, i) => (ka[i]?.view === 'hide' ? true : ka[i]?.view === 'show' ? false : x)),
+      channelAutoEmpty: b.channelEmpty, channelSetting: ka,
     };
   }
-  async kanalAyarKaydet(ayar, aralik) {
-    let yeni = {};
-    for (const [k, v] of Object.entries(ayar ?? {})) {
+  async saveChannelSetting(setting, range) {
+    let fresh = {};
+    for (const [k, v] of Object.entries(setting ?? {})) {
       if (!/^\d{1,4}$/.test(k) || Number(k) >= 1024 || typeof v !== 'object' || !v) continue;
-      const ad = String(v.ad ?? '').trim().slice(0, 40), gorunum = ['goster', 'gizle'].includes(v.gorunum) ? v.gorunum : 'otomatik';
-      if (ad || gorunum !== 'otomatik') yeni[k] = { ...(ad ? { ad } : {}), gorunum };
+      const name = String(v.name ?? '').trim().slice(0, 40), view = ['show', 'hide'].includes(v.view) ? v.view : 'auto';
+      if (name || view !== 'auto') fresh[k] = { ...(name ? { name } : {}), view };
     }
-    if (aralik) {        // aralik verildiyse yalniz o cihazin kanallari degisir
-      const dis = Object.fromEntries(Object.entries(this.kanalAyar).filter(([k]) => Number(k) < aralik.bas || Number(k) >= aralik.son));
-      const ic = Object.fromEntries(Object.entries(yeni).filter(([k]) => Number(k) >= aralik.bas && Number(k) < aralik.son));
-      yeni = { ...dis, ...ic };
+    if (range) {        // aralik verildiyse yalniz o cihazin kanallari degisir
+      const outer = Object.fromEntries(Object.entries(this.channelSetting).filter(([k]) => Number(k) < range.from || Number(k) >= range.last));
+      const inner = Object.fromEntries(Object.entries(fresh).filter(([k]) => Number(k) >= range.from && Number(k) < range.last));
+      fresh = { ...outer, ...inner };
     }
-    try { await this.ayarlar.yaz('channels', yeni); } catch (e) { console.error('kanal ayari yazilamadi:', e?.code ?? '', e?.message ?? e); throw new VeritabaniHatasi(e); }
-    this.kanalAyar = yeni; this.#adlariUygula();
-    return Object.keys(yeni).length;
+    try { await this.settings.write('channels', fresh); } catch (e) { console.error('kanal ayari yazilamadi:', e?.code ?? '', e?.message ?? e); throw new DatabaseError(e); }
+    this.channelSetting = fresh; this.#applyNames();
+    return Object.keys(fresh).length;
   }
 
-  async bilgi() { return this.kanalUygula(await this.grup.bilgi()); }
-  kapat() { this.grup.kapat(); }
+  async info() { return this.applyChannel(await this.group.info()); }
+  close() { this.group.close(); }
 }

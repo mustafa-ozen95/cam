@@ -2,7 +2,12 @@
  * Database migrations: ORDERED and IMMUTABLE. A schema change is added as a new version; an existing migration is never edited
  * (it may already be applied in production). Timestamps are stored as ISO text so values from the JSON era are kept verbatim.
  * Every table's first column is "seq" (insertion order), the second is the natural key.
+ *
+ * A migration is either `sql` (statements) or `run(conn)`: a data migration that runs inside ONE transaction together with its row in the
+ * `migrations` table (an error rolls everything back). Data migrations are idempotent: converting an already converted value changes nothing.
  */
+import * as legacy from './legacy-names.mjs';
+
 const ENGINE = 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
 
 export const MIGRATIONS = [
@@ -58,5 +63,46 @@ export const MIGRATIONS = [
         name VARCHAR(64) NOT NULL PRIMARY KEY, value LONGTEXT NOT NULL, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
       ) ${ENGINE}`,
     ],
+  },
+  {
+    // Turkish-era stored names -> English: permission ids, built-in role ids, scope/preference keys, device type/template, password envelope
+    // keys, key usage records and the settings documents. audit_log is NOT touched (its rows are signed over their original text).
+    version: 2, name: 'english names',
+    run: async (c) => {
+      const text = (f) => (v) => (v === null || v === undefined ? v : f(v));
+      const json = (f) => (v) => {
+        if (v === null || v === undefined) return v;
+        let o; try { o = JSON.parse(v); } catch { return v; }   // not JSON: not ours to touch
+        const fresh = JSON.stringify(f(o));
+        return fresh === JSON.stringify(o) ? v : fresh;   // degismediyse metin aynen kalir (bicim bozulmaz)
+      };
+      /** Converts the given columns row by row; only changed rows are written. */
+      const convert = async (table, columns) => {
+        const names = Object.keys(columns);
+        const [rows] = await c.query(`SELECT seq, ${names.join(', ')} FROM ${table}`);
+        for (const row of rows) {
+          const change = {};
+          for (const n of names) { const fresh = columns[n](row[n]); if (fresh !== row[n]) change[n] = fresh; }
+          if (Object.keys(change).length) await c.query(`UPDATE ${table} SET ${Object.keys(change).map((n) => `${n} = ?`).join(', ')} WHERE seq = ?`, [...Object.values(change), row.seq]);
+        }
+      };
+      await convert('users', { role: text(legacy.roleId), scope: json(legacy.scope), preferences: json(legacy.preferences) });
+      await convert('devices', { type: text(legacy.deviceType), template: text(legacy.deviceTemplate), password: json(legacy.envelope) });
+      await convert('hub_links', { role: text(legacy.roleId) });
+      await convert('roles', { permissions: json(legacy.permissionList) });
+      await convert('builtin_role_permissions', { role: text(legacy.roleId), permissions: json(legacy.permissionList) });
+      await convert('api_keys', {
+        role: text(legacy.roleId), permissions: json(legacy.permissionList), scope: json(legacy.scope),
+        last_used: json(legacy.keyLastUsed), revoked: json(legacy.keyRevoked),
+      });
+      const documents = { channels: legacy.channelsDoc, 'live-layout': legacy.layoutDoc, 'update-status': legacy.updateStatusDoc };
+      for (const [name, f] of Object.entries(documents)) {
+        const [found] = await c.query('SELECT value FROM settings WHERE name = ?', [name]);
+        const row = found[0];
+        if (!row) continue;
+        const fresh = json(f)(row.value);
+        if (fresh !== row.value) await c.query('UPDATE settings SET value = ? WHERE name = ?', [fresh, name]);
+      }
+    },
   },
 ];

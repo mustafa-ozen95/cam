@@ -9,250 +9,250 @@ import { createHash, createHmac } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { uygulamaKur } from '../src/bootstrap.mjs';
-import { gecicivt } from './helpers.mjs';
-import { yapilandirma as temel } from '../config/app.mjs';
+import { createApp } from '../src/bootstrap.mjs';
+import { tempDb } from './helpers.mjs';
+import { config as base } from '../config/app.mjs';
 
-const SIR = 'istemci-sirri', BILDIRIM = 'bildirim-sirri', ISTEMCI = 'kamera-istemci';
-let merkezSunucu, M, uygulama, sunucu, B, veri, gv;
+const SECRET = 'istemci-sirri', NOTIFICATION = 'bildirim-sirri', CLIENT = 'kamera-istemci';
+let hubServer, M, app, server, B, data, gv;
 /** Sahte merkezin davranisi; testler degistirir. */
-const merkez = { meydan: null, kod: 'KOD-1', kullanici: { sub: '11111111-1111-7111-8111-111111111111', name: 'Ali Veli', email: 'ali.veli@ornek.test', email_verified: true, rol: 'admin', hesap_acilabilir: true }, yetkisiz: false, durum: { durum: 'aktif', girebilir: true, rol: 'admin' }, sorular: 0, cikislar: [] };
+const hub = { challenge: null, code: 'KOD-1', username: { sub: '11111111-1111-7111-8111-111111111111', name: 'Ali Veli', email: 'ali.veli@ornek.test', email_verified: true, 'rol': 'admin', 'hesap_acilabilir': true }, unauthorized: false, status: { 'durum': 'aktif', 'girebilir': true, 'rol': 'admin' }, queries: 0, logouts: [] };
 
 before(async () => {
-  merkezSunucu = createServer(async (istek, res) => {
-    const u = new URL(istek.url, 'http://x');
-    const yanit = (k, j) => { res.writeHead(k, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
+  hubServer = createServer(async (req, res) => {
+    const u = new URL(req.url, 'http://x');
+    const response = (k, j) => { res.writeHead(k, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
     if (u.pathname === '/oauth/authorize') {
-      merkez.meydan = u.searchParams.get('code_challenge');
+      hub.challenge = u.searchParams.get('code_challenge');
       assert.equal(u.searchParams.get('code_challenge_method'), 'S256');
-      assert.equal(u.searchParams.get('client_id'), ISTEMCI);
-      const geri = new URL(u.searchParams.get('redirect_uri')); geri.searchParams.set('code', merkez.kod); geri.searchParams.set('state', u.searchParams.get('state'));
-      res.writeHead(302, { Location: geri.href }); return res.end();
+      assert.equal(u.searchParams.get('client_id'), CLIENT);
+      const back = new URL(u.searchParams.get('redirect_uri')); back.searchParams.set('code', hub.code); back.searchParams.set('state', u.searchParams.get('state'));
+      res.writeHead(302, { Location: back.href }); return res.end();
     }
     if (u.pathname === '/oauth/token') {
-      let g = ''; for await (const p of istek) g += p; const f = new URLSearchParams(g);
-      if (f.get('client_secret') !== SIR || f.get('code') !== merkez.kod) return yanit(401, { error: 'invalid_client' });
-      if (createHash('sha256').update(f.get('code_verifier')).digest('base64url') !== merkez.meydan) return yanit(400, { error: 'invalid_grant' });
-      return yanit(200, { access_token: 'JETON-1', token_type: 'Bearer' });
+      let g = ''; for await (const p of req) g += p; const f = new URLSearchParams(g);
+      if (f.get('client_secret') !== SECRET || f.get('code') !== hub.code) return response(401, { error: 'invalid_client' });
+      if (createHash('sha256').update(f.get('code_verifier')).digest('base64url') !== hub.challenge) return response(400, { error: 'invalid_grant' });
+      return response(200, { access_token: 'JETON-1', token_type: 'Bearer' });
     }
     if (u.pathname === '/oauth/kullanici') {
-      if (istek.headers.authorization !== 'Bearer JETON-1') return yanit(401, {});
-      if (merkez.yetkisiz) return yanit(403, { kod: 'rol_yetkisiz', hata: 'Bu uygulamaya erişim yetkiniz yok.' });
-      return yanit(200, merkez.kullanici);
+      if (req.headers.authorization !== 'Bearer JETON-1') return response(401, {});
+      if (hub.unauthorized) return response(403, { 'kod': 'rol_yetkisiz', 'hata': 'Bu uygulamaya erişim yetkiniz yok.' });
+      return response(200, hub.username);
     }
     if (u.pathname === '/api/oturum-kapandi') {
-      let g = ''; for await (const p of istek) g += p; const j = JSON.parse(g);
-      if (j.client_secret !== SIR) return yanit(401, {});
-      merkez.cikislar.push(j.subject); return yanit(200, { sonuc: 'alındı' });
+      let g = ''; for await (const p of req) g += p; const j = JSON.parse(g);
+      if (j.client_secret !== SECRET) return response(401, {});
+      hub.logouts.push(j.subject); return response(200, { result: 'alındı' });
     }
     if (u.pathname === '/api/kimlik-durumu') {
-      let g = ''; for await (const p of istek) g += p; const j = JSON.parse(g); merkez.sorular++;
-      if (j.client_secret !== SIR) return yanit(401, {});
-      return yanit(200, { kimlikler: Object.fromEntries(j.kimlikler.map((k) => [k, merkez.durum])) });
+      let g = ''; for await (const p of req) g += p; const j = JSON.parse(g); hub.queries++;
+      if (j.client_secret !== SECRET) return response(401, {});
+      return response(200, { 'kimlikler': Object.fromEntries(j['kimlikler'].map((k) => [k, hub.status])) });
     }
-    yanit(404, {});
+    response(404, {});
   });
-  merkezSunucu.listen(0, '127.0.0.1'); await new Promise((r) => merkezSunucu.once('listening', r));
-  M = `http://127.0.0.1:${merkezSunucu.address().port}`;
+  hubServer.listen(0, '127.0.0.1'); await new Promise((r) => hubServer.once('listening', r));
+  M = `http://127.0.0.1:${hubServer.address().port}`;
 
-  veri = mkdtempSync(join(tmpdir(), 'cam-merkez-'));
-  gv = await gecicivt();
-  const y = { ...temel, veriKlasoru: veri, veritabani: gv.ayar, sunucu: { ...temel.sunucu, port: 0, adres: '127.0.0.1' },
-    cihaz: { ...temel.cihaz, test: true, tohum: JSON.stringify([{ ad: 'Sahte', tur: 'sahte', ana: '127.0.0.1', kullanici: 'a', parola: 'b', etiket: 'A' }]) },
-    yetki: { ...temel.yetki, ilkAdminParola: 'adminparola1' },
-    kimlik: { ...temel.kimlik, adres: M, istemci: ISTEMCI, sir: SIR, donus: '', bildirimSirri: BILDIRIM, dogrulamaDakika: 60, rolEsleme: {}, varsayilanRol: '' } };
-  uygulama = await uygulamaKur(y);
-  sunucu = uygulama.dinle(); await new Promise((r) => sunucu.once('listening', r));
-  B = `http://127.0.0.1:${sunucu.address().port}`;
-  y.kimlik.donus = `${B}/giris/merkez/geri`;   // donus adresi port bilinince yazilir (nesne paylasiliyor)
+  data = mkdtempSync(join(tmpdir(), 'cam-hub-'));
+  gv = await tempDb();
+  const y = { ...base, dataDir: data, database: gv.setting, server: { ...base.server, port: 0, address: '127.0.0.1' },
+    device: { ...base.device, test: true, seed: JSON.stringify([{ name: 'Sahte', type: 'mock', host: '127.0.0.1', username: 'a', password: 'b', label: 'A' }]) },
+    permissions: { ...base.permissions, initialAdminPassword: 'adminparola1' },
+    identity: { ...base.identity, address: M, client: CLIENT, secret: SECRET, redirectUri: '', notifySecret: NOTIFICATION, checkMinutes: 60, roleMap: {}, defaultRole: '' } };
+  app = await createApp(y);
+  server = app.listen(); await new Promise((r) => server.once('listening', r));
+  B = `http://127.0.0.1:${server.address().port}`;
+  y.identity.redirectUri = `${B}/login/hub/callback`;   // donus adresi port bilinince yazilir (nesne paylasiliyor)
 });
-after(async () => { sunucu.close(); merkezSunucu.close(); await uygulama.kapat(); await gv.sil(); rmSync(veri, { recursive: true, force: true }); });
+after(async () => { server.close(); hubServer.close(); await app.close(); await gv.remove(); rmSync(data, { recursive: true, force: true }); });
 
-const cerez = (r) => (r.headers.get('set-cookie') ?? '').split(',').map((c) => c.split(';')[0]).filter(Boolean);
+const cookie = (r) => (r.headers.get('set-cookie') ?? '').split(',').map((c) => c.split(';')[0]).filter(Boolean);
 
 /** Tam akis: baslat -> merkez -> geri. Oturum cerezini dondurur (ya da hata kodunu). */
-async function merkezleGir() {
-  const b = await fetch(`${B}/giris/merkez`, { redirect: 'manual' });
+async function hubEnter() {
+  const b = await fetch(`${B}/login/hub`, { redirect: 'manual' });
   assert.equal(b.status, 302);
-  const akisCerezi = cerez(b).find((c) => c.startsWith('kamera_merkez_akis='));
-  assert.ok(akisCerezi, 'akis cerezi yazilmali');
+  const flowCookie = cookie(b).find((c) => c.startsWith('cam_hub_flow='));
+  assert.ok(flowCookie, 'akis cerezi yazilmali');
   const m = await fetch(b.headers.get('location'), { redirect: 'manual' });
   assert.equal(m.status, 302);
-  const g = await fetch(m.headers.get('location'), { redirect: 'manual', headers: { Cookie: akisCerezi } });
+  const g = await fetch(m.headers.get('location'), { redirect: 'manual', headers: { Cookie: flowCookie } });
   assert.equal(g.status, 302);
-  const konum = g.headers.get('location');
-  if (konum !== '/') return { hata: new URL(konum, B).searchParams.get('merkez') };
-  return { oturum: cerez(g).find((c) => c.startsWith('kamera_oturum=')) };
+  const position = g.headers.get('location');
+  if (position !== '/') return { error: new URL(position, B).searchParams.get('hub') };
+  return { session: cookie(g).find((c) => c.startsWith('cam_session=')) };
 }
-const ben = (oturum) => fetch(`${B}/api/ben`, { headers: { Cookie: oturum } });
+const me = (session) => fetch(`${B}/api/me`, { headers: { Cookie: session } });
 
 test('giris sayfasi merkez dugmesini cizer', async () => {
   const html = await (await fetch(`${B}/`)).text();
-  assert.match(html, /href="\/giris\/merkez"/);
-  const hatali = await (await fetch(`${B}/?merkez=yetki`)).text();
-  assert.match(hatali, /erişim yetkiniz yok/);
+  assert.match(html, /href="\/login\/hub"/);
+  const faulty = await (await fetch(`${B}/?hub=denied`)).text();
+  assert.match(faulty, /erişim yetkiniz yok/);
 });
 
 test('state eslesmeyen donus reddedilir', async () => {
-  const g = await fetch(`${B}/giris/merkez/geri?code=x&state=uydurma`, { redirect: 'manual' });
-  assert.equal(g.status, 302); assert.equal(g.headers.get('location'), '/?merkez=durum');
+  const g = await fetch(`${B}/login/hub/callback?code=x&state=uydurma`, { redirect: 'manual' });
+  assert.equal(g.status, 302); assert.equal(g.headers.get('location'), '/?hub=state');
 });
 
 test('merkezle giris: hesap acilir, rol eslenir, oturum calisir', async () => {
-  const { oturum, hata } = await merkezleGir();
-  assert.equal(hata, undefined); assert.ok(oturum);
-  const r = await ben(oturum); assert.equal(r.status, 200);
-  const j = await r.json(); assert.equal(j.ad, 'ali.veli@ornek.test'); assert.equal(j.rol, 'admin');
+  const { session, error } = await hubEnter();
+  assert.equal(error, undefined); assert.ok(session);
+  const r = await me(session); assert.equal(r.status, 200);
+  const j = await r.json(); assert.equal(j.name, 'ali.veli@ornek.test'); assert.equal(j.role, 'admin');
   // ikinci giris ayni hesaba baglanir, yeni hesap acmaz
-  const ikinci = await merkezleGir(); assert.ok(ikinci.oturum);
-  const uyeler = await (await fetch(`${B}/api/uyeler`, { headers: { Cookie: ikinci.oturum } })).json();
-  assert.equal(uyeler.filter((u) => u.ad.startsWith('ali.veli')).length, 1);
+  const second = await hubEnter(); assert.ok(second.session);
+  const members = await (await fetch(`${B}/api/members`, { headers: { Cookie: second.session } })).json();
+  assert.equal(members.filter((u) => u.name.startsWith('ali.veli')).length, 1);
 });
 
 test('merkez kapiyi kapatirsa (403) giris reddedilir', async () => {
-  merkez.yetkisiz = true;
-  try { const { hata } = await merkezleGir(); assert.equal(hata, 'yetki'); } finally { merkez.yetkisiz = false; }
+  hub.unauthorized = true;
+  try { const { error } = await hubEnter(); assert.equal(error, 'denied'); } finally { hub.unauthorized = false; }
 });
 
 test('hesap acilamaz denince yeni kimlik giremez', async () => {
-  const eski = merkez.kullanici;
-  merkez.kullanici = { ...eski, sub: '22222222-2222-7222-8222-222222222222', email: 'yeni@ornek.test', hesap_acilabilir: false };
-  try { const { hata } = await merkezleGir(); assert.equal(hata, 'yetki'); } finally { merkez.kullanici = eski; }
+  const old = hub.username;
+  hub.username = { ...old, sub: '22222222-2222-7222-8222-222222222222', email: 'yeni@ornek.test', 'hesap_acilabilir': false };
+  try { const { error } = await hubEnter(); assert.equal(error, 'denied'); } finally { hub.username = old; }
 });
 
 test('merkezde erisim kalkinca bildirimle oturum duser; geri gelince acilir', async () => {
-  const { oturum } = await merkezleGir();
-  assert.equal((await ben(oturum)).status, 200);
-  merkez.durum = { durum: 'askida', girebilir: false, rol: 'admin' };
-  const imza = createHmac('sha256', BILDIRIM).update(merkez.kullanici.sub).digest('hex');
+  const { session } = await hubEnter();
+  assert.equal((await me(session)).status, 200);
+  hub.status = { 'durum': 'askida', 'girebilir': false, 'rol': 'admin' };
+  const signature = createHmac('sha256', NOTIFICATION).update(hub.username.sub).digest('hex');
   // imzasiz bildirim merkeze sordurmaz: durum askida olsa da oturum surer
-  const sorularOnce = merkez.sorular;
-  await fetch(`${B}/api/kimlik/tazele`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject: merkez.kullanici.sub }) });
+  const queriesBefore = hub.queries;
+  await fetch(`${B}/api/kimlik/tazele`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject: hub.username.sub }) });
   await new Promise((r) => setTimeout(r, 50));
-  assert.equal(merkez.sorular, sorularOnce, 'imzasiz bildirim merkeze soru acmamali');
-  assert.equal((await ben(oturum)).status, 200, 'imzasiz bildirim erisimi degistirmemeli');
-  const t = await fetch(`${B}/api/kimlik/tazele`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kimlik-Imza': imza }, body: JSON.stringify({ subject: merkez.kullanici.sub }) });
+  assert.equal(hub.queries, queriesBefore, 'imzasiz bildirim merkeze soru acmamali');
+  assert.equal((await me(session)).status, 200, 'imzasiz bildirim erisimi degistirmemeli');
+  const t = await fetch(`${B}/api/kimlik/tazele`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kimlik-Imza': signature }, body: JSON.stringify({ subject: hub.username.sub }) });
   assert.equal(t.status, 200);
-  await uygulama.hizmetler.baglar.tazele(merkez.kullanici.sub);
-  assert.equal((await ben(oturum)).status, 401, 'erisimi kalkan kisi 401 almali');
-  merkez.durum = { durum: 'aktif', girebilir: true, rol: 'network' };
-  await uygulama.hizmetler.baglar.tazele(merkez.kullanici.sub);
-  const r = await ben(oturum); assert.equal(r.status, 200);
-  assert.equal((await r.json()).rol, 'network', 'merkezdeki rol degisince ayni adli DC rolu uygulanmali');
-  merkez.durum = { durum: 'aktif', girebilir: true, rol: 'admin' };
-  await uygulama.hizmetler.baglar.tazele(merkez.kullanici.sub);
+  await app.services.links.refresh(hub.username.sub);
+  assert.equal((await me(session)).status, 401, 'erisimi kalkan kisi 401 almali');
+  hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'network' };
+  await app.services.links.refresh(hub.username.sub);
+  const r = await me(session); assert.equal(r.status, 200);
+  assert.equal((await r.json()).role, 'network', 'merkezdeki rol degisince ayni adli DC rolu uygulanmali');
+  hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'admin' };
+  await app.services.links.refresh(hub.username.sub);
 });
 
 test('yerel parola girisi merkezden bagimsiz calisir', async () => {
-  const r = await fetch(`${B}/api/giris`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kamera': '1' }, body: JSON.stringify({ ad: 'admin', parola: 'adminparola1' }) });
+  const r = await fetch(`${B}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Cam': '1' }, body: JSON.stringify({ name: 'admin', password: 'adminparola1' }) });
   assert.equal(r.status, 200);
 });
 
 // ---- guvenlik denetimi duzeltmeleri ----
 /** Yerel admin oturumu (parola girisi) ile yonetim istekleri. */
-async function yerelAdmin() {
-  const r = await fetch(`${B}/api/giris`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kamera': '1' }, body: JSON.stringify({ ad: 'admin', parola: 'adminparola1' }) });
+async function localAdmin() {
+  const r = await fetch(`${B}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Cam': '1' }, body: JSON.stringify({ name: 'admin', password: 'adminparola1' }) });
   assert.equal(r.status, 200);
-  const oturum = cerez(r).find((c) => c.startsWith('kamera_oturum='));
-  return (yol, yontem = 'GET', govde) => fetch(`${B}${yol}`, { method: yontem, headers: { Cookie: oturum, 'X-Kamera': '1', ...(govde ? { 'Content-Type': 'application/json' } : {}) }, body: govde ? JSON.stringify(govde) : undefined });
+  const session = cookie(r).find((c) => c.startsWith('cam_session='));
+  return (path, method = 'GET', body) => fetch(`${B}${path}`, { method: method, headers: { Cookie: session, 'X-Cam': '1', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
 }
 
 test('merkezdeki kamera rolu panelde kamera rolune eslenir: izler, yonetemez', async () => {
-  const eski = merkez.kullanici, eskiDurum = merkez.durum;
-  merkez.kullanici = { ...eski, sub: '55555555-5555-7555-8555-555555555555', name: 'Kam Era', email: 'kam.era@ornek.test', rol: 'kamera' };
-  merkez.durum = { durum: 'aktif', girebilir: true, rol: 'kamera' };
+  const old = hub.username, legacyStatus = hub.status;
+  hub.username = { ...old, sub: '55555555-5555-7555-8555-555555555555', name: 'Kam Era', email: 'kam.era@ornek.test', 'rol': 'kamera' };
+  hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'kamera' };
   try {
-    const { oturum } = await merkezleGir(); assert.ok(oturum);
-    const j = await (await ben(oturum)).json();
-    assert.equal(j.rol, 'kamera');
-    assert.equal((await fetch(`${B}/api/uyeler`, { headers: { Cookie: oturum } })).status, 403);
-  } finally { merkez.kullanici = eski; merkez.durum = eskiDurum; }
+    const { session } = await hubEnter(); assert.ok(session);
+    const j = await (await me(session)).json();
+    assert.equal(j.role, 'camera');
+    assert.equal((await fetch(`${B}/api/members`, { headers: { Cookie: session } })).status, 403);
+  } finally { hub.username = old; hub.status = legacyStatus; }
 });
 
 test('kym-bag: silinen uyenin adi yeniden kullanilsa eski kimlik yeni hesabi devralamaz ve rolunu degistiremez', async () => {
-  const eski = merkez.kullanici;
-  merkez.kullanici = { ...eski, sub: '33333333-3333-7333-8333-333333333333', name: 'Zed Kim', email: 'zed.kim@ornek.test', rol: 'admin' };
+  const old = hub.username;
+  hub.username = { ...old, sub: '33333333-3333-7333-8333-333333333333', name: 'Zed Kim', email: 'zed.kim@ornek.test', 'rol': 'admin' };
   try {
-    const ilk = await merkezleGir(); assert.ok(ilk.oturum);
-    assert.equal((await (await ben(ilk.oturum)).json()).ad, 'zed.kim@ornek.test');
-    const yonetim = await yerelAdmin();
-    assert.equal((await yonetim('/api/uyeler/zed.kim@ornek.test', 'DELETE')).status, 200);
-    assert.ok(!Object.values(uygulama.hizmetler.baglar.veri).some((b) => b.ad === 'zed.kim@ornek.test'), 'uye silinince bag da gider');
-    assert.equal((await yonetim('/api/uyeler', 'POST', { ad: 'zed.kim@ornek.test', parola: 'zedparola12', rol: 'teknik' })).status, 200);
-    const ikinci = await merkezleGir(); assert.ok(ikinci.oturum);
-    const j = await (await ben(ikinci.oturum)).json();
-    assert.notEqual(j.ad, 'zed.kim@ornek.test', 'eski kimlik yeni zed.kim hesabina girmemeli');
-    const yerel = (await (await yonetim('/api/uyeler')).json()).find((u) => u.ad === 'zed.kim@ornek.test');
-    assert.equal(yerel.rol, 'teknik', 'yeni hesabin rolu merkezdeki rolle ezilmemeli');
-  } finally { merkez.kullanici = eski; }
+    const first = await hubEnter(); assert.ok(first.session);
+    assert.equal((await (await me(first.session)).json()).name, 'zed.kim@ornek.test');
+    const management = await localAdmin();
+    assert.equal((await management('/api/members/zed.kim@ornek.test', 'DELETE')).status, 200);
+    assert.ok(!Object.values(app.services.links.data).some((b) => b.name === 'zed.kim@ornek.test'), 'uye silinince bag da gider');
+    assert.equal((await management('/api/members', 'POST', { name: 'zed.kim@ornek.test', password: 'zedparola12', role: 'technical' })).status, 200);
+    const second = await hubEnter(); assert.ok(second.session);
+    const j = await (await me(second.session)).json();
+    assert.notEqual(j.name, 'zed.kim@ornek.test', 'eski kimlik yeni zed.kim hesabina girmemeli');
+    const local = (await (await management('/api/members')).json()).find((u) => u.name === 'zed.kim@ornek.test');
+    assert.equal(local.role, 'technical', 'yeni hesabin rolu merkezdeki rolle ezilmemeli');
+  } finally { hub.username = old; }
 });
 
 test('kym-bag: merkezde erisimi kalkan uyenin API anahtari da islemez', async () => {
-  const eski = merkez.kullanici, sub = '44444444-4444-7444-8444-444444444444';
-  merkez.kullanici = { ...eski, sub, name: 'Key Owner', email: 'key.owner@ornek.test', rol: 'admin' };
+  const old = hub.username, sub = '44444444-4444-7444-8444-444444444444';
+  hub.username = { ...old, sub, name: 'Key Owner', email: 'key.owner@ornek.test', 'rol': 'admin' };
   try {
-    const { oturum } = await merkezleGir(); assert.ok(oturum);
-    const yonetim = await yerelAdmin();
-    const k = await (await yonetim('/api/yetki/anahtarlar', 'POST', { ad: 'k', izinler: ['canli.izle'], sahip: 'key.owner@ornek.test' })).json();
-    const bearer = () => fetch(`${B}/api/v1/ben`, { headers: { Authorization: `Bearer ${k.anahtar}` } });
+    const { session } = await hubEnter(); assert.ok(session);
+    const management = await localAdmin();
+    const k = await (await management('/api/access/keys', 'POST', { name: 'k', permissions: ['live.view'], owner: 'key.owner@ornek.test' })).json();
+    const bearer = () => fetch(`${B}/api/v1/me`, { headers: { Authorization: `Bearer ${k.key}` } });
     assert.equal((await bearer()).status, 200);
-    merkez.durum = { durum: 'askida', girebilir: false, rol: 'admin' };
-    await uygulama.hizmetler.baglar.tazele(sub);
+    hub.status = { 'durum': 'askida', 'girebilir': false, 'rol': 'admin' };
+    await app.services.links.refresh(sub);
     assert.equal((await bearer()).status, 401, 'merkezde erisimi kalkan sahibin anahtari islememeli');
-    merkez.durum = { durum: 'aktif', girebilir: true, rol: 'admin' };
-    await uygulama.hizmetler.baglar.tazele(sub);
+    hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'admin' };
+    await app.services.links.refresh(sub);
     assert.equal((await bearer()).status, 200);
-  } finally { merkez.kullanici = eski; merkez.durum = { durum: 'aktif', girebilir: true, rol: 'admin' }; }
+  } finally { hub.username = old; hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'admin' }; }
 });
 
 test('cerez etiketi: merkez akis cerezi oturum cerezi olarak, oturum cerezi akis cerezi olarak gecmez', async () => {
-  const yonetim = await yerelAdmin();
-  assert.equal((await yonetim('/api/uyeler', 'POST', { ad: 'undefined', parola: 'undefparola1', rol: 'teknik' })).status, 200);
-  const b = await fetch(`${B}/giris/merkez`, { redirect: 'manual' });
-  const akis = cerez(b).find((c) => c.startsWith('kamera_merkez_akis=')).split('=').slice(1).join('=');
-  assert.equal((await ben(`kamera_oturum=${akis}`)).status, 401, "akis cerezi 'undefined' uyesine oturum vermemeli");
-  const oturum = (await (await fetch(`${B}/api/giris`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kamera': '1' }, body: JSON.stringify({ ad: 'admin', parola: 'adminparola1' }) })).headers.get('set-cookie')).split(';')[0].split('=').slice(1).join('=');
-  const g = await fetch(`${B}/giris/merkez/geri?code=x&state=y`, { redirect: 'manual', headers: { Cookie: `kamera_merkez_akis=${oturum}` } });
-  assert.equal(g.headers.get('location'), '/?merkez=durum', 'oturum cerezi akis cerezi olarak kabul edilmemeli');
+  const management = await localAdmin();
+  assert.equal((await management('/api/members', 'POST', { name: 'undefined', password: 'undefparola1', role: 'technical' })).status, 200);
+  const b = await fetch(`${B}/login/hub`, { redirect: 'manual' });
+  const stream = cookie(b).find((c) => c.startsWith('cam_hub_flow=')).split('=').slice(1).join('=');
+  assert.equal((await me(`cam_session=${stream}`)).status, 401, "akis cerezi 'undefined' uyesine oturum vermemeli");
+  const session = (await (await fetch(`${B}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Cam': '1' }, body: JSON.stringify({ name: 'admin', password: 'adminparola1' }) })).headers.get('set-cookie')).split(';')[0].split('=').slice(1).join('=');
+  const g = await fetch(`${B}/login/hub/callback?code=x&state=y`, { redirect: 'manual', headers: { Cookie: `cam_hub_flow=${session}` } });
+  assert.equal(g.headers.get('location'), '/?hub=state', 'oturum cerezi akis cerezi olarak kabul edilmemeli');
 });
 
 // ORTAK CIKIS: merkezdeki son cikistan once acilan oturum islemez; buradan cikis merkeze bildirilir.
-const cikisBildir = (an, imza) => fetch(`${B}/api/kimlik/cikis`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kimlik-Imza': imza ?? createHmac('sha256', BILDIRIM).update(`cikis|${merkez.kullanici.sub}|${an}`).digest('hex') }, body: JSON.stringify({ subject: merkez.kullanici.sub, an }) });
+const notifyLogout = (moment, signature) => fetch(`${B}/api/kimlik/cikis`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kimlik-Imza': signature ?? createHmac('sha256', NOTIFICATION).update(`cikis|${hub.username.sub}|${moment}`).digest('hex') }, body: JSON.stringify({ subject: hub.username.sub, moment }) });
 
 test('merkezin imzali cikis bildirimi acik oturumu kapatir; sonra acilan oturum surer', async () => {
-  const { oturum } = await merkezleGir();
-  assert.equal((await ben(oturum)).status, 200);
-  const an = Date.now() + 5;
-  assert.equal((await cikisBildir(an, 'yanlis')).status, 200);
-  assert.equal((await cikisBildir(an + 1, createHmac('sha256', BILDIRIM).update(`cikis|${merkez.kullanici.sub}|${an}`).digest('hex'))).status, 200);
-  assert.equal((await ben(oturum)).status, 200, 'imzasi tutmayan (ya da baska an icin) bildirim oturumu kapatmamali');
+  const { session } = await hubEnter();
+  assert.equal((await me(session)).status, 200);
+  const moment = Date.now() + 5;
+  assert.equal((await notifyLogout(moment, 'yanlis')).status, 200);
+  assert.equal((await notifyLogout(moment + 1, createHmac('sha256', NOTIFICATION).update(`cikis|${hub.username.sub}|${moment}`).digest('hex'))).status, 200);
+  assert.equal((await me(session)).status, 200, 'imzasi tutmayan (ya da baska an icin) bildirim oturumu kapatmamali');
   await new Promise((r) => setTimeout(r, 10));
-  assert.equal((await cikisBildir(an)).status, 200);
-  const r = await ben(oturum); assert.equal(r.status, 401);
-  assert.equal((await r.json()).kod, 'MERKEZ_CIKIS');
-  const sayfa = await (await fetch(`${B}/`, { headers: { Cookie: oturum } })).text();
-  assert.ok(sayfa.includes('gate__'), 'API 401 verirken ana sayfa paneli vermemeli: giris sayfasi gelmeli (yoksa sayfa durmadan yenilenir)');
-  const { oturum: yeni } = await merkezleGir();
-  assert.equal((await ben(yeni)).status, 200, 'cikistan sonra acilan oturum surmeli');
-  await cikisBildir(an - 1000);
-  assert.equal((await ben(yeni)).status, 200, 'gec gelen eski an yeni oturumu kapatmamali');
+  assert.equal((await notifyLogout(moment)).status, 200);
+  const r = await me(session); assert.equal(r.status, 401);
+  assert.equal((await r.json()).code, 'HUB_LOGOUT');
+  const page = await (await fetch(`${B}/`, { headers: { Cookie: session } })).text();
+  assert.ok(page.includes('gate__'), 'API 401 verirken ana sayfa paneli vermemeli: giris sayfasi gelmeli (yoksa sayfa durmadan yenilenir)');
+  const { session: fresh } = await hubEnter();
+  assert.equal((await me(fresh)).status, 200, 'cikistan sonra acilan oturum surmeli');
+  await notifyLogout(moment - 1000);
+  assert.equal((await me(fresh)).status, 200, 'gec gelen eski an yeni oturumu kapatmamali');
 });
 
 test('buradan cikis merkeze bildirilir', async () => {
-  const { oturum } = await merkezleGir();
-  merkez.cikislar.length = 0;
-  const r = await fetch(`${B}/api/cikis`, { method: 'POST', headers: { Cookie: oturum, 'X-Kamera': '1' } });
+  const { session } = await hubEnter();
+  hub.logouts.length = 0;
+  const r = await fetch(`${B}/api/logout`, { method: 'POST', headers: { Cookie: session, 'X-Cam': '1' } });
   assert.equal(r.status, 200);
-  for (let i = 0; i < 50 && !merkez.cikislar.length; i++) await new Promise((t) => setTimeout(t, 10));
-  assert.deepEqual(merkez.cikislar, [merkez.kullanici.sub]);
+  for (let i = 0; i < 50 && !hub.logouts.length; i++) await new Promise((t) => setTimeout(t, 10));
+  assert.deepEqual(hub.logouts, [hub.username.sub]);
 });
 
 test('durum sorgusundaki son_cikis uygulanir (bildirim kaybolsa da)', async () => {
-  const { oturum } = await merkezleGir();
+  const { session } = await hubEnter();
   await new Promise((r) => setTimeout(r, 5));
-  merkez.durum = { durum: 'aktif', girebilir: true, rol: 'admin', son_cikis: Date.now() };
+  hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'admin', 'son_cikis': Date.now() };
   try {
-    await uygulama.hizmetler.baglar.tazele(merkez.kullanici.sub);
-    assert.equal((await ben(oturum)).status, 401);
-  } finally { merkez.durum = { durum: 'aktif', girebilir: true, rol: 'admin' }; }
+    await app.services.links.refresh(hub.username.sub);
+    assert.equal((await me(session)).status, 401);
+  } finally { hub.status = { 'durum': 'aktif', 'girebilir': true, 'rol': 'admin' }; }
 });

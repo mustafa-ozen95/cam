@@ -1,83 +1,83 @@
 /**
- * Uye yonetimi (uye.yonet izni). Yetki yukseltme engeli: kendi izinlerinin ustunde rol / kendi kapsami disinda kamera verilemez;
+ * Uye yonetimi (member.manage izni). Yetki yukseltme engeli: kendi izinlerinin ustunde rol / kendi kapsami disinda kamera verilemez;
  * kendinden yetkili bir uyeye (parola sifirlama, rol dusurme, silme dahil) dokunulamaz; kendi hesap kisitlari (bitis, IP) gevsetilemez.
  */
-import { cerezYaz, govdeOku, json } from '../core/http.mjs';
-import { VeritabaniHatasi } from '../core/errors.mjs';
-import { YetkiHatasi, bitisNormalle, iplerNormalle, izinAltKume, kapsamIcinde, kapsamNormalle } from '../models/permission.mjs';
+import { writeCookie, readBody, json } from '../core/http.mjs';
+import { DatabaseError } from '../core/errors.mjs';
+import { PermissionError, normalizeExpiresAt, normalizeIps, isPermissionSubset, scopeWithin, normalizeScope } from '../models/permission.mjs';
 
-export function uyelerDenetleyici({ uyeler, yetki, gunluk, cihazlar, baglar = null, yapilandirma }) {
-  const rolDenetle = (asal, rol) => { if (rol !== undefined && !izinAltKume(yetki.rolIzinleri(rol), asal.izinler)) throw new YetkiHatasi('YETKI_YUKSELTME', 'Sahip olmadığınız izinleri içeren bir rol veremezsiniz', 403); };
-  const kapsamDenetle = (asal, k) => {
-    if (asal.kapsamsiz()) return;
-    const kk = k === undefined ? null : kapsamNormalle(k);
-    if (!kk || !kapsamIcinde(kk, asal.kapsam, cihazlar.grup.kanalToplam, (x) => cihazlar.grup.cihazIdOf(x))) throw new YetkiHatasi('YETKI_YUKSELTME', 'Kapsamınız kısıtlı: üyeye yalnız kendi kapsamınızdaki kameraları verebilirsiniz', 403);
+export function membersController({ members, permissions, auditLog, devices, links = null, config }) {
+  const checkRole = (principal, role) => { if (role !== undefined && !isPermissionSubset(permissions.rolePermissions(role), principal.permissions)) throw new PermissionError('PRIVILEGE_ESCALATION', 'Sahip olmadığınız izinleri içeren bir rol veremezsiniz', 403); };
+  const checkScope = (principal, k) => {
+    if (principal.isUnscoped()) return;
+    const kk = k === undefined ? null : normalizeScope(k);
+    if (!kk || !scopeWithin(kk, principal.scope, devices.group.channelTotal, (x) => devices.group.deviceIdOf(x))) throw new PermissionError('PRIVILEGE_ESCALATION', 'Kapsamınız kısıtlı: üyeye yalnız kendi kapsamınızdaki kameraları verebilirsiniz', 403);
   };
   /**
    * Degistirilecek/silinecek HEDEF uyenin MEVCUT hali de cagirana sigmali: rolunun izinleri cagirananin alt kumesi, kapsami cagirananin kapsami icinde
    * (kapsamsiz hedef = kapsamsiz cagiran). Yalniz yeni degerleri denetlemek yetmez: parola sifirlama/silme icin yeni deger yok.
    */
-  const hedefDenetle = (asal, ad) => {
-    const u = uyeler.bul(ad); if (!u) return;   // model 'Kullanıcı yok' der
-    if (!izinAltKume(yetki.rolIzinleri(u.rol), asal.izinler)) throw new YetkiHatasi('YETKI_YUKSELTME', 'Sizden yetkili bir üyeyi değiştiremez ya da silemezsiniz', 403);
-    if (!asal.kapsamsiz() && (!u.kapsam || !kapsamIcinde(u.kapsam, asal.kapsam, cihazlar.grup.kanalToplam, (x) => cihazlar.grup.cihazIdOf(x)))) throw new YetkiHatasi('YETKI_YUKSELTME', 'Kapsamınız dışındaki bir üyeyi değiştiremez ya da silemezsiniz', 403);
+  const checkTarget = (principal, name) => {
+    const u = members.find(name); if (!u) return;   // model 'Kullanıcı yok' der
+    if (!isPermissionSubset(permissions.rolePermissions(u.role), principal.permissions)) throw new PermissionError('PRIVILEGE_ESCALATION', 'Sizden yetkili bir üyeyi değiştiremez ya da silemezsiniz', 403);
+    if (!principal.isUnscoped() && (!u.scope || !scopeWithin(u.scope, principal.scope, devices.group.channelTotal, (x) => devices.group.deviceIdOf(x)))) throw new PermissionError('PRIVILEGE_ESCALATION', 'Kapsamınız dışındaki bir üyeyi değiştiremez ya da silemezsiniz', 403);
   };
   /**
    * Hesap baglari (bitis, IP listesi) cagiranin baglarindan gevsek olamaz ('*' sahibi haric: tam yetkili kisitlari kaldirabilir).
    * Olusturmada deger cagiranin sinirinda olmali; guncellemede DEGISMEYEN deger serbest (arayuz hepsini geri yollar), degisen deger
    * baskasi icin cagiranin sinirini, KENDI hesabi icin hesabin mevcut kaydini gevsetemez.
    */
-  const baglamDenetle = (asal, g, hedef) => {
-    if (asal.izinVar('*')) return;
-    const kendi = !!hedef && hedef.ad === asal.uyeAdi;
-    const bitisSinir = kendi ? hedef.bitis : asal.bitis, ipSinir = kendi ? (hedef.ipler ?? []) : (asal.ipler ?? []);
-    const ayni = (x, y) => JSON.stringify(x) === JSON.stringify(y);
-    if (hedef ? g.bitis !== undefined : true) {
-      const b = bitisNormalle(g.bitis);
-      if (!(hedef && ayni(b, hedef.bitis ?? null)) && bitisSinir && (!b || Date.parse(b) > Date.parse(bitisSinir))) throw new YetkiHatasi('YETKI_YUKSELTME', 'Hesap süresini sizin ya da hesabın bitişinden uzatamazsınız / süresiz bırakamazsınız', 403);
+  const checkContext = (principal, g, target) => {
+    if (principal.hasPermission('*')) return;
+    const own = !!target && target.name === principal.memberName;
+    const expiresAtLimit = own ? target.expiresAt : principal.expiresAt, ipLimit = own ? (target.ips ?? []) : (principal.ips ?? []);
+    const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+    if (target ? g.expiresAt !== undefined : true) {
+      const b = normalizeExpiresAt(g.expiresAt);
+      if (!(target && same(b, target.expiresAt ?? null)) && expiresAtLimit && (!b || Date.parse(b) > Date.parse(expiresAtLimit))) throw new PermissionError('PRIVILEGE_ESCALATION', 'Hesap süresini sizin ya da hesabın bitişinden uzatamazsınız / süresiz bırakamazsınız', 403);
     }
-    if (hedef ? g.ipler !== undefined : true) {
-      const l = iplerNormalle(g.ipler);
-      if (!(hedef && ayni(l, hedef.ipler ?? [])) && ipSinir.length && (!l.length || l.some((k) => !ipSinir.includes(k)))) throw new YetkiHatasi('YETKI_YUKSELTME', 'IP kısıtını sizin ya da hesabın listesi dışına çıkaramaz / kaldıramazsınız', 403);
+    if (target ? g.ips !== undefined : true) {
+      const l = normalizeIps(g.ips);
+      if (!(target && same(l, target.ips ?? [])) && ipLimit.length && (!l.length || l.some((k) => !ipLimit.includes(k)))) throw new PermissionError('PRIVILEGE_ESCALATION', 'IP kısıtını sizin ya da hesabın listesi dışına çıkaramaz / kaldıramazsınız', 403);
     }
   };
-  const hataIle = async (res, fn) => { try { return await fn(); } catch (e) { if (e instanceof YetkiHatasi || e instanceof VeritabaniHatasi || e instanceof SyntaxError) throw e; return json(res, 400, { hata: e.message, kod: 'GECERSIZ_ISTEK' }); } };
+  const handleErrors = async (res, fn) => { try { return await fn(); } catch (e) { if (e instanceof PermissionError || e instanceof DatabaseError || e instanceof SyntaxError) throw e; return json(res, 400, { error: e.message, code: 'INVALID_REQUEST' }); } };
   return {
-    async liste(ctx) { return json(ctx.res, 200, uyeler.herkes()); },
-    async ekle(ctx) {
-      return hataIle(ctx.res, async () => {
-        const g = await govdeOku(ctx.istek), rol = g.rol;
-        if (!rol) throw new YetkiHatasi('GECERSIZ_ISTEK', 'Rol gerekli', 400);
-        rolDenetle(ctx.asal, rol); kapsamDenetle(ctx.asal, g.kapsam); baglamDenetle(ctx.asal, g, null);
-        await uyeler.ekle(g.ad, g.parola, rol, { kapsam: g.kapsam, bitis: g.bitis, ipler: g.ipler });
-        gunluk.yaz('uye-ekle', ctx.asal.gunlukAdi, ctx.istek, { uye: g.ad, rol });
-        return json(ctx.res, 200, { tamam: true });
+    async list(ctx) { return json(ctx.res, 200, members.everyone()); },
+    async add(ctx) {
+      return handleErrors(ctx.res, async () => {
+        const g = await readBody(ctx.req), role = g.role;
+        if (!role) throw new PermissionError('INVALID_REQUEST', 'Rol gerekli', 400);
+        checkRole(ctx.principal, role); checkScope(ctx.principal, g.scope); checkContext(ctx.principal, g, null);
+        await members.add(g.name, g.password, role, { scope: g.scope, expiresAt: g.expiresAt, ips: g.ips });
+        auditLog.write('member-add', ctx.principal.auditActor, ctx.req, { member: g.name, role });
+        return json(ctx.res, 200, { ok: true });
       });
     },
-    async guncelle(ctx) {
-      return hataIle(ctx.res, async () => {
-        const g = await govdeOku(ctx.istek), ad = ctx.param.ad;
-        hedefDenetle(ctx.asal, ad);
-        rolDenetle(ctx.asal, g.rol); if (g.kapsam !== undefined) kapsamDenetle(ctx.asal, g.kapsam);
-        baglamDenetle(ctx.asal, g, uyeler.bul(ad));
-        await uyeler.guncelle(ad, { parola: g.parola, rol: g.rol, kapsam: g.kapsam, bitis: g.bitis, ipler: g.ipler }, ctx.asal.uyeAdi, ctx.ip);
-        gunluk.yaz('uye-duzenle', ctx.asal.gunlukAdi, ctx.istek, { uye: ad, alanlar: Object.keys(g).filter((k) => k !== 'parola'), parola: g.parola !== undefined });
+    async update(ctx) {
+      return handleErrors(ctx.res, async () => {
+        const g = await readBody(ctx.req), name = ctx.param.name;
+        checkTarget(ctx.principal, name);
+        checkRole(ctx.principal, g.role); if (g.scope !== undefined) checkScope(ctx.principal, g.scope);
+        checkContext(ctx.principal, g, members.find(name));
+        await members.update(name, { password: g.password, role: g.role, scope: g.scope, expiresAt: g.expiresAt, ips: g.ips }, ctx.principal.memberName, ctx.ip);
+        auditLog.write('member-edit', ctx.principal.auditActor, ctx.req, { member: name, fields: Object.keys(g).filter((k) => k !== 'password'), password: g.password !== undefined });
         // Kendi parolasini degistiren, parola yuzunden oturum surumu artinca dusmesin: ayni istekte yeni cerez verilir.
-        const ben = ctx.asal.tur === 'uye' && g.parola !== undefined && uyeler.bul(ad)?.ad === ctx.asal.ad ? uyeler.bul(ad) : null;
-        if (ben) cerezYaz(ctx.res, yapilandirma.oturum.cerez, uyeler.oturumCerezi(ben), yapilandirma.oturum.gun * 86400, yapilandirma.sunucu.vekil || !!ctx.res.socket?.encrypted);
-        return json(ctx.res, 200, { tamam: true });
+        const me = ctx.principal.type === 'member' && g.password !== undefined && members.find(name)?.name === ctx.principal.name ? members.find(name) : null;
+        if (me) writeCookie(ctx.res, config.session.cookie, members.sessionCookie(me), config.session.day * 86400, config.server.proxy || !!ctx.res.socket?.encrypted);
+        return json(ctx.res, 200, { ok: true });
       });
     },
-    async sil(ctx) {
-      return hataIle(ctx.res, async () => {
-        hedefDenetle(ctx.asal, ctx.param.ad);
-        const hedef = uyeler.bul(ctx.param.ad);
-        await uyeler.sil(ctx.param.ad, ctx.asal.uyeAdi);
+    async remove(ctx) {
+      return handleErrors(ctx.res, async () => {
+        checkTarget(ctx.principal, ctx.param.name);
+        const target = members.find(ctx.param.name);
+        await members.remove(ctx.param.name, ctx.principal.memberName);
         // Silinen uyeye ait her sey birlikte gider: API anahtarlari iptal edilir, KYM bagi dusurulur (ad yeniden kullanilsa da devralinamaz).
-        if (hedef) for (const a of yetki.anahtarlar(hedef.ad)) await yetki.anahtarIptal(a.id, ctx.asal.gunlukAdi);
-        await baglar?.uyeyiBirak(ctx.param.ad);
-        gunluk.yaz('uye-sil', ctx.asal.gunlukAdi, ctx.istek, { uye: ctx.param.ad });
-        return json(ctx.res, 200, { tamam: true });
+        if (target) for (const a of permissions.keys(target.name)) await permissions.revokeKey(a.id, ctx.principal.auditActor);
+        await links?.releaseMember(ctx.param.name);
+        auditLog.write('member-delete', ctx.principal.auditActor, ctx.req, { member: ctx.param.name });
+        return json(ctx.res, 200, { ok: true });
       });
     },
   };

@@ -1,29 +1,29 @@
 /**
  * Yetki ara katmanlari: izin(...) belirli bir izni zorunlu kilar; herhangi(...) listeden biri yeterli.
- * ctx.gerek(izin) ve ctx.kanalGerek(kanal) denetleyicilere de verilir (dinamik denetim icin).
+ * ctx.gerek(izin) ve ctx.needChannel(kanal) denetleyicilere de verilir (dinamik denetim icin).
  */
-import { YetkiHatasi } from '../models/permission.mjs';
+import { PermissionError } from '../models/permission.mjs';
 
-export const gerekKur = (asal) => ({
-  gerek: (izin) => { if (!asal.izinVar(izin)) throw new YetkiHatasi('YETKI_YOK', `Bu işlem için izin gerekir: ${izin}`, 403, { gerekenIzin: izin }); },
-  kanalGerek: (k) => { if (!asal.kanalIzinli(k)) throw new YetkiHatasi('KAPSAM_DISI', 'Bu kamera erişim kapsamınızın dışında', 403, { kanal: k }); return k; },
+export const requireHelpers = (principal) => ({
+  need: (permission) => { if (!principal.hasPermission(permission)) throw new PermissionError('PERMISSION_DENIED', `Bu işlem için izin gerekir: ${permission}`, 403, { requiredPermission: permission }); },
+  needChannel: (k) => { if (!principal.channelAllowed(k)) throw new PermissionError('OUT_OF_SCOPE', 'Bu kamera erişim kapsamınızın dışında', 403, { channel: k }); return k; },
 });
 
-export const izin = (...izinler) => {
-  const ara = async (ctx, sonraki) => {
-    Object.assign(ctx, gerekKur(ctx.asal));
-    for (const i of izinler) ctx.gerek(i);
-    return sonraki();
+export const permission = (...permissions) => {
+  const middleware = async (ctx, next) => {
+    Object.assign(ctx, requireHelpers(ctx.principal));
+    for (const i of permissions) ctx.need(i);
+    return next();
   };
-  ara.ad = `izin:${izinler.join('+')}`;
-  return ara;
+  middleware.label = `permission:${permissions.join('+')}`;
+  return middleware;
 };
-export const herhangi = (...izinler) => {
-  const ara = async (ctx, sonraki) => {
-    Object.assign(ctx, gerekKur(ctx.asal));
-    if (!ctx.asal.herhangiIzin(izinler)) throw new YetkiHatasi('YETKI_YOK', `Bu işlem için izin gerekir: ${izinler.join(' | ')}`, 403, { gerekenIzin: izinler[0] });
-    return sonraki();
+export const any = (...permissions) => {
+  const middleware = async (ctx, next) => {
+    Object.assign(ctx, requireHelpers(ctx.principal));
+    if (!ctx.principal.anyPermission(permissions)) throw new PermissionError('PERMISSION_DENIED', `Bu işlem için izin gerekir: ${permissions.join(' | ')}`, 403, { requiredPermission: permissions[0] });
+    return next();
   };
-  ara.ad = `izin:${izinler.join('|')}`;
-  return ara;
+  middleware.label = `permission:${permissions.join('|')}`;
+  return middleware;
 };

@@ -1,70 +1,70 @@
 /**
  * /live: uyeliksiz canli izleme sayfasi. IZLEMEK kimliksiz; ust serit, tema ve duzen
- * yalniz ADMIN oturumunda. Kapaliyken (KAMERA_RTC_API bos) her sey 404.
- * Harici bir izleme panosu iframe ile gomebilir: bu yanitlarda gomme serbest (KAMERA_LIVE_CERCEVE, varsayilan "*"); panelin geri kalani 'self'.
+ * yalniz ADMIN oturumunda. Kapaliyken (CAM_RTC_API bos) her sey 404.
+ * Harici bir izleme panosu iframe ile gomebilir: bu yanitlarda gomme serbest (CAM_LIVE_EMBED, varsayilan "*"); panelin geri kalani 'self'.
  */
 import { readFileSync } from 'node:fs';
-import { VeritabaniHatasi } from '../core/errors.mjs';
+import { DatabaseError } from '../core/errors.mjs';
 import { join } from 'node:path';
-import { govdeOku, hamGovdeOku, json } from '../core/http.mjs';
+import { readBody, readRawBody, json } from '../core/http.mjs';
 
-const DOSYALAR = { 'live.js': 'text/javascript; charset=utf-8', 'live.css': 'text/css; charset=utf-8', 'theme.mjs': 'text/javascript; charset=utf-8' };
+const FILES = { 'live.js': 'text/javascript; charset=utf-8', 'live.css': 'text/css; charset=utf-8', 'theme.mjs': 'text/javascript; charset=utf-8' };
 
-export function liveDenetleyici({ live, yapilandirma }) {
-  const kok = join(yapilandirma.gorunumler, '..', 'live');
-  const cerceve = String(yapilandirma.live.cerceve ?? '').split(/\s+/).filter((x) => x === '*' || /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(x));
+export function liveController({ live, config }) {
+  const root = join(config.views, '..', 'live');
+  const frame = String(config.live.frame ?? '').split(/\s+/).filter((x) => x === '*' || /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(x));
   /** Gomme izni: yalniz /live yanitlarinda (guvenlik.basliklar'in frame-ancestors 'self' ve X-Frame-Options'i burada degisir). */
-  const gomme = (res) => {
+  const embed = (res) => {
     res.removeHeader('X-Frame-Options');
     const csp = String(res.getHeader('Content-Security-Policy') ?? '');
-    res.setHeader('Content-Security-Policy', csp.replace(/frame-ancestors [^;]*/, `frame-ancestors ${cerceve.length ? cerceve.join(' ') : "'self'"}`));
+    res.setHeader('Content-Security-Policy', csp.replace(/frame-ancestors [^;]*/, `frame-ancestors ${frame.length ? frame.join(' ') : "'self'"}`));
   };
-  const kapali = (ctx) => (live.acik ? false : (json(ctx.res, 404, { hata: 'Yok', kod: 'BULUNAMADI' }), true));
-  const admin = (asal) => asal?.tur === 'uye' && asal.rol === 'admin';
+  const closed = (ctx) => (live.open ? false : (json(ctx.res, 404, { error: 'Yok', code: 'NOT_FOUND' }), true));
+  const admin = (principal) => principal?.type === 'member' && principal.role === 'admin';
   return {
-    async sayfa(ctx) {
-      if (kapali(ctx)) return;
+    async page(ctx) {
+      if (closed(ctx)) return;
       // Sayfa goreli adres kullaniyor: /live -> /live/
-      if (!ctx.yol.endsWith('/')) { ctx.res.writeHead(301, { Location: '/live/', 'Cache-Control': 'no-store' }); return ctx.res.end(); }
-      gomme(ctx.res);
+      if (!ctx.path.endsWith('/')) { ctx.res.writeHead(301, { Location: '/live/', 'Cache-Control': 'no-store' }); return ctx.res.end(); }
+      embed(ctx.res);
       ctx.res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-      ctx.res.end(readFileSync(join(kok, 'index.html')));
+      ctx.res.end(readFileSync(join(root, 'index.html')));
     },
-    async statik(ctx) {
-      if (kapali(ctx)) return;
-      const tur = DOSYALAR[ctx.param.dosya];
-      if (!tur) return json(ctx.res, 404, { hata: 'Yok', kod: 'BULUNAMADI' });
-      gomme(ctx.res);
-      ctx.res.writeHead(200, { 'Content-Type': tur, 'Cache-Control': 'no-cache' });
-      ctx.res.end(readFileSync(join(kok, ctx.param.dosya)));
+    async serveStatic(ctx) {
+      if (closed(ctx)) return;
+      const type = FILES[ctx.param.file];
+      if (!type) return json(ctx.res, 404, { error: 'Yok', code: 'NOT_FOUND' });
+      embed(ctx.res);
+      ctx.res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' });
+      ctx.res.end(readFileSync(join(root, ctx.param.file)));
     },
     /** Kamera listesi: yalniz yol, ad, cihaz adi (adres/parola YOK). */
-    async kameralar(ctx) {
-      if (kapali(ctx)) return;
-      gomme(ctx.res);
-      return json(ctx.res, 200, { kameralar: live.kameralar, varsayilan: live.duzen().varsayilan ? live.duzen().yollar : [] });
+    async cameras(ctx) {
+      if (closed(ctx)) return;
+      embed(ctx.res);
+      return json(ctx.res, 200, { cameras: live.cameras, defaultOrder: live.layout().isDefault ? live.layout().paths : [] });
     },
     /** Izleme baglantisi (WHEP): SDP teklifi mediamtx'e gider, cevap tarayiciya doner. Kimliksiz: izlemek herkese acik. */
     async whep(ctx) {
-      if (kapali(ctx)) return;
-      if (!/^application\/sdp\b/i.test(ctx.istek.headers['content-type'] ?? '')) return json(ctx.res, 415, { hata: 'Gövde application/sdp olmalı', kod: 'GECERSIZ_ISTEK' });
-      const teklif = await hamGovdeOku(ctx.istek, 64_000);
+      if (closed(ctx)) return;
+      if (!/^application\/sdp\b/i.test(ctx.req.headers['content-type'] ?? '')) return json(ctx.res, 415, { error: 'Gövde application/sdp olmalı', code: 'INVALID_REQUEST' });
+      const offer = await readRawBody(ctx.req, 64_000);
       let c;
-      try { c = await live.whep(ctx.param.yol, teklif); }
-      catch (e) { console.error('live whep:', e.message); return json(ctx.res, 502, { hata: 'Görüntü sunucusuna ulaşılamadı', kod: 'RTC' }); }
-      if (c.durum === 404 && !c.sdp) return json(ctx.res, 404, { hata: 'Yok', kod: 'BULUNAMADI' });
-      ctx.res.writeHead(c.durum, { 'Content-Type': c.durum < 300 ? 'application/sdp' : 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+      try { c = await live.whep(ctx.param.path, offer); }
+      catch (e) { console.error('live whep:', e.message); return json(ctx.res, 502, { error: 'Görüntü sunucusuna ulaşılamadı', code: 'RTC' }); }
+      if (c.status === 404 && !c.sdp) return json(ctx.res, 404, { error: 'Yok', code: 'NOT_FOUND' });
+      ctx.res.writeHead(c.status, { 'Content-Type': c.status < 300 ? 'application/sdp' : 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
       return ctx.res.end(c.sdp);
     },
-    async duzen(ctx) { if (kapali(ctx)) return; gomme(ctx.res); return json(ctx.res, 200, live.duzen()); },
-    /** Ust serit/tema/duzenleme yalniz admin: oturumu panel kendisi cozer (kimlikIstege; merkez erisimi, ortak cikis, IP dahil). */
-    async yetki(ctx) { if (kapali(ctx)) return; gomme(ctx.res); return json(ctx.res, 200, { duzenleyebilir: admin(ctx.asal), ad: admin(ctx.asal) ? ctx.asal.ad : null }); },
-    async duzenYaz(ctx) {
-      if (kapali(ctx)) return;
-      if (!admin(ctx.asal)) return json(ctx.res, 403, { hata: 'Düzeni yalnız admin kaydeder', kod: 'YASAK' });
-      const g = await govdeOku(ctx.istek, 20_000);
-      try { const d = await live.duzenYaz(g, ctx.asal.ad); console.log(`live duzen: ${ctx.asal.ad}, ${d.yollar.length} kamera`); return json(ctx.res, 200, d); }
-      catch (e) { if (e instanceof VeritabaniHatasi) throw e; return json(ctx.res, 400, { hata: e.message, kod: 'GECERSIZ_ISTEK' }); }
+    async layout(ctx) { if (closed(ctx)) return; embed(ctx.res); return json(ctx.res, 200, live.layout()); },
+    /** Ust serit/tema/duzenleme yalniz admin: oturumu panel kendisi cozer (identityOptional; merkez erisimi, ortak cikis, IP dahil). */
+    async permissions(ctx) { if (closed(ctx)) return; embed(ctx.res); return json(ctx.res, 200, { canEdit: admin(ctx.principal), name: admin(ctx.principal) ? ctx.principal.name : null }); },
+    async writeLayout(ctx) {
+      if (closed(ctx)) return;
+      if (!admin(ctx.principal)) return json(ctx.res, 403, { error: 'Düzeni yalnız admin kaydeder', code: 'FORBIDDEN' });
+      const g = await readBody(ctx.req, 20_000);
+      try { const d = await live.writeLayout(g, ctx.principal.name); console.log(`live duzen: ${ctx.principal.name}, ${d.paths.length} kamera`); return json(ctx.res, 200, d); }
+      catch (e) { if (e instanceof DatabaseError) throw e; return json(ctx.res, 400, { error: e.message, code: 'INVALID_REQUEST' }); }
     },
   };
 }

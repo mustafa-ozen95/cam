@@ -2,7 +2,7 @@
 # (bkz. src/services/live.mjs). docker/rtc.Dockerfile bu dosyayi imaja koyar.
 #
 # Sunucuya gore degisen tek ayar tarayiciya verilecek adres: webrtcAdditionalHosts. Ortamdan verilir
-# (compose: KAMERA_RTC_ADRES -> MTX_WEBRTCADDITIONALHOSTS, virgulle birden cok); mediamtx her ayari
+# (compose: CAM_RTC_HOST -> MTX_WEBRTCADDITIONALHOSTS, virgulle birden cok); mediamtx her ayari
 # MTX_<AD> degiskeniyle ezer.
 logLevel: warn
 logDestinations: [stdout]

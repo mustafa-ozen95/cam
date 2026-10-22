@@ -1,7 +1,7 @@
 /**
  * Guncelleme kontrolu: GitHub'a cikmadan, sahte fetch ile. DC panellerindeki GuncellemeDenetimiTest'in karsiligi.
  * Asil kurallar: karsilastirma son BASARILI derlemeyle yapilir, yon olculur (ileride olan "guncelleme" sayilmaz), jeton
- * sonucta ve iletilerde gecmez, jeton yoksa acik depoya jetonsuz sorulur; uclar yalniz guncelleme.denetle iznine acik.
+ * sonucta ve iletilerde gecmez, jeton yoksa acik depoya jetonsuz sorulur; uclar yalniz update.check iznine acik.
  * Calisan surum, derlemeye commit vermeyen platformlarda baglamdaki .git'ten okunur (docker/read-version.sh).
  */
 import { test } from 'node:test';
@@ -11,157 +11,157 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GuncellemeHizmeti } from '../src/services/updates.mjs';
-import { IZINLER } from '../src/models/permission.mjs';
-import { uygulamaAc, vtAc } from './helpers.mjs';
-import { Ayarlar } from '../src/core/tables.mjs';
+import { UpdateService } from '../src/services/updates.mjs';
+import { PERMISSIONS } from '../src/models/permission.mjs';
+import { openApp, openDb } from './helpers.mjs';
+import { Settings } from '../src/core/tables.mjs';
 
-const JETON = 'github_pat_SINAMA_JETONU_123';
-const CALISAN = 'a'.repeat(40), SON = 'b'.repeat(40);
-const AYAR = { depo: 'mustafa-ozen95/kamera-ornek', is: 'image.yml', dal: 'main', jeton: JETON, surum: CALISAN, saat: '06:50', api: 'https://api.github.com' };
+const TOKEN = 'github_pat_SINAMA_JETONU_123';
+const RUNNING = 'a'.repeat(40), LAST = 'b'.repeat(40);
+const SETTING = { repo: 'mustafa-ozen95/kamera-ornek', is: 'image.yml', branch: 'main', token: TOKEN, version: RUNNING, clock: '06:50', api: 'https://api.github.com' };
 
 /** Sahte GitHub: derleme listesi ve compare yaniti; gelen istekler `istekler`de. */
-function sahteGithub({ son = SON, fark = { status: 'identical' }, kod = 200, kopuk = false, govde = { message: 'Bad credentials' } } = {}) {
-  const istekler = [];
-  const fetch = async (url, secenek) => {
-    istekler.push({ url: String(url), secenek });
-    if (kopuk) throw new TypeError('fetch failed');
-    const yanit = (k, j) => new Response(JSON.stringify(j), { status: k, headers: { 'Content-Type': 'application/json' } });
-    if (String(url).includes('/actions/workflows/image.yml/runs')) return kod === 200 ? yanit(200, { workflow_runs: [{ head_sha: son, updated_at: '2026-10-20T10:00:00Z' }] }) : yanit(kod, govde);
-    if (String(url).includes('/compare/')) return yanit(200, fark);
-    return yanit(404, { message: 'Not Found' });
+function mockGithub({ last = LAST, diff = { status: 'identical' }, code = 200, broken = false, body = { message: 'Bad credentials' } } = {}) {
+  const requests = [];
+  const fetch = async (url, option) => {
+    requests.push({ url: String(url), option });
+    if (broken) throw new TypeError('fetch failed');
+    const response = (k, j) => new Response(JSON.stringify(j), { status: k, headers: { 'Content-Type': 'application/json' } });
+    if (String(url).includes('/actions/workflows/image.yml/runs')) return code === 200 ? response(200, { workflow_runs: [{ head_sha: last, updated_at: '2026-10-20T10:00:00Z' }] }) : response(code, body);
+    if (String(url).includes('/compare/')) return response(200, diff);
+    return response(404, { message: 'Not Found' });
   };
-  return { fetch, istekler };
+  return { fetch, requests };
 }
 
-async function hizmet(ayar = {}, gh = sahteGithub()) {
-  const v = await vtAc(), ayarlar = new Ayarlar(v.vt);
-  const h = await new GuncellemeHizmeti({ ayarlar, ayar: { ...AYAR, ...ayar }, fetch: gh.fetch }).yukle();
-  return { h, gh, vt: v.vt, ayarlar, temizle: () => v.sil() };
+async function service(setting = {}, gh = mockGithub()) {
+  const v = await openDb(), settings = new Settings(v.db);
+  const h = await new UpdateService({ settings, setting: { ...SETTING, ...setting }, fetch: gh.fetch }).load();
+  return { h, gh, db: v.db, settings, clear: () => v.remove() };
 }
 
-const commit = (sha, mesaj, tarih) => ({ sha, commit: { message: mesaj, committer: { date: tarih } } });
+const commit = (sha, message, date) => ({ sha, commit: { message: message, committer: { date: date } } });
 
 test('jeton yoksa açık depoya jetonsuz sorulur', async () => {
-  const { h, gh, temizle } = await hizmet({ jeton: '' }, sahteGithub({ son: CALISAN }));
-  assert.equal((await h.denetle('sınama')).durum, 'guncel');
-  assert.equal(gh.istekler.length, 1); assert.equal(gh.istekler[0].secenek.headers.Authorization, undefined);
-  await temizle();
+  const { h, gh, clear } = await service({ token: '' }, mockGithub({ last: RUNNING }));
+  assert.equal((await h.check('sınama')).status, 'current');
+  assert.equal(gh.requests.length, 1); assert.equal(gh.requests[0].option.headers.Authorization, undefined);
+  await clear();
 });
 
 test('jetonsuz sorulan özel ya da olmayan depo anlaşılır hata verir', async () => {
-  const { h, temizle } = await hizmet({ jeton: '' }, sahteGithub({ kod: 404, govde: { message: 'Not Found' } }));
-  const s = await h.denetle('sınama');
-  assert.equal(s.durum, 'hata'); assert.match(s.aciklama, /404/); assert.match(s.aciklama, /GUNCELLEME_JETONU/);
-  await temizle();
+  const { h, clear } = await service({ token: '' }, mockGithub({ code: 404, body: { message: 'Not Found' } }));
+  const s = await h.check('sınama');
+  assert.equal(s.status, 'error'); assert.match(s.description, /404/); assert.match(s.description, /UPDATE_TOKEN/);
+  await clear();
 });
 
 test('çalışan sürüm derleme bağlamındaki .git\'ten okunur (ayrı ref, packed-refs, .git yok)', () => {
-  const betik = join(dirname(fileURLToPath(import.meta.url)), '..', 'docker', 'read-version.sh');
-  const kok = mkdtempSync(join(tmpdir(), 'cam-srm-'));
-  const oku = () => execFileSync('sh', [betik, kok], { encoding: 'utf8' }).trim();
+  const script = join(dirname(fileURLToPath(import.meta.url)), '..', 'docker', 'read-version.sh');
+  const root = mkdtempSync(join(tmpdir(), 'cam-srm-'));
+  const read = () => execFileSync('sh', [script, root], { encoding: 'utf8' }).trim();
   try {
-    assert.equal(oku(), '');
-    mkdirSync(join(kok, '.git', 'refs', 'heads'), { recursive: true });
-    writeFileSync(join(kok, '.git', 'HEAD'), 'ref: refs/heads/main\n');
-    writeFileSync(join(kok, '.git', 'packed-refs'), `# pack-refs with: peeled fully-peeled sorted\n${SON} refs/heads/main\n`);
-    assert.equal(oku(), SON);
-    writeFileSync(join(kok, '.git', 'refs', 'heads', 'main'), `${CALISAN}\n`);
-    assert.equal(oku(), CALISAN);
-    writeFileSync(join(kok, '.git', 'HEAD'), 'bozuk\n');
-    assert.equal(oku(), '');
-  } finally { rmSync(kok, { recursive: true, force: true }); }
+    assert.equal(read(), '');
+    mkdirSync(join(root, '.git', 'refs', 'heads'), { recursive: true });
+    writeFileSync(join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    writeFileSync(join(root, '.git', 'packed-refs'), `# pack-refs with: peeled fully-peeled sorted\n${LAST} refs/heads/main\n`);
+    assert.equal(read(), LAST);
+    writeFileSync(join(root, '.git', 'refs', 'heads', 'main'), `${RUNNING}\n`);
+    assert.equal(read(), RUNNING);
+    writeFileSync(join(root, '.git', 'HEAD'), 'bozuk\n');
+    assert.equal(read(), '');
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('son başarılı derlemeyle aynıysa güncel; istek jetonla ve main/success süzgeciyle', async () => {
-  const { h, gh, temizle } = await hizmet({}, sahteGithub({ son: CALISAN }));
-  assert.equal((await h.denetle('sınama')).durum, 'guncel');
-  assert.equal(gh.istekler.length, 1);
-  const u = new URL(gh.istekler[0].url);
+  const { h, gh, clear } = await service({}, mockGithub({ last: RUNNING }));
+  assert.equal((await h.check('sınama')).status, 'current');
+  assert.equal(gh.requests.length, 1);
+  const u = new URL(gh.requests[0].url);
   assert.equal(u.searchParams.get('branch'), 'main'); assert.equal(u.searchParams.get('status'), 'success');
-  assert.equal(gh.istekler[0].secenek.headers.Authorization, `Bearer ${JETON}`);
-  await temizle();
+  assert.equal(gh.requests[0].option.headers.Authorization, `Bearer ${TOKEN}`);
+  await clear();
 });
 
 test('geride ise yeni sürüm; commitler yeniden eskiye; güncellenince uyarı susar', async () => {
-  const fark = { status: 'ahead', ahead_by: 2, behind_by: 0, commits: [commit('c'.repeat(40), 'Eski düzeltme\n\nayrıntı', '2026-10-19T08:00:00Z'), commit(SON, 'Yeni özellik', '2026-10-20T09:00:00Z')] };
-  const { h, gh, temizle } = await hizmet({}, sahteGithub({ fark }));
-  const s = await h.denetle('sınama');
-  assert.equal(s.durum, 'yeni'); assert.equal(s.geride, 2);
-  assert.deepEqual(s.commitler.map((c) => c.baslik), ['Yeni özellik', 'Eski düzeltme']);
-  assert.ok(gh.istekler[1].url.endsWith(`/compare/${CALISAN}...${SON}`));
-  assert.equal(h.yeniVar(), true);
-  h.ayar = { ...h.ayar, surum: SON };
-  assert.equal(h.yeniVar(), false);
-  await temizle();
+  const diff = { status: 'ahead', ahead_by: 2, behind_by: 0, commits: [commit('c'.repeat(40), 'Eski düzeltme\n\nayrıntı', '2026-10-19T08:00:00Z'), commit(LAST, 'Yeni özellik', '2026-10-20T09:00:00Z')] };
+  const { h, gh, clear } = await service({}, mockGithub({ diff }));
+  const s = await h.check('sınama');
+  assert.equal(s.status, 'new'); assert.equal(s.behind, 2);
+  assert.deepEqual(s.commitList.map((c) => c.header), ['Yeni özellik', 'Eski düzeltme']);
+  assert.ok(gh.requests[1].url.endsWith(`/compare/${RUNNING}...${LAST}`));
+  assert.equal(h.hasNew(), true);
+  h.setting = { ...h.setting, version: LAST };
+  assert.equal(h.hasNew(), false);
+  await clear();
 });
 
 test('ileride ise güncelleme denmez', async () => {
-  const { h, temizle } = await hizmet({}, sahteGithub({ fark: { status: 'behind', ahead_by: 0, behind_by: 3, commits: [] } }));
-  const s = await h.denetle('sınama');
-  assert.equal(s.durum, 'ileride'); assert.match(s.aciklama, /geri almak/); assert.equal(h.yeniVar(), false);
-  await temizle();
+  const { h, clear } = await service({}, mockGithub({ diff: { status: 'behind', ahead_by: 0, behind_by: 3, commits: [] } }));
+  const s = await h.check('sınama');
+  assert.equal(s.status, 'ahead'); assert.match(s.description, /geri almak/); assert.equal(h.hasNew(), false);
+  await clear();
 });
 
 test('ayrışık dal', async () => {
-  const { h, temizle } = await hizmet({}, sahteGithub({ fark: { status: 'diverged', ahead_by: 1, behind_by: 2, commits: [] } }));
-  assert.equal((await h.denetle('sınama')).durum, 'ayrisik');
-  await temizle();
+  const { h, clear } = await service({}, mockGithub({ diff: { status: 'diverged', ahead_by: 1, behind_by: 2, commits: [] } }));
+  assert.equal((await h.check('sınama')).status, 'diverged');
+  await clear();
 });
 
 test('çalışan sürüm bilinmiyorsa karşılaştırılmaz', async () => {
-  const { h, gh, temizle } = await hizmet({ surum: '' });
-  const s = await h.denetle('sınama');
-  assert.equal(s.durum, 'bilinmiyor'); assert.equal(s.son, SON); assert.equal(gh.istekler.length, 1);
-  await temizle();
+  const { h, gh, clear } = await service({ version: '' });
+  const s = await h.check('sınama');
+  assert.equal(s.status, 'unknown'); assert.equal(s.last, LAST); assert.equal(gh.requests.length, 1);
+  await clear();
 });
 
 test('reddedilen jeton hata olur ve jeton veritabanına yazılmaz', async () => {
-  const { h, vt, temizle } = await hizmet({}, sahteGithub({ kod: 401 }));
-  const s = await h.denetle('sınama');
-  assert.equal(s.durum, 'hata'); assert.match(s.aciklama, /401/);
-  assert.ok(!JSON.stringify(await vt.sorgu('SELECT * FROM settings')).includes(JETON));
-  await temizle();
+  const { h, db, clear } = await service({}, mockGithub({ code: 401 }));
+  const s = await h.check('sınama');
+  assert.equal(s.status, 'error'); assert.match(s.description, /401/);
+  assert.ok(!JSON.stringify(await db.query('SELECT * FROM settings')).includes(TOKEN));
+  await clear();
 });
 
 test('erişim yoksa hata; son sonuç okunur', async () => {
-  const { h, temizle } = await hizmet({}, sahteGithub({ kopuk: true }));
-  await h.denetle('sınama');
-  const s = h.son();
-  assert.equal(s.durum, 'hata'); assert.match(s.aciklama, /erişilemedi/); assert.equal(s.tetikleyen, 'sınama'); assert.equal(s.calisan, CALISAN);
-  await temizle();
+  const { h, clear } = await service({}, mockGithub({ broken: true }));
+  await h.check('sınama');
+  const s = h.last();
+  assert.equal(s.status, 'error'); assert.match(s.description, /erişilemedi/); assert.equal(s.trigger, 'sınama'); assert.equal(s.running, RUNNING);
+  await clear();
 });
 
 test('bozuk sonuç kaydı yok sayılır', async () => {
-  const { h, ayarlar, temizle } = await hizmet();
-  await ayarlar.yaz('update-status', { durum: 'bilmem' }); await h.yukle();
-  assert.equal(h.son(), null); assert.equal(h.yeniVar(), false);
-  await temizle();
+  const { h, settings, clear } = await service();
+  await settings.write('update-status', { status: 'bilmem' }); await h.load();
+  assert.equal(h.last(), null); assert.equal(h.hasNew(), false);
+  await clear();
 });
 
 test('uçlar: admin kontrol eder; izni olmayan 403 ve gerekenIzin döner; jeton yanıtta yok', async () => {
-  assert.ok(IZINLER['guncelleme.denetle']);
-  const { istek, giris, hizmetler, kapat } = await uygulamaAc();
+  assert.ok(PERMISSIONS['update.check']);
+  const { req, login, services, close } = await openApp();
   try {
-    await giris('admin', 'adminparola1');
-    const fark = { status: 'ahead', ahead_by: 3, behind_by: 0, commits: [commit(SON, 'Yeni özellik: güncelleme sekmesi', '2026-10-20T09:00:00Z')] };
-    hizmetler.guncelleme.ayar = { ...hizmetler.guncelleme.ayar, ...AYAR };
-    hizmetler.guncelleme.fetch = sahteGithub({ fark }).fetch;
+    await login('admin', 'adminparola1');
+    const diff = { status: 'ahead', ahead_by: 3, behind_by: 0, commits: [commit(LAST, 'Yeni özellik: güncelleme sekmesi', '2026-10-20T09:00:00Z')] };
+    services.updates.setting = { ...services.updates.setting, ...SETTING };
+    services.updates.fetch = mockGithub({ diff }).fetch;
 
-    const once = await istek('/api/guncelleme');
-    assert.equal(once.durum, 200, once.metin); assert.equal(once.json.son, null); assert.equal(once.json.calisan, CALISAN);
+    const before = await req('/api/update');
+    assert.equal(before.status, 200, before.text); assert.equal(before.json.last, null); assert.equal(before.json.running, RUNNING);
 
-    const r = await istek('/api/guncelleme/denetle', { yontem: 'POST', govde: {} });
-    assert.equal(r.durum, 200, r.metin);
-    assert.equal(r.json.son.durum, 'yeni'); assert.equal(r.json.son.geride, 3); assert.equal(r.json.son.tetikleyen, 'admin'); assert.equal(r.json.yeniVar, true);
-    assert.ok(!r.metin.includes(JETON));
+    const r = await req('/api/update/check', { method: 'POST', body: {} });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.json.last.status, 'new'); assert.equal(r.json.last.behind, 3); assert.equal(r.json.last.trigger, 'admin'); assert.equal(r.json.hasNew, true);
+    assert.ok(!r.text.includes(TOKEN));
 
-    const u = await istek('/api/uyeler', { yontem: 'POST', govde: { ad: 'ali', parola: 'aliparola1', rol: 'kamera' } });
-    assert.equal(u.durum, 200, u.metin);
-    await giris('ali', 'aliparola1');
-    for (const [yol, yontem] of [['/api/guncelleme', 'GET'], ['/api/guncelleme/denetle', 'POST']]) {
-      const y = await istek(yol, { kim: 'ali', yontem, govde: yontem === 'GET' ? undefined : {} });
-      assert.equal(y.durum, 403, `${yontem} ${yol}: ${y.metin}`); assert.equal(y.json.gerekenIzin, 'guncelleme.denetle');
+    const u = await req('/api/members', { method: 'POST', body: { name: 'ali', password: 'aliparola1', role: 'camera' } });
+    assert.equal(u.status, 200, u.text);
+    await login('ali', 'aliparola1');
+    for (const [path, method] of [['/api/update', 'GET'], ['/api/update/check', 'POST']]) {
+      const y = await req(path, { who: 'ali', method, body: method === 'GET' ? undefined : {} });
+      assert.equal(y.status, 403, `${method} ${path}: ${y.text}`); assert.equal(y.json.requiredPermission, 'update.check');
     }
-  } finally { await kapat(); }
+  } finally { await close(); }
 });

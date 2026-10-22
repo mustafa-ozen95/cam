@@ -3,49 +3,49 @@
  * Ara katman imzasi: async (ctx, sonraki) => sonraki(). Denetleyici: async (ctx) => void (yaniti kendisi yazar).
  * ctx: { istek, res, yol, q (URLSearchParams), param, asal?, ... }
  */
-export class Yonlendirici {
-  constructor() { this.rotalar = []; this.grupAra = []; }
+export class Router {
+  constructor() { this.routes = []; this.groupMiddleware = []; }
 
-  /** Ara katman grubu: grup(['kimlik'], () => { ... }) icinde tanimlanan rotalar bu ara katmanlari alir. */
-  grup(aralar, fn) { const eski = this.grupAra; this.grupAra = [...eski, ...aralar]; try { fn(); } finally { this.grupAra = eski; } }
+  /** Ara katman grubu: grup(['identity'], () => { ... }) icinde tanimlanan rotalar bu ara katmanlari alir. */
+  group(middlewares, fn) { const old = this.groupMiddleware; this.groupMiddleware = [...old, ...middlewares]; try { fn(); } finally { this.groupMiddleware = old; } }
 
-  #ekle(yontemler, kalip, denetleyici, aralar = []) {
-    const parcalar = kalip.split('/').filter(Boolean);
-    const adlar = []; const re = new RegExp('^/' + parcalar.map((p) => (p.startsWith(':') ? (adlar.push(p.slice(1)), '([^/]+)') : p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).join('/') + '/?$');
-    this.rotalar.push({ yontemler, kalip, re, adlar, denetleyici, aralar: [...this.grupAra, ...aralar] });
+  #add(methods, pattern, controller, middlewares = []) {
+    const parts = pattern.split('/').filter(Boolean);
+    const names = []; const re = new RegExp('^/' + parts.map((p) => (p.startsWith(':') ? (names.push(p.slice(1)), '([^/]+)') : p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).join('/') + '/?$');
+    this.routes.push({ methods, pattern, re, names, controller, middlewares: [...this.groupMiddleware, ...middlewares] });
     return this;
   }
-  get(k, d, a) { return this.#ekle(['GET', 'HEAD'], k, d, a); }
-  post(k, d, a) { return this.#ekle(['POST'], k, d, a); }
-  put(k, d, a) { return this.#ekle(['PUT'], k, d, a); }
-  patch(k, d, a) { return this.#ekle(['PATCH'], k, d, a); }
-  delete(k, d, a) { return this.#ekle(['DELETE'], k, d, a); }
-  herhangi(k, d, a) { return this.#ekle(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'], k, d, a); }
+  get(k, d, a) { return this.#add(['GET', 'HEAD'], k, d, a); }
+  post(k, d, a) { return this.#add(['POST'], k, d, a); }
+  put(k, d, a) { return this.#add(['PUT'], k, d, a); }
+  patch(k, d, a) { return this.#add(['PATCH'], k, d, a); }
+  delete(k, d, a) { return this.#add(['DELETE'], k, d, a); }
+  any(k, d, a) { return this.#add(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'], k, d, a); }
 
-  /** Eslesen rota ve yol parametreleri; yontem uyusmazsa { yontemYok: true }. */
-  bul(yontem, yol) {
-    let yontemYok = false;
-    for (const r of this.rotalar) {
-      const m = r.re.exec(yol); if (!m) continue;
-      if (!r.yontemler.includes(yontem)) { yontemYok = true; continue; }
-      const param = {}; r.adlar.forEach((a, i) => { try { param[a] = decodeURIComponent(m[i + 1]); } catch { param[a] = m[i + 1]; } });
-      return { rota: r, param };
+  /** Eslesen rota ve yol parametreleri; yontem uyusmazsa { methodNone: true }. */
+  find(method, path) {
+    let methodNone = false;
+    for (const r of this.routes) {
+      const m = r.re.exec(path); if (!m) continue;
+      if (!r.methods.includes(method)) { methodNone = true; continue; }
+      const param = {}; r.names.forEach((a, i) => { try { param[a] = decodeURIComponent(m[i + 1]); } catch { param[a] = m[i + 1]; } });
+      return { route: r, param };
     }
-    return yontemYok ? { yontemYok: true } : null;
+    return methodNone ? { methodNone: true } : null;
   }
 
   /** Dokumantasyon icin rota listesi. */
-  liste() { return this.rotalar.map((r) => ({ yontemler: r.yontemler, kalip: r.kalip, aralar: r.aralar.map((a) => a.ad ?? a.name ?? '?') })); }
+  list() { return this.routes.map((r) => ({ methods: r.methods, pattern: r.pattern, middlewares: r.middlewares.map((a) => a.label ?? a.name ?? '?') })); }
 }
 
 /** Ara katman zincirini calistirir, sonunda denetleyiciyi cagirir. */
-export async function zincir(aralar, ctx, denetleyici) {
+export async function chain(middlewares, ctx, controller) {
   let i = -1;
-  const adim = async (n) => {
+  const step = async (n) => {
     if (n <= i) throw new Error('sonraki() iki kez çağrıldı');
     i = n;
-    if (n < aralar.length) return aralar[n](ctx, () => adim(n + 1));
-    return denetleyici(ctx);
+    if (n < middlewares.length) return middlewares[n](ctx, () => step(n + 1));
+    return controller(ctx);
   };
-  return adim(0);
+  return step(0);
 }

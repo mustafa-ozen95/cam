@@ -3,91 +3,91 @@
  * Akis durumu (PKCE dogrulayicisi + state) kisa omurlu, imzali bir cerezde tasinir: sunucuda oturum tablosu yok.
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { VeritabaniHatasi } from '../core/errors.mjs';
-import { cerezOku, cerezYaz, govdeOku, json } from '../core/http.mjs';
-import { MerkezYetkisizHatasi } from '../services/hub.mjs';
+import { DatabaseError } from '../core/errors.mjs';
+import { readCookie, writeCookie, readBody, json } from '../core/http.mjs';
+import { HubUnauthorizedError } from '../services/hub.mjs';
 
-const AKIS_CEREZI = 'kamera_merkez_akis';
-const AKIS_SN = 600;
-const ETIKET_AKIS = 'kamera2/merkez-akis';   // oturum cerezinden ayri imza amaci: akis cerezi oturum cerezi olarak gecmez. Etiket eski adla SABIT (depo cam oldu): degisirse yarim kalan girisler duser
+const FLOW_COOKIE = 'cam_hub_flow';
+const FLOW_SECONDS = 600;
+const FLOW_LABEL = 'kamera2/merkez-akis';   // oturum cerezinden ayri imza amaci: akis cerezi oturum cerezi olarak gecmez. Etiket eski adla SABIT (depo cam oldu): degisirse yarim kalan girisler duser
 
 /** Giris sayfasinda gosterilecek hata metinleri; adres cubugunda yalniz KOD gider, metin sunucuda. */
-export const MERKEZ_HATALARI = {
-  durum: 'Giriş akışı doğrulanamadı; lütfen yeniden deneyin.',
-  kod: 'Merkezden kod gelmedi.',
-  merkez: 'Merkeze ulaşılamadı; parolanızla giriş yapabilirsiniz.',
-  yetki: 'Bu panele erişim yetkiniz yok.',
+export const HUB_ERRORS = {
+  state: 'Giriş akışı doğrulanamadı; lütfen yeniden deneyin.',
+  code: 'Merkezden kod gelmedi.',
+  hub: 'Merkeze ulaşılamadı; parolanızla giriş yapabilirsiniz.',
+  denied: 'Bu panele erişim yetkiniz yok.',
 };
 
-export function merkezDenetleyici({ merkez, baglar, uyeler, gunluk, yapilandirma }) {
-  const guvenli = (res) => yapilandirma.sunucu.vekil || !!res.socket?.encrypted;
-  const yonlendir = (res, konum) => { res.writeHead(302, { Location: konum, 'Cache-Control': 'no-store' }); res.end(); };
-  const hataya = (res, kod) => { cerezYaz(res, AKIS_CEREZI, '', 0, guvenli(res)); yonlendir(res, `/?merkez=${kod}`); };
-  const imzala = (yuk) => uyeler.etiketliImza(ETIKET_AKIS, yuk);
+export function hubController({ hub, links, members, auditLog, config }) {
+  const secure = (res) => config.server.proxy || !!res.socket?.encrypted;
+  const redirect = (res, position) => { res.writeHead(302, { Location: position, 'Cache-Control': 'no-store' }); res.end(); };
+  const toError = (res, code) => { writeCookie(res, FLOW_COOKIE, '', 0, secure(res)); redirect(res, `/?hub=${code}`); };
+  const sign = (payload) => members.labeledSignature(FLOW_LABEL, payload);
 
   return {
     /** Merkeze gonderir. Dogrulayici ve state imzali cerezde kalir: donen istegin bizim baslattigimiz akis oldugunu boyle biliriz. */
-    async baslat(ctx) {
-      if (!merkez.acikMi()) return json(ctx.res, 404, { hata: 'Yok', kod: 'BULUNAMADI' });
-      const dogrulayici = merkez.dogrulayici(), durum = randomBytes(24).toString('base64url');
-      const yuk = Buffer.from(JSON.stringify({ d: dogrulayici, s: durum, e: Date.now() + AKIS_SN * 1000 })).toString('base64url');
-      cerezYaz(ctx.res, AKIS_CEREZI, `${yuk}.${imzala(yuk)}`, AKIS_SN, guvenli(ctx.res));
-      return yonlendir(ctx.res, merkez.girisAdresi(durum, merkez.meydanOkuma(dogrulayici)));
+    async start(ctx) {
+      if (!hub.isEnabled()) return json(ctx.res, 404, { error: 'Yok', code: 'NOT_FOUND' });
+      const codeVerifier = hub.codeVerifier(), status = randomBytes(24).toString('base64url');
+      const payload = Buffer.from(JSON.stringify({ d: codeVerifier, s: status, e: Date.now() + FLOW_SECONDS * 1000 })).toString('base64url');
+      writeCookie(ctx.res, FLOW_COOKIE, `${payload}.${sign(payload)}`, FLOW_SECONDS, secure(ctx.res));
+      return redirect(ctx.res, hub.authorizeUrl(status, hub.codeChallenge(codeVerifier)));
     },
 
-    async geri(ctx) {
-      if (!merkez.acikMi()) return json(ctx.res, 404, { hata: 'Yok', kod: 'BULUNAMADI' });
-      const { istek, res } = ctx;
-      const akis = akisCoz(cerezOku(istek.headers.cookie, AKIS_CEREZI), imzala);
-      const state = ctx.q.get('state') ?? '', kod = ctx.q.get('code') ?? '';
+    async back(ctx) {
+      if (!hub.isEnabled()) return json(ctx.res, 404, { error: 'Yok', code: 'NOT_FOUND' });
+      const { req, res } = ctx;
+      const stream = parseFlow(readCookie(req.headers.cookie, FLOW_COOKIE), sign);
+      const state = ctx.q.get('state') ?? '', code = ctx.q.get('code') ?? '';
       // STATE ESLESMELI (CSRF): eslesmiyorsa bu akisi biz baslatmamisiz; saldirgan kendi kodunu kurbana kullandirabilirdi.
-      if (!akis || !state || !guvenliEsit(akis.s, state)) return hataya(res, 'durum');
-      if (!kod) return hataya(res, 'kod');
-      let kimlik;
+      if (!stream || !state || !secureEqual(stream.s, state)) return toError(res, 'state');
+      if (!code) return toError(res, 'code');
+      let identity;
       try {
-        const jeton = await merkez.jeton(kod, akis.d);
-        kimlik = await merkez.kullanici(jeton.access_token);
+        const token = await hub.token(code, stream.d);
+        identity = await hub.username(token.access_token);
       } catch (e) {
-        if (e instanceof MerkezYetkisizHatasi) { gunluk.yaz('giris-merkez-red', 'merkez', istek, { neden: e.message }); return hataya(res, 'yetki'); }
-        gunluk.yaz('giris-merkez-hata', 'merkez', istek, { neden: e.message }); return hataya(res, 'merkez');
+        if (e instanceof HubUnauthorizedError) { auditLog.write('hub-login-denied', 'hub', req, { reason: e.message }); return toError(res, 'denied'); }
+        auditLog.write('hub-login-error', 'hub', req, { reason: e.message }); return toError(res, 'hub');
       }
       let u;
-      try { u = await baglar.girisYap(kimlik, istek); }
-      catch (e) { if (e instanceof VeritabaniHatasi) throw e; gunluk.yaz('giris-merkez-red', kimlik.eposta, istek, { neden: e.message }); return hataya(res, 'yetki'); }
-      cerezYaz(res, AKIS_CEREZI, '', 0, guvenli(res));
-      cerezYaz(res, yapilandirma.oturum.cerez, uyeler.oturumCerezi(u), yapilandirma.oturum.gun * 86400, guvenli(res));
-      gunluk.yaz('giris-merkez', u.ad, istek, { eposta: kimlik.eposta, merkezRolu: kimlik.rol });
-      return yonlendir(res, '/');
+      try { u = await links.login(identity, req); }
+      catch (e) { if (e instanceof DatabaseError) throw e; auditLog.write('hub-login-denied', identity.email, req, { reason: e.message }); return toError(res, 'denied'); }
+      writeCookie(res, FLOW_COOKIE, '', 0, secure(res));
+      writeCookie(res, config.session.cookie, members.sessionCookie(u), config.session.day * 86400, secure(res));
+      auditLog.write('hub-login', u.name, req, { email: identity.email, hubRole: identity.role });
+      return redirect(res, '/');
     },
 
     /**
      * Merkezden "bu kimlik degisti" bildirimi. Jeton yok; kimlik gövdenin HMAC imzasidir (bildirim sirriyla).
      * Gelen veriye guvenilmez: dogru durum merkezden ayrica sorulur. Imza tutmasa da yanit ayni: uc bir sey sizdirmaz.
      */
-    async tazele(ctx) {
-      const g = await govdeOku(ctx.istek).catch(() => ({}));
+    async refresh(ctx) {
+      const g = await readBody(ctx.req).catch(() => ({}));
       const subject = String(g.subject ?? '').trim();
-      if (merkez.acikMi() && merkez.bildirimImzaliMi(subject, String(ctx.istek.headers['x-kimlik-imza'] ?? '')) && baglar.bul(subject)) {
-        baglar.tazele(subject).catch(() => {});
+      if (hub.isEnabled() && hub.isNotificationSigned(subject, String(ctx.req.headers['x-kimlik-imza'] ?? '')) && links.find(subject)) {
+        links.refresh(subject).catch(() => {});
       }
-      return json(ctx.res, 200, { sonuc: 'alındı' });
+      return json(ctx.res, 200, { result: 'alındı' });
     },
 
     /** Merkezden "bu kisi cikis yapti" (ortak cikis). Imza ani da kapsar; tutarsa an dogrudan uygulanir. Yanit her durumda ayni. */
-    async cikis(ctx) {
-      const g = await govdeOku(ctx.istek).catch(() => ({}));
-      const subject = String(g.subject ?? '').trim(), an = Number(g.an);
-      if (merkez.acikMi() && merkez.cikisImzaliMi(subject, an, String(ctx.istek.headers['x-kimlik-imza'] ?? ''))) await baglar.cikisIsle(subject, an);
-      return json(ctx.res, 200, { sonuc: 'alındı' });
+    async logout(ctx) {
+      const g = await readBody(ctx.req).catch(() => ({}));
+      const subject = String(g.subject ?? '').trim(), moment = Number(g.moment);
+      if (hub.isEnabled() && hub.isLogoutSigned(subject, moment, String(ctx.req.headers['x-kimlik-imza'] ?? ''))) await links.processLogout(subject, moment);
+      return json(ctx.res, 200, { result: 'alındı' });
     },
   };
 }
 
-function akisCoz(cerez, imzala) {
-  if (!cerez) return null;
-  const [yuk, imza] = cerez.split('.');
-  if (!yuk || !imza || !guvenliEsit(imzala(yuk), imza)) return null;
-  try { const a = JSON.parse(Buffer.from(yuk, 'base64url').toString()); return typeof a.d === 'string' && typeof a.s === 'string' && typeof a.e === 'number' && a.e > Date.now() ? a : null; } catch { return null; }
+function parseFlow(cookie, sign) {
+  if (!cookie) return null;
+  const [payload, signature] = cookie.split('.');
+  if (!payload || !signature || !secureEqual(sign(payload), signature)) return null;
+  try { const a = JSON.parse(Buffer.from(payload, 'base64url').toString()); return typeof a.d === 'string' && typeof a.s === 'string' && typeof a.e === 'number' && a.e > Date.now() ? a : null; } catch { return null; }
 }
 
-function guvenliEsit(a, b) { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && timingSafeEqual(x, y); }
+function secureEqual(a, b) { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && timingSafeEqual(x, y); }

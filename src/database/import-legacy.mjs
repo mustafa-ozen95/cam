@@ -12,121 +12,128 @@
 import { createHmac } from 'node:crypto';
 import { existsSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import { Ayarlar, Koleksiyon } from '../core/tables.mjs';
-import { ANAHTARLAR, CIHAZLAR, MERKEZ_BAGLARI, ROLLER, UYELER, YERLESIK_IZINLER } from './schema.mjs';
+import { Settings, Collection } from '../core/tables.mjs';
+import * as legacy from './legacy-names.mjs';
+import { API_KEYS, DEVICES, HUB_LINKS, ROLES, MEMBERS, BUILTIN_PERMISSIONS } from './schema.mjs';
 
-export const ESKI_DOSYALAR = ['kullanicilar.json', 'yetki.json', 'cihazlar.json', 'kanallar.json', 'gunluk.jsonl', 'merkez-baglari.json', 'guncelleme.json', 'live-duzen.json'];
-const PARCA = 500;
+export const LEGACY_FILES = ['kullanicilar.json', 'yetki.json', 'cihazlar.json', 'kanallar.json', 'gunluk.jsonl', 'merkez-baglari.json', 'guncelleme.json', 'live-duzen.json'];
+const PART = 500;
 
-const oku = (yol, ad) => { try { return readFileSync(yol, 'utf8'); } catch (e) { throw new Error(`${ad} okunamadı: ${e.message}`); } };
-const jsonOku = (yol, ad) => { const m = oku(yol, ad); try { return JSON.parse(m); } catch (e) { throw new Error(`${ad} geçerli JSON değil: ${e.message}`); } };
+const read = (path, name) => { try { return readFileSync(path, 'utf8'); } catch (e) { throw new Error(`${name} okunamadı: ${e.message}`); } };
+const readJson = (path, name) => { const m = read(path, name); try { return JSON.parse(m); } catch (e) { throw new Error(`${name} geçerli JSON değil: ${e.message}`); } };
 
 /** Eski dosyalardaki verinin bellege yuklenirken uygulanan donusumleri (JSON donemindeki kurucularin yaptiklari). */
-export function eskiVeriyiDonustur({ kullanicilar, yetki, cihazlar, merkezBaglari }) {
-  const simdi = new Date().toISOString();
-  const uyeler = (kullanicilar ?? []).map((u) => ({ ...u, olusturma: u.olusturma || simdi }));
-  const baglar = {};
-  for (const [sub, b] of Object.entries(merkezBaglari ?? {})) {
-    if (b.uyeKimlik) { baglar[sub] = b; continue; }
-    const u = uyeler.find((x) => x.ad.toLowerCase() === String(b.ad).toLowerCase());
-    if (u) baglar[sub] = { ...b, uyeKimlik: u.olusturma };   // uyesi olmayan eski bag atilir
+export function convertLegacyData({ users, permissions, devices, hubLinks }) {
+  const now = new Date().toISOString();
+  const members = (users ?? []).map((u) => ({ ...u, createdAt: u.createdAt || now }));
+  const links = {};
+  for (const [sub, b] of Object.entries(hubLinks ?? {})) {
+    if (b.userStamp) { links[sub] = b; continue; }
+    const u = members.find((x) => x.name.toLowerCase() === String(b.name).toLowerCase());
+    if (u) links[sub] = { ...b, userStamp: u.createdAt };   // uyesi olmayan eski bag atilir
   }
-  const y = { surum: 1, roller: {}, anahtarlar: [], yerlesikIzinler: {}, ...(yetki ?? {}) };
-  const cihazListe = cihazlar?.cihazlar ?? [];
-  const ustSinir = Math.max(Number(cihazlar?.ustSinir) || 0, cihazListe.reduce((m, c) => Math.max(m, c.baslangic + c.kanalSayisi), 0));
-  return { uyeler, baglar, yetki: y, cihazListe, ustSinir };
+  const y = { version: 1, roles: {}, keys: [], builtinPermissions: {}, ...(permissions ?? {}) };
+  const deviceList = devices?.devices ?? [];
+  const blockLimit = Math.max(Number(devices?.blockLimit) || 0, deviceList.reduce((m, c) => Math.max(m, c.startIndex + c.channelCount), 0));
+  return { members, links, permissions: y, deviceList, blockLimit };
 }
 
 /** Gunluk zincirini kayit metinlerinden dogrular (veritabani donemindeki Gunluk.dogrula ile ayni kural). */
-function zincirDogrula(metinler, imzala) {
-  let onceki = '', n = 0;
-  for (const m of metinler) {
+function verifyChain(texts, sign) {
+  let previous = '', n = 0;
+  for (const m of texts) {
     n++;
     let k; try { k = JSON.parse(m); } catch { return `${n}. günlük satırı okunamıyor`; }
-    const { imza, ...gerisi } = k;
-    if (k.onceki !== onceki || imzala(onceki + JSON.stringify(gerisi)) !== imza) return `${n}. günlük kaydında zincir bozuk (${k.z})`;
-    onceki = imza;
+    const signature = legacy.auditChainStep(k, previous, sign);   // works on the record as stored (legacy or current names)
+    if (!signature) return `${n}. günlük kaydında zincir bozuk (${k.time ?? k.z})`;
+    previous = signature;
   }
   return null;
 }
 
-async function tablolarBosMu(vt) {
+async function areTablesEmpty(db) {
   for (const t of ['users', 'devices', 'audit_log', 'roles', 'builtin_role_permissions', 'api_keys', 'hub_links']) {
-    const [[r]] = await vt.havuz.query(`SELECT COUNT(*) AS n FROM ${t}`);
+    const [[r]] = await db.pool.query(`SELECT COUNT(*) AS n FROM ${t}`);
     if (Number(r.n) > 0) return false;
   }
-  const [[a]] = await vt.havuz.query("SELECT COUNT(*) AS n FROM settings WHERE name <> 'key-fingerprint'");
+  const [[a]] = await db.pool.query("SELECT COUNT(*) AS n FROM settings WHERE name <> 'key-fingerprint'");
   return Number(a.n) === 0;
 }
 
-/** Dondurur: { durum: 'yok' | 'atlandi' | 'aktarildi', sayilar } */
-export async function eskiVeriyiAktar({ vt, veriKlasoru, gizli, gunlukYaz = console.log }) {
-  const var_ = ESKI_DOSYALAR.filter((d) => existsSync(join(veriKlasoru, d)));
-  if (!var_.length) return { durum: 'yok' };
-  if (!(await tablolarBosMu(vt))) {
-    gunlukYaz(`UYARI: data/ klasöründe eski JSON dosyaları var (${var_.join(', ')}) ama veritabanı tabloları dolu; dosyalara dokunulmadı. Veri artık veritabanında; bu dosyaları yedekledikten sonra silebilirsiniz.`);
-    return { durum: 'atlandi' };
+/** Dondurur: { status: 'none' | 'skipped' | 'imported', counts } */
+export async function importLegacyData({ db, dataDir, secret, writeAuditLog = console.log }) {
+  const var_ = LEGACY_FILES.filter((d) => existsSync(join(dataDir, d)));
+  if (!var_.length) return { status: 'none' };
+  if (!(await areTablesEmpty(db))) {
+    writeAuditLog(`UYARI: data/ klasöründe eski JSON dosyaları var (${var_.join(', ')}) ama veritabanı tabloları dolu; dosyalara dokunulmadı. Veri artık veritabanında; bu dosyaları yedekledikten sonra silebilirsiniz.`);
+    return { status: 'skipped' };
   }
-  const yol = (d) => join(veriKlasoru, d);
-  const imzala = (m) => createHmac('sha256', gizli).update(m).digest('hex');
+  const path = (d) => join(dataDir, d);
+  const sign = (m) => createHmac('sha256', secret).update(m).digest('hex');
 
   // 1) oku + donustur (veritabanina hic dokunmadan: bozuk dosya burada durdurur)
-  const kaynak = {
-    kullanicilar: var_.includes('kullanicilar.json') ? jsonOku(yol('kullanicilar.json'), 'kullanicilar.json') : [],
-    yetki: var_.includes('yetki.json') ? jsonOku(yol('yetki.json'), 'yetki.json') : null,
-    cihazlar: var_.includes('cihazlar.json') ? jsonOku(yol('cihazlar.json'), 'cihazlar.json') : null,
-    merkezBaglari: var_.includes('merkez-baglari.json') ? jsonOku(yol('merkez-baglari.json'), 'merkez-baglari.json') : {},
+  const source = {
+    users: var_.includes('kullanicilar.json') ? readJson(path('kullanicilar.json'), 'kullanicilar.json') : [],
+    permissions: var_.includes('yetki.json') ? readJson(path('yetki.json'), 'yetki.json') : null,
+    devices: var_.includes('cihazlar.json') ? readJson(path('cihazlar.json'), 'cihazlar.json') : null,
+    hubLinks: var_.includes('merkez-baglari.json') ? readJson(path('merkez-baglari.json'), 'merkez-baglari.json') : {},
   };
-  if (!Array.isArray(kaynak.kullanicilar)) throw new Error('kullanicilar.json bir dizi olmalı');
-  const ayarBelgeleri = {};
-  for (const [dosya, ad] of [['kanallar.json', 'channels'], ['guncelleme.json', 'update-status'], ['live-duzen.json', 'live-layout']]) if (var_.includes(dosya)) ayarBelgeleri[ad] = jsonOku(yol(dosya), dosya);
-  const gunlukMetinleri = var_.includes('gunluk.jsonl') ? oku(yol('gunluk.jsonl'), 'gunluk.jsonl').split('\n').map((s) => s.trim()).filter(Boolean) : [];
-  const kaynakZincirHatasi = zincirDogrula(gunlukMetinleri, imzala);
-  if (kaynakZincirHatasi) throw new Error(`gunluk.jsonl: ${kaynakZincirHatasi}; imza zinciri doğrulanamadan aktarılmaz (yanlış gizli anahtar olabilir)`);
-  const d = eskiVeriyiDonustur(kaynak);
-  const roller = Object.entries(d.yetki.roller).map(([id, r]) => ({ id, ...r }));
-  const yerlesik = Object.entries(d.yetki.yerlesikIzinler).map(([rol, izinler]) => ({ rol, izinler }));
-  const baglar = Object.entries(d.baglar).map(([sub, b]) => ({ sub, ...b }));
-  const beklenen = { users: d.uyeler.length, devices: d.cihazListe.length, roles: roller.length, builtin_role_permissions: yerlesik.length, api_keys: d.yetki.anahtarlar.length, hub_links: baglar.length, audit_log: gunlukMetinleri.length };
+  if (!Array.isArray(source.users)) throw new Error('kullanicilar.json bir dizi olmalı');
+  // Turkish-era field and value names -> current names (idempotent: files that already use the current names pass through)
+  source.users = source.users.map(legacy.memberRecord);
+  if (source.permissions) source.permissions = legacy.permissionsFile(source.permissions);
+  if (source.devices) source.devices = legacy.devicesFile(source.devices);
+  source.hubLinks = Object.fromEntries(Object.entries(source.hubLinks).map(([sub, b]) => [sub, legacy.hubLinkRecord(b)]));
+  const settingDocuments = {};
+  const SETTING_FILES = [['kanallar.json', 'channels', legacy.channelsDoc], ['guncelleme.json', 'update-status', legacy.updateStatusDoc], ['live-duzen.json', 'live-layout', legacy.layoutDoc]];
+  for (const [file, name, convert] of SETTING_FILES) if (var_.includes(file)) settingDocuments[name] = convert(readJson(path(file), file));
+  const auditLines = var_.includes('gunluk.jsonl') ? read(path('gunluk.jsonl'), 'gunluk.jsonl').split('\n').map((s) => s.trim()).filter(Boolean) : [];
+  const sourceChainError = verifyChain(auditLines, sign);
+  if (sourceChainError) throw new Error(`gunluk.jsonl: ${sourceChainError}; imza zinciri doğrulanamadan aktarılmaz (yanlış gizli anahtar olabilir)`);
+  const d = convertLegacyData(source);
+  const roles = Object.entries(d.permissions.roles).map(([id, r]) => ({ id, ...r }));
+  const builtin = Object.entries(d.permissions.builtinPermissions).map(([role, permissions]) => ({ role, permissions }));
+  const links = Object.entries(d.links).map(([sub, b]) => ({ sub, ...b }));
+  const expected = { users: d.members.length, devices: d.deviceList.length, roles: roles.length, builtin_role_permissions: builtin.length, api_keys: d.permissions.keys.length, hub_links: links.length, audit_log: auditLines.length };
 
   // 2) + 3) tek islemde yaz ve dogrula
-  await vt.islem(async (c) => {
-    await new Koleksiyon(vt, UYELER).topluEkle(c, d.uyeler);
-    await new Koleksiyon(vt, CIHAZLAR).topluEkle(c, d.cihazListe);
-    await new Koleksiyon(vt, ROLLER).topluEkle(c, roller);
-    await new Koleksiyon(vt, YERLESIK_IZINLER).topluEkle(c, yerlesik);
-    await new Koleksiyon(vt, ANAHTARLAR).topluEkle(c, d.yetki.anahtarlar);
-    await new Koleksiyon(vt, MERKEZ_BAGLARI).topluEkle(c, baglar);
-    const ayarlar = new Ayarlar(vt);
-    if (kaynak.cihazlar) await ayarlar.yaz('device-block-limit', d.ustSinir, c);
-    for (const [ad, deger] of Object.entries(ayarBelgeleri)) await ayarlar.yaz(ad, deger, c);
-    for (let i = 0; i < gunlukMetinleri.length; i += PARCA) {
-      const satirlar = gunlukMetinleri.slice(i, i + PARCA).map((m) => { const k = JSON.parse(m); return [k.z, k.yerel ?? null, String(k.olay).slice(0, 100), k.kullanici == null ? null : String(k.kullanici).slice(0, 512), k.ip == null ? null : String(k.ip).slice(0, 100), k.ileri ? JSON.stringify(k.ileri) : null, k.onceki, k.imza, m]; });
-      await c.query('INSERT INTO audit_log (ts, local_time, event, username, ip, forwarded, previous_signature, signature, record) VALUES ?', [satirlar]);
+  await db.transaction(async (c) => {
+    await new Collection(db, MEMBERS).addBulk(c, d.members);
+    await new Collection(db, DEVICES).addBulk(c, d.deviceList);
+    await new Collection(db, ROLES).addBulk(c, roles);
+    await new Collection(db, BUILTIN_PERMISSIONS).addBulk(c, builtin);
+    await new Collection(db, API_KEYS).addBulk(c, d.permissions.keys);
+    await new Collection(db, HUB_LINKS).addBulk(c, links);
+    const settings = new Settings(db);
+    if (source.devices) await settings.write('device-block-limit', d.blockLimit, c);
+    for (const [name, value] of Object.entries(settingDocuments)) await settings.write(name, value, c);
+    for (let i = 0; i < auditLines.length; i += PART) {
+      const rows = auditLines.slice(i, i + PART).map((m) => { const k = legacy.auditRecordView(JSON.parse(m)); return [k.time, k.localTime ?? null, String(k.event).slice(0, 100), k.username == null ? null : String(k.username).slice(0, 512), k.ip == null ? null : String(k.ip).slice(0, 100), k.forwarded ? JSON.stringify(k.forwarded) : null, k.previous, k.signature, m]; });
+      await c.query('INSERT INTO audit_log (ts, local_time, event, username, ip, forwarded, previous_signature, signature, record) VALUES ?', [rows]);
     }
     // sayilar
-    for (const [tablo, n] of Object.entries(beklenen)) {
-      const [[r]] = await c.query(`SELECT COUNT(*) AS n FROM ${tablo}`);
-      if (Number(r.n) !== n) throw new Error(`Aktarım tutarsız: ${tablo} tablosunda ${r.n} satır var, kaynakta ${n}`);
+    for (const [table, n] of Object.entries(expected)) {
+      const [[r]] = await c.query(`SELECT COUNT(*) AS n FROM ${table}`);
+      if (Number(r.n) !== n) throw new Error(`Aktarım tutarsız: ${table} tablosunda ${r.n} satır var, kaynakta ${n}`);
     }
     // zincir (veritabanindan)
-    const [kayitlar] = await c.query('SELECT record FROM audit_log ORDER BY id');
-    const zh = zincirDogrula(kayitlar.map((x) => x.record), imzala);
+    const [records] = await c.query('SELECT record FROM audit_log ORDER BY id');
+    const zh = verifyChain(records.map((x) => x.record), sign);
     if (zh) throw new Error(`Aktarım sonrası günlük zinciri doğrulanamadı: ${zh}`);
     // ayarlar geri okuma
-    for (const [ad, deger] of Object.entries(ayarBelgeleri)) {
-      const [[r]] = await c.query('SELECT value FROM settings WHERE name = ?', [ad]);
-      if (JSON.stringify(JSON.parse(r.value)) !== JSON.stringify(deger)) throw new Error(`Aktarım tutarsız: settings/${ad} kaynakla aynı değil`);
+    for (const [name, value] of Object.entries(settingDocuments)) {
+      const [[r]] = await c.query('SELECT value FROM settings WHERE name = ?', [name]);
+      if (JSON.stringify(JSON.parse(r.value)) !== JSON.stringify(value)) throw new Error(`Aktarım tutarsız: settings/${name} kaynakla aynı değil`);
     }
   });
 
   // 4) onaylandi: dosyalar yeniden adlandirilir (silinmez)
-  const adlandirilan = [];
-  for (const dosya of var_) {
-    let hedef = `${yol(dosya)}.imported`;
-    if (existsSync(hedef)) hedef = `${hedef}.${Date.now()}`;
-    renameSync(yol(dosya), hedef); adlandirilan.push(dosya);
+  const renamed = [];
+  for (const file of var_) {
+    let target = `${path(file)}.imported`;
+    if (existsSync(target)) target = `${target}.${Date.now()}`;
+    renameSync(path(file), target); renamed.push(file);
   }
-  gunlukYaz(`eski veri aktarıldı: ${Object.entries(beklenen).map(([t, n]) => `${t}=${n}`).join(', ')}; settings=${Object.keys(ayarBelgeleri).join(',') || '-'}; günlük zinciri doğrulandı; dosyalar .imported adıyla saklandı (${adlandirilan.join(', ')})`);
-  return { durum: 'aktarildi', sayilar: beklenen };
+  writeAuditLog(`eski veri aktarıldı: ${Object.entries(expected).map(([t, n]) => `${t}=${n}`).join(', ')}; settings=${Object.keys(settingDocuments).join(',') || '-'}; günlük zinciri doğrulandı; dosyalar .imported adıyla saklandı (${renamed.join(', ')})`);
+  return { status: 'imported', counts: expected };
 }

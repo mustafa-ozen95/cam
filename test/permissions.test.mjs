@@ -1,282 +1,282 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { vtAc } from './helpers.mjs';
+import { openDb } from './helpers.mjs';
 import {
-  Asal, HataKisiti, HizSiniri, IZINLER, YetkiDeposu, YetkiHatasi, YERLESIK_ROLLER, bitisNormalle, iplerNormalle, ipEslesir, ipKuraliGecerli,
-  izinAltKume, izinGecerli, izinGenislet, izinKesisim, izinVar, kapsamIcinde, kapsamKanalIzinli, kapsamKesisim, kapsamKumesi, kapsamNormalle,
+  Principal, ErrorLimit, RateLimit, PERMISSIONS, PermissionStore, PermissionError, BUILTIN_ROLES, normalizeExpiresAt, normalizeIps, ipMatches, ipRuleValid,
+  isPermissionSubset, permissionValid, expandPermission, permissionIntersection, hasPermission, scopeWithin, scopeChannelAllowed, scopeIntersection, scopeSet, normalizeScope,
 } from '../src/models/permission.mjs';
 
 // kanallar: cihaz A = 0..3, cihaz B = 4..7
-const cihazIdOf = (k) => (k < 4 ? 'aaaa1111' : k < 8 ? 'bbbb2222' : null);
-const KANAL_TOPLAM = 8;
-const yeniDepo = async (secenek = {}) => {
-  const v = await vtAc(), gizli = randomBytes(32);
-  return { vt: v.vt, gizli, depo: await new YetkiDeposu(v.vt, gizli, secenek).yukle(), temizle: () => v.sil() };
+const deviceIdOf = (k) => (k < 4 ? 'aaaa1111' : k < 8 ? 'bbbb2222' : null);
+const CHANNEL_TOTAL = 8;
+const newRepo = async (option = {}) => {
+  const v = await openDb(), secret = randomBytes(32);
+  return { db: v.db, secret, repo: await new PermissionStore(v.db, secret, option).load(), clear: () => v.remove() };
 };
 /** Sinamalarin kullandigi izin kumeleri (eski yerlesik roller) ozel rol olarak kurulur. */
-const ozelRoller = async (depo) => { await depo.rolEkle({ id: 'kullanici', ad: 'Kullanıcı', izinler: ['canli.izle', 'kayit.listele', 'kayit.izle', 'kayit.indir'] }, 'admin'); await depo.rolEkle({ id: 'izleyici', ad: 'İzleyici', izinler: ['canli.izle'] }, 'admin'); };
-const hatakodu = async (fn) => { try { await fn(); } catch (e) { assert.ok(e instanceof YetkiHatasi, `YetkiHatasi bekleniyordu: ${e}`); return e.kod; } assert.fail('hata bekleniyordu'); };
+const customRoles = async (repo) => { await repo.addRole({ id: 'user', name: 'Kullanıcı', permissions: ['live.view', 'recording.list', 'recording.play', 'recording.download'] }, 'admin'); await repo.addRole({ id: 'viewer', name: 'İzleyici', permissions: ['live.view'] }, 'admin'); };
+const errorCode = async (fn) => { try { await fn(); } catch (e) { assert.ok(e instanceof PermissionError, `YetkiHatasi bekleniyordu: ${e}`); return e.code; } assert.fail('hata bekleniyordu'); };
 
 test('izinVar: tam, grup joker ve * kuralları', async () => {
-  assert.ok(izinVar(['*'], 'kayit.indir'));
-  assert.ok(izinVar(['kayit.*'], 'kayit.izle'));
-  assert.ok(!izinVar(['kayit.*'], 'canli.izle'));
-  assert.ok(izinVar(['canli.izle'], 'canli.izle'));
-  assert.ok(!izinVar(['canli.izle'], 'canli'));
-  assert.ok(!izinVar([], 'canli.izle'));
-  assert.ok(!izinVar(['kayit.izle'], 'kayit.indir'));
+  assert.ok(hasPermission(['*'], 'recording.download'));
+  assert.ok(hasPermission(['recording.*'], 'recording.play'));
+  assert.ok(!hasPermission(['recording.*'], 'live.view'));
+  assert.ok(hasPermission(['live.view'], 'live.view'));
+  assert.ok(!hasPermission(['live.view'], 'unknown'));
+  assert.ok(!hasPermission([], 'live.view'));
+  assert.ok(!hasPermission(['recording.play'], 'recording.download'));
 });
 
 test('izin kataloğu: geçerlilik, genişletme, alt küme, kesişim', async () => {
-  assert.ok(izinGecerli('*') && izinGecerli('kayit.*') && izinGecerli('cihaz.yonet'));
-  assert.ok(!izinGecerli('foo.bar') && !izinGecerli('foo.*') && !izinGecerli(5) && !izinGecerli(''));
-  assert.deepEqual(izinGenislet(['*']).sort(), Object.keys(IZINLER).sort());
-  assert.deepEqual(izinGenislet(['kayit.*']).sort(), ['kayit.indir', 'kayit.izle', 'kayit.listele']);
-  assert.ok(izinAltKume(['canli.izle'], ['canli.izle', 'kayit.izle']));
-  assert.ok(!izinAltKume(['kayit.indir'], ['canli.izle']));
-  assert.ok(izinAltKume(['kayit.izle'], ['kayit.*']));
-  assert.ok(!izinAltKume(['*'], ['kayit.*']));
-  assert.ok(izinAltKume(['*'], ['*']));
-  assert.deepEqual(izinKesisim(['canli.izle', 'kayit.izle'], ['kayit.*']), ['kayit.izle']);
+  assert.ok(permissionValid('*') && permissionValid('recording.*') && permissionValid('device.manage'));
+  assert.ok(!permissionValid('foo.bar') && !permissionValid('foo.*') && !permissionValid(5) && !permissionValid(''));
+  assert.deepEqual(expandPermission(['*']).sort(), Object.keys(PERMISSIONS).sort());
+  assert.deepEqual(expandPermission(['recording.*']).sort(), ['recording.download', 'recording.list', 'recording.play']);
+  assert.ok(isPermissionSubset(['live.view'], ['live.view', 'recording.play']));
+  assert.ok(!isPermissionSubset(['recording.download'], ['live.view']));
+  assert.ok(isPermissionSubset(['recording.play'], ['recording.*']));
+  assert.ok(!isPermissionSubset(['*'], ['recording.*']));
+  assert.ok(isPermissionSubset(['*'], ['*']));
+  assert.deepEqual(permissionIntersection(['live.view', 'recording.play'], ['recording.*']), ['recording.play']);
 });
 
 test('yerleşik roller DC panelleriyle aynı: admin her şey, network/teknik/muhasebe izinsiz doğar, kamera izlemeyle', async () => {
-  assert.deepEqual(Object.keys(YERLESIK_ROLLER), ['admin', 'network', 'teknik', 'muhasebe', 'kamera']);
-  assert.deepEqual(YERLESIK_ROLLER.kamera.izinler, ['canli.izle', 'kayit.listele', 'kayit.izle', 'kayit.indir']);
-  assert.ok(YERLESIK_ROLLER.kamera.izinDuzenlenir && !izinVar(YERLESIK_ROLLER.kamera.izinler, 'uye.yonet') && !izinVar(YERLESIK_ROLLER.kamera.izinler, 'cihaz.yonet'));
-  assert.ok(izinVar(YERLESIK_ROLLER.admin.izinler, 'yetki.yonet'));
-  for (const id of ['network', 'teknik', 'muhasebe']) { assert.deepEqual(YERLESIK_ROLLER[id].izinler, []); assert.ok(YERLESIK_ROLLER[id].izinDuzenlenir); }
-  assert.ok(!YERLESIK_ROLLER.admin.izinDuzenlenir);
+  assert.deepEqual(Object.keys(BUILTIN_ROLES), ['admin', 'network', 'technical', 'accounting', 'camera']);
+  assert.deepEqual(BUILTIN_ROLES.camera.permissions, ['live.view', 'recording.list', 'recording.play', 'recording.download']);
+  assert.ok(BUILTIN_ROLES.camera.permissionEditable && !hasPermission(BUILTIN_ROLES.camera.permissions, 'member.manage') && !hasPermission(BUILTIN_ROLES.camera.permissions, 'device.manage'));
+  assert.ok(hasPermission(BUILTIN_ROLES.admin.permissions, 'permission.manage'));
+  for (const id of ['network', 'technical', 'accounting']) { assert.deepEqual(BUILTIN_ROLES[id].permissions, []); assert.ok(BUILTIN_ROLES[id].permissionEditable); }
+  assert.ok(!BUILTIN_ROLES.admin.permissionEditable);
 });
 
 test('IP ve CIDR eşleşmesi', async () => {
-  assert.ok(ipEslesir('10.0.0.5', []) && ipEslesir('1.2.3.4', undefined));
-  assert.ok(ipEslesir('10.0.0.5', ['10.0.0.0/24']));
-  assert.ok(!ipEslesir('10.0.1.5', ['10.0.0.0/24']));
-  assert.ok(ipEslesir('::ffff:10.0.0.9', ['10.0.0.0/24']));
-  assert.ok(ipEslesir('192.168.1.1', ['10.0.0.0/8', '192.168.1.1']));
-  assert.ok(ipEslesir('8.8.8.8', ['0.0.0.0/0']));
-  assert.ok(!ipEslesir('8.8.8.8', ['8.8.8.9/32']));
-  assert.ok(ipEslesir('::1', ['::1']));
-  assert.ok(ipKuraliGecerli('10.0.0.0/24') && ipKuraliGecerli('1.2.3.4') && ipKuraliGecerli('::1'));
-  assert.ok(!ipKuraliGecerli('10.0.0.0/33') && !ipKuraliGecerli('999.1.1.1') && !ipKuraliGecerli('abc') && !ipKuraliGecerli(5));
-  assert.equal(await hatakodu(() => iplerNormalle(['abc'])), 'GECERSIZ_ISTEK');
-  assert.deepEqual(iplerNormalle(['1.2.3.4', '1.2.3.4', ' 10.0.0.0/8 ']), ['1.2.3.4', '10.0.0.0/8']);
+  assert.ok(ipMatches('10.0.0.5', []) && ipMatches('1.2.3.4', undefined));
+  assert.ok(ipMatches('10.0.0.5', ['10.0.0.0/24']));
+  assert.ok(!ipMatches('10.0.1.5', ['10.0.0.0/24']));
+  assert.ok(ipMatches('::ffff:10.0.0.9', ['10.0.0.0/24']));
+  assert.ok(ipMatches('192.168.1.1', ['10.0.0.0/8', '192.168.1.1']));
+  assert.ok(ipMatches('8.8.8.8', ['0.0.0.0/0']));
+  assert.ok(!ipMatches('8.8.8.8', ['8.8.8.9/32']));
+  assert.ok(ipMatches('::1', ['::1']));
+  assert.ok(ipRuleValid('10.0.0.0/24') && ipRuleValid('1.2.3.4') && ipRuleValid('::1'));
+  assert.ok(!ipRuleValid('10.0.0.0/33') && !ipRuleValid('999.1.1.1') && !ipRuleValid('abc') && !ipRuleValid(5));
+  assert.equal(await errorCode(() => normalizeIps(['abc'])), 'INVALID_REQUEST');
+  assert.deepEqual(normalizeIps(['1.2.3.4', '1.2.3.4', ' 10.0.0.0/8 ']), ['1.2.3.4', '10.0.0.0/8']);
 });
 
 test('bitiş tarihi normalleştirme', async () => {
-  assert.equal(bitisNormalle(null), null);
-  assert.equal(bitisNormalle(''), null);
-  assert.equal(bitisNormalle('2030-01-02'), '2030-01-02T23:59:59.000Z');
-  assert.equal(bitisNormalle('2030-01-02T10:00:00Z'), '2030-01-02T10:00:00.000Z');
-  assert.equal(await hatakodu(() => bitisNormalle('yarın')), 'GECERSIZ_ISTEK');
+  assert.equal(normalizeExpiresAt(null), null);
+  assert.equal(normalizeExpiresAt(''), null);
+  assert.equal(normalizeExpiresAt('2030-01-02'), '2030-01-02T23:59:59.000Z');
+  assert.equal(normalizeExpiresAt('2030-01-02T10:00:00Z'), '2030-01-02T10:00:00.000Z');
+  assert.equal(await errorCode(() => normalizeExpiresAt('yarın')), 'INVALID_REQUEST');
 });
 
 test('kapsam: cihaz, kanal, kapsam içinde, kesişim', async () => {
-  assert.equal(kapsamNormalle(null), null);
-  assert.deepEqual(kapsamNormalle({ cihazlar: ['aaaa1111', 'aaaa1111'], kanallar: [5, 2, 5] }), { cihazlar: ['aaaa1111'], kanallar: [2, 5] });
-  assert.equal(await hatakodu(() => kapsamNormalle([1])), 'GECERSIZ_ISTEK');
-  assert.equal(await hatakodu(() => kapsamNormalle({ kanallar: [-1] })), 'GECERSIZ_ISTEK');
-  assert.equal(await hatakodu(() => kapsamNormalle({ cihazlar: ['x y'] })), 'GECERSIZ_ISTEK');
-  const a = { cihazlar: ['aaaa1111'], kanallar: [5] };
-  assert.ok(kapsamKanalIzinli(null, 99, cihazIdOf));
-  assert.ok(kapsamKanalIzinli(a, 1, cihazIdOf) && kapsamKanalIzinli(a, 5, cihazIdOf));
-  assert.ok(!kapsamKanalIzinli(a, 6, cihazIdOf) && !kapsamKanalIzinli(a, 8, cihazIdOf));
-  assert.ok(!kapsamKanalIzinli({ cihazlar: [], kanallar: [] }, 0, cihazIdOf));
-  assert.deepEqual([...kapsamKumesi(a, KANAL_TOPLAM, cihazIdOf)], [0, 1, 2, 3, 5]);
-  assert.ok(kapsamIcinde({ kanallar: [1, 2] }, a, KANAL_TOPLAM, cihazIdOf));
-  assert.ok(!kapsamIcinde({ kanallar: [1, 6] }, a, KANAL_TOPLAM, cihazIdOf));
-  assert.ok(kapsamIcinde(a, null, KANAL_TOPLAM, cihazIdOf));
-  assert.ok(!kapsamIcinde(null, a, KANAL_TOPLAM, cihazIdOf));
-  assert.deepEqual(kapsamKesisim(a, { kanallar: [1, 5, 6] }, KANAL_TOPLAM, cihazIdOf).kanallar, [1, 5]);
-  assert.equal(kapsamKesisim(null, null, KANAL_TOPLAM, cihazIdOf), null);
-  assert.deepEqual(kapsamKesisim(null, { kanallar: [2] }, KANAL_TOPLAM, cihazIdOf).kanallar, [2]);
+  assert.equal(normalizeScope(null), null);
+  assert.deepEqual(normalizeScope({ devices: ['aaaa1111', 'aaaa1111'], channels: [5, 2, 5] }), { devices: ['aaaa1111'], channels: [2, 5] });
+  assert.equal(await errorCode(() => normalizeScope([1])), 'INVALID_REQUEST');
+  assert.equal(await errorCode(() => normalizeScope({ channels: [-1] })), 'INVALID_REQUEST');
+  assert.equal(await errorCode(() => normalizeScope({ devices: ['x y'] })), 'INVALID_REQUEST');
+  const a = { devices: ['aaaa1111'], channels: [5] };
+  assert.ok(scopeChannelAllowed(null, 99, deviceIdOf));
+  assert.ok(scopeChannelAllowed(a, 1, deviceIdOf) && scopeChannelAllowed(a, 5, deviceIdOf));
+  assert.ok(!scopeChannelAllowed(a, 6, deviceIdOf) && !scopeChannelAllowed(a, 8, deviceIdOf));
+  assert.ok(!scopeChannelAllowed({ devices: [], channels: [] }, 0, deviceIdOf));
+  assert.deepEqual([...scopeSet(a, CHANNEL_TOTAL, deviceIdOf)], [0, 1, 2, 3, 5]);
+  assert.ok(scopeWithin({ channels: [1, 2] }, a, CHANNEL_TOTAL, deviceIdOf));
+  assert.ok(!scopeWithin({ channels: [1, 6] }, a, CHANNEL_TOTAL, deviceIdOf));
+  assert.ok(scopeWithin(a, null, CHANNEL_TOTAL, deviceIdOf));
+  assert.ok(!scopeWithin(null, a, CHANNEL_TOTAL, deviceIdOf));
+  assert.deepEqual(scopeIntersection(a, { channels: [1, 5, 6] }, CHANNEL_TOTAL, deviceIdOf).channels, [1, 5]);
+  assert.equal(scopeIntersection(null, null, CHANNEL_TOTAL, deviceIdOf), null);
+  assert.deepEqual(scopeIntersection(null, { channels: [2] }, CHANNEL_TOTAL, deviceIdOf).channels, [2]);
 });
 
 test('hız sınırı: kayan pencere', async () => {
-  const h = new HizSiniri();
-  for (let i = 0; i < 3; i++) assert.ok(h.dene('a', 3, 60_000, 1000 + i).tamam);
-  const r = h.dene('a', 3, 60_000, 1010);
-  assert.equal(r.tamam, false);
-  assert.ok(r.sifirlanmaSn >= 1 && r.sifirlanmaSn <= 60);
-  assert.ok(h.dene('b', 3, 60_000, 1010).tamam);               // başka anahtar etkilenmez
-  assert.ok(h.dene('a', 3, 60_000, 1000 + 60_001).tamam);       // pencere kaydı
+  const h = new RateLimit();
+  for (let i = 0; i < 3; i++) assert.ok(h.attempt('a', 3, 60_000, 1000 + i).ok);
+  const r = h.attempt('a', 3, 60_000, 1010);
+  assert.equal(r.ok, false);
+  assert.ok(r.resetSec >= 1 && r.resetSec <= 60);
+  assert.ok(h.attempt('b', 3, 60_000, 1010).ok);               // başka anahtar etkilenmez
+  assert.ok(h.attempt('a', 3, 60_000, 1000 + 60_001).ok);       // pencere kaydı
 });
 
 test('hata kısıtı: eşikte IP kilitlenir, başarıda sıfırlanır', async () => {
-  const k = new HataKisiti({ en: 3, pencereMs: 1000, kilitMs: 5000 });
-  assert.equal(k.kilitliMi('1.1.1.1', 0), 0);
-  k.hata('1.1.1.1', 0); k.hata('1.1.1.1', 1); assert.equal(k.kilitliMi('1.1.1.1', 2), 0);
-  k.hata('1.1.1.1', 3);
-  assert.ok(k.kilitliMi('1.1.1.1', 4) > 0);
-  assert.equal(k.kilitliMi('1.1.1.1', 6000), 0);
-  k.hata('2.2.2.2', 0); k.basari('2.2.2.2'); k.hata('2.2.2.2', 1); k.hata('2.2.2.2', 2);
-  assert.equal(k.kilitliMi('2.2.2.2', 3), 0);
+  const k = new ErrorLimit({ maxErrors: 3, windowMs: 1000, lockMs: 5000 });
+  assert.equal(k.isLocked('1.1.1.1', 0), 0);
+  k.error('1.1.1.1', 0); k.error('1.1.1.1', 1); assert.equal(k.isLocked('1.1.1.1', 2), 0);
+  k.error('1.1.1.1', 3);
+  assert.ok(k.isLocked('1.1.1.1', 4) > 0);
+  assert.equal(k.isLocked('1.1.1.1', 6000), 0);
+  k.error('2.2.2.2', 0); k.success('2.2.2.2'); k.error('2.2.2.2', 1); k.error('2.2.2.2', 2);
+  assert.equal(k.isLocked('2.2.2.2', 3), 0);
 });
 
 test('roller: yerleşik değişmez, özel rol CRUD, * yasak, kullanımdaki silinemez, yükseltme engeli', async () => {
-  const { depo, temizle } = await yeniDepo({ rolKullanimda: (id) => id === 'kullanimda' });
+  const { repo, clear } = await newRepo({ roleInUse: (id) => id === 'kullanimda' });
   try {
-    assert.ok(depo.rolVar('admin') && depo.rolVar('teknik') && depo.rolVar('network') && depo.rolVar('muhasebe') && !depo.rolVar('kullanici') && !depo.rolVar('ozel1'));
+    assert.ok(repo.roleVar('admin') && repo.roleVar('technical') && repo.roleVar('network') && repo.roleVar('accounting') && !repo.roleVar('user') && !repo.roleVar('ozel1'));
     // DC rolleri: izinleri bos dogar, yalniz izin listesi degisir, silinmez; * verilemez
-    assert.deepEqual(depo.rolIzinleri('teknik'), []);
-    assert.deepEqual((await depo.rolGuncelle('teknik', { izinler: ['canli.izle'] })).izinler, ['canli.izle']);
-    assert.equal(await hatakodu(() => depo.rolGuncelle('teknik', { izinler: ['*'] })), 'GECERSIZ_ISTEK');
-    assert.equal(await hatakodu(() => depo.rolGuncelle('teknik', { izinler: ['uye.yonet'] }, ['canli.izle'])), 'YETKI_YUKSELTME');
-    assert.equal(await hatakodu(() => depo.rolSil('teknik')), 'YERLESIK_DEGISMEZ');
-    assert.equal(await hatakodu(() => depo.rolGuncelle('admin', { izinler: ['canli.izle'] })), 'YERLESIK_DEGISMEZ');
-    assert.equal(await hatakodu(() => depo.rolSil('admin')), 'YERLESIK_DEGISMEZ');
-    assert.equal(await hatakodu(() => depo.rolEkle({ id: 'Kötü Ad', ad: 'x', izinler: ['canli.izle'] }, 'admin')), 'GECERSIZ_ISTEK');
-    assert.equal(await hatakodu(() => depo.rolEkle({ id: 'ozel1', ad: 'Özel', izinler: ['*'] }, 'admin')), 'GECERSIZ_ISTEK');
-    assert.equal(await hatakodu(() => depo.rolEkle({ id: 'ozel1', ad: 'Özel', izinler: ['yok.izin'] }, 'admin')), 'GECERSIZ_ISTEK');
-    assert.equal(await hatakodu(() => depo.rolEkle({ id: 'ozel1', ad: 'Özel', izinler: [] }, 'admin')), 'GECERSIZ_ISTEK');
-    const r = await depo.rolEkle({ id: 'ozel1', ad: 'Özel', aciklama: 'deneme', izinler: ['canli.izle', 'kayit.*'] }, 'admin');
-    assert.deepEqual(r.izinler, ['canli.izle', 'kayit.*']);
-    assert.equal(r.ad.tr, 'Özel');
-    assert.ok(izinVar(depo.rolIzinleri('ozel1'), 'kayit.indir'));
-    assert.equal(await hatakodu(() => depo.rolEkle({ id: 'ozel1', ad: 'x', izinler: ['canli.izle'] }, 'admin')), 'CAKISMA');
-    assert.deepEqual((await depo.rolGuncelle('ozel1', { izinler: ['canli.izle'] })).izinler, ['canli.izle']);
-    // yükseltme: sahibi yalnız canli.izle olan biri kayit.* içeren rol veremez
-    assert.equal(await hatakodu(() => depo.rolEkle({ id: 'ozel2', ad: 'x', izinler: ['kayit.izle'] }, 'k', ['canli.izle'])), 'YETKI_YUKSELTME');
-    await depo.rolEkle({ id: 'kullanimda', ad: 'k', izinler: ['canli.izle'] }, 'admin');
-    assert.equal(await hatakodu(() => depo.rolSil('kullanimda')), 'CAKISMA');
-    await depo.rolSil('ozel1');
-    assert.ok(!depo.rolVar('ozel1'));
-  } finally { await temizle(); }
+    assert.deepEqual(repo.rolePermissions('technical'), []);
+    assert.deepEqual((await repo.updateRole('technical', { permissions: ['live.view'] })).permissions, ['live.view']);
+    assert.equal(await errorCode(() => repo.updateRole('technical', { permissions: ['*'] })), 'INVALID_REQUEST');
+    assert.equal(await errorCode(() => repo.updateRole('technical', { permissions: ['member.manage'] }, ['live.view'])), 'PRIVILEGE_ESCALATION');
+    assert.equal(await errorCode(() => repo.removeRole('technical')), 'BUILTIN_IMMUTABLE');
+    assert.equal(await errorCode(() => repo.updateRole('admin', { permissions: ['live.view'] })), 'BUILTIN_IMMUTABLE');
+    assert.equal(await errorCode(() => repo.removeRole('admin')), 'BUILTIN_IMMUTABLE');
+    assert.equal(await errorCode(() => repo.addRole({ id: 'Kötü Ad', name: 'x', permissions: ['live.view'] }, 'admin')), 'INVALID_REQUEST');
+    assert.equal(await errorCode(() => repo.addRole({ id: 'ozel1', name: 'Özel', permissions: ['*'] }, 'admin')), 'INVALID_REQUEST');
+    assert.equal(await errorCode(() => repo.addRole({ id: 'ozel1', name: 'Özel', permissions: ['yok.izin'] }, 'admin')), 'INVALID_REQUEST');
+    assert.equal(await errorCode(() => repo.addRole({ id: 'ozel1', name: 'Özel', permissions: [] }, 'admin')), 'INVALID_REQUEST');
+    const r = await repo.addRole({ id: 'ozel1', name: 'Özel', description: 'deneme', permissions: ['live.view', 'recording.*'] }, 'admin');
+    assert.deepEqual(r.permissions, ['live.view', 'recording.*']);
+    assert.equal(r.name.tr, 'Özel');
+    assert.ok(hasPermission(repo.rolePermissions('ozel1'), 'recording.download'));
+    assert.equal(await errorCode(() => repo.addRole({ id: 'ozel1', name: 'x', permissions: ['live.view'] }, 'admin')), 'CONFLICT');
+    assert.deepEqual((await repo.updateRole('ozel1', { permissions: ['live.view'] })).permissions, ['live.view']);
+    // yükseltme: sahibi yalnız live.view olan biri recording.* içeren rol veremez
+    assert.equal(await errorCode(() => repo.addRole({ id: 'ozel2', name: 'x', permissions: ['recording.play'] }, 'k', ['live.view'])), 'PRIVILEGE_ESCALATION');
+    await repo.addRole({ id: 'kullanimda', name: 'k', permissions: ['live.view'] }, 'admin');
+    assert.equal(await errorCode(() => repo.removeRole('kullanimda')), 'CONFLICT');
+    await repo.removeRole('ozel1');
+    assert.ok(!repo.roleVar('ozel1'));
+  } finally { await clear(); }
 });
 
 test('API anahtarı: oluşturma, biçim, özet saklama, doğrulama, kalıcılık', async () => {
-  const { depo, vt, gizli, temizle } = await yeniDepo();
-  await ozelRoller(depo);
+  const { repo, db, secret, clear } = await newRepo();
+  await customRoles(repo);
   try {
-    const { kayit, anahtar } = await depo.anahtarOlustur({ ad: 'mobil', rol: 'kullanici', kapsam: { cihazlar: ['aaaa1111'] }, ipler: ['10.0.0.0/24'], hizLimiti: 30, eszamanliAkis: 2 }, 'admin');
-    assert.match(anahtar, /^kp_[0-9a-f]{8}_[A-Za-z0-9_-]{43}$/);
-    assert.equal(kayit.karma, undefined);
-    assert.ok(kayit.izinlerEfektif.includes('kayit.indir') && !kayit.izinlerEfektif.includes('cihaz.yonet'));
-    const dosyaMetni = JSON.stringify(await vt.sorgu('SELECT * FROM api_keys'));
-    assert.ok(!dosyaMetni.includes(anahtar.slice('kp_12345678_'.length)), 'gizli düz metin saklanmamalı');
-    assert.ok(dosyaMetni.includes('"hash"'));
-    const a = depo.anahtarDogrula(anahtar, '10.0.0.9');
-    assert.equal(a.id, kayit.id);
-    assert.equal(depo.anahtarBul(kayit.id).sayac, 0);
-    depo.kullanimiKaydet(kayit.id, '10.0.0.9');
-    assert.equal(depo.anahtarBul(kayit.id).sayac, 1);
-    assert.equal(depo.anahtarBul(kayit.id).sonKullanim.ip, '10.0.0.9');
+    const { record, key } = await repo.createKey({ name: 'mobil', role: 'user', scope: { devices: ['aaaa1111'] }, ips: ['10.0.0.0/24'], rateLimit: 30, concurrentStreams: 2 }, 'admin');
+    assert.match(key, /^kp_[0-9a-f]{8}_[A-Za-z0-9_-]{43}$/);
+    assert.equal(record.hash, undefined);
+    assert.ok(record.permissionsEffective.includes('recording.download') && !record.permissionsEffective.includes('device.manage'));
+    const fileText = JSON.stringify(await db.query('SELECT * FROM api_keys'));
+    assert.ok(!fileText.includes(key.slice('kp_12345678_'.length)), 'gizli düz metin saklanmamalı');
+    assert.ok(fileText.includes('"hash"'));
+    const a = repo.verifyKey(key, '10.0.0.9');
+    assert.equal(a.id, record.id);
+    assert.equal(repo.findKey(record.id).counter, 0);
+    repo.saveUsage(record.id, '10.0.0.9');
+    assert.equal(repo.findKey(record.id).counter, 1);
+    assert.equal(repo.findKey(record.id).lastUsed.ip, '10.0.0.9');
     // IP kısıtı
-    assert.equal(await hatakodu(() => depo.anahtarDogrula(anahtar, '8.8.8.8')), 'IP_ENGELLI');
+    assert.equal(await errorCode(() => repo.verifyKey(key, '8.8.8.8')), 'IP_BLOCKED');
     // yanlış gizli / biçim
-    assert.equal(await hatakodu(() => depo.anahtarDogrula(`kp_${kayit.id}_${'A'.repeat(43)}`, '10.0.0.9')), 'GECERSIZ_ANAHTAR');
-    assert.equal(await hatakodu(() => depo.anahtarDogrula('abc', '10.0.0.9')), 'GECERSIZ_ANAHTAR');
-    assert.equal(await hatakodu(() => depo.anahtarDogrula(undefined, '10.0.0.9')), 'GECERSIZ_ANAHTAR');
+    assert.equal(await errorCode(() => repo.verifyKey(`kp_${record.id}_${'A'.repeat(43)}`, '10.0.0.9')), 'INVALID_KEY');
+    assert.equal(await errorCode(() => repo.verifyKey('abc', '10.0.0.9')), 'INVALID_KEY');
+    assert.equal(await errorCode(() => repo.verifyKey(undefined, '10.0.0.9')), 'INVALID_KEY');
     // kapat → yeniden yükle: anahtar hâlâ doğrulanır
-    await depo.kapat();
-    const depo2 = await new YetkiDeposu(vt, gizli).yukle();
-    assert.equal(depo2.anahtarDogrula(anahtar, '10.0.0.9').id, kayit.id);
+    await repo.close();
+    const repo2 = await new PermissionStore(db, secret).load();
+    assert.equal(repo2.verifyKey(key, '10.0.0.9').id, record.id);
     // başka gizli anahtarla (başka sunucu) doğrulanmaz
-    const depo3 = await new YetkiDeposu(vt, randomBytes(32)).yukle();
-    assert.equal(await hatakodu(() => depo3.anahtarDogrula(anahtar, '10.0.0.9')), 'GECERSIZ_ANAHTAR');
-  } finally { await temizle(); }
+    const repo3 = await new PermissionStore(db, randomBytes(32)).load();
+    assert.equal(await errorCode(() => repo3.verifyKey(key, '10.0.0.9')), 'INVALID_KEY');
+  } finally { await clear(); }
 });
 
 test('API anahtarı: alanlar doğrulanır, yükseltme ve kapsam taşması engellenir', async () => {
-  const { depo, temizle } = await yeniDepo();
-  await ozelRoller(depo);
+  const { repo, clear } = await newRepo();
+  await customRoles(repo);
   try {
-    assert.equal(await hatakodu(() => depo.anahtarOlustur({ ad: '', rol: 'kullanici' }, 'a')), 'GECERSIZ_ISTEK');
-    assert.equal(await hatakodu(() => depo.anahtarOlustur({ ad: 'x' }, 'a')), 'GECERSIZ_ISTEK');
-    assert.equal(await hatakodu(() => depo.anahtarOlustur({ ad: 'x', rol: 'yok' }, 'a')), 'GECERSIZ_ISTEK');
-    assert.equal(await hatakodu(() => depo.anahtarOlustur({ ad: 'x', izinler: ['yok.izin'] }, 'a')), 'GECERSIZ_ISTEK');
-    assert.equal(await hatakodu(() => depo.anahtarOlustur({ ad: 'x', rol: 'kullanici', bitis: '2001-01-01' }, 'a')), 'GECERSIZ_ISTEK');
-    assert.equal(await hatakodu(() => depo.anahtarOlustur({ ad: 'x', rol: 'kullanici', hizLimiti: 0 }, 'a')), 'GECERSIZ_ISTEK');
-    assert.equal(await hatakodu(() => depo.anahtarOlustur({ ad: 'x', rol: 'kullanici', eszamanliAkis: 99 }, 'a')), 'GECERSIZ_ISTEK');
-    // yükseltme: sahibin izni yalnız canli.izle
-    const ebeveyn = { ebeveynIzinler: ['canli.izle'], kanalToplam: KANAL_TOPLAM, cihazIdOf };
-    assert.equal(await hatakodu(() => depo.anahtarOlustur({ ad: 'x', rol: 'kullanici' }, 'u', ebeveyn)), 'YETKI_YUKSELTME');
-    assert.ok((await depo.anahtarOlustur({ ad: 'x', izinler: ['canli.izle'] }, 'u', ebeveyn)).anahtar);
+    assert.equal(await errorCode(() => repo.createKey({ name: '', role: 'user' }, 'a')), 'INVALID_REQUEST');
+    assert.equal(await errorCode(() => repo.createKey({ name: 'x' }, 'a')), 'INVALID_REQUEST');
+    assert.equal(await errorCode(() => repo.createKey({ name: 'x', role: 'yok' }, 'a')), 'INVALID_REQUEST');
+    assert.equal(await errorCode(() => repo.createKey({ name: 'x', permissions: ['yok.izin'] }, 'a')), 'INVALID_REQUEST');
+    assert.equal(await errorCode(() => repo.createKey({ name: 'x', role: 'user', expiresAt: '2001-01-01' }, 'a')), 'INVALID_REQUEST');
+    assert.equal(await errorCode(() => repo.createKey({ name: 'x', role: 'user', rateLimit: 0 }, 'a')), 'INVALID_REQUEST');
+    assert.equal(await errorCode(() => repo.createKey({ name: 'x', role: 'user', concurrentStreams: 99 }, 'a')), 'INVALID_REQUEST');
+    // yükseltme: sahibin izni yalnız live.view
+    const parent = { parentPermissions: ['live.view'], channelTotal: CHANNEL_TOTAL, deviceIdOf };
+    assert.equal(await errorCode(() => repo.createKey({ name: 'x', role: 'user' }, 'u', parent)), 'PRIVILEGE_ESCALATION');
+    assert.ok((await repo.createKey({ name: 'x', permissions: ['live.view'] }, 'u', parent)).key);
     // kapsam: sahip yalnız cihaz A
-    const kisitli = { ebeveynIzinler: ['*'], ebeveynKapsam: { cihazlar: ['aaaa1111'] }, kanalToplam: KANAL_TOPLAM, cihazIdOf };
-    assert.equal(await hatakodu(() => depo.anahtarOlustur({ ad: 'y', rol: 'kullanici' }, 'u', kisitli)), 'YETKI_YUKSELTME');                    // kapsamsız
-    assert.equal(await hatakodu(() => depo.anahtarOlustur({ ad: 'y', rol: 'kullanici', kapsam: { cihazlar: ['bbbb2222'] } }, 'u', kisitli)), 'YETKI_YUKSELTME');
-    assert.ok((await depo.anahtarOlustur({ ad: 'y', rol: 'kullanici', kapsam: { kanallar: [1, 2] } }, 'u', kisitli)).anahtar);
-  } finally { await temizle(); }
+    const restricted = { parentPermissions: ['*'], parentScope: { devices: ['aaaa1111'] }, channelTotal: CHANNEL_TOTAL, deviceIdOf };
+    assert.equal(await errorCode(() => repo.createKey({ name: 'y', role: 'user' }, 'u', restricted)), 'PRIVILEGE_ESCALATION');                    // kapsamsız
+    assert.equal(await errorCode(() => repo.createKey({ name: 'y', role: 'user', scope: { devices: ['bbbb2222'] } }, 'u', restricted)), 'PRIVILEGE_ESCALATION');
+    assert.ok((await repo.createKey({ name: 'y', role: 'user', scope: { channels: [1, 2] } }, 'u', restricted)).key);
+  } finally { await clear(); }
 });
 
 test('API anahtarı: süre, iptal, yenileme, silme, hata kısıtı', async () => {
-  const { depo, temizle } = await yeniDepo();
-  await ozelRoller(depo);
+  const { repo, clear } = await newRepo();
+  await customRoles(repo);
   try {
-    const { kayit, anahtar } = await depo.anahtarOlustur({ ad: 'a', rol: 'izleyici' }, 'admin');
+    const { record, key } = await repo.createKey({ name: 'a', role: 'viewer' }, 'admin');
     // süre dolumu (dosyaya bitiş yazıp yeniden hesapla)
-    const a = depo.veri.anahtarlar[0];
-    a.bitis = new Date(Date.now() - 1000).toISOString();
-    assert.equal(await hatakodu(() => depo.anahtarDogrula(anahtar, '1.1.1.1')), 'SURESI_DOLDU');
-    a.bitis = null;
-    assert.equal(depo.anahtarDogrula(anahtar, '1.1.1.1').id, kayit.id);
+    const a = repo.data.keys[0];
+    a.expiresAt = new Date(Date.now() - 1000).toISOString();
+    assert.equal(await errorCode(() => repo.verifyKey(key, '1.1.1.1')), 'EXPIRED');
+    a.expiresAt = null;
+    assert.equal(repo.verifyKey(key, '1.1.1.1').id, record.id);
     // yenileme: eski gizli geçersiz, yeni geçerli, kimlik aynı
-    const yeni = await depo.anahtarYenile(kayit.id);
-    assert.equal(yeni.kayit.id, kayit.id);
-    assert.equal(await hatakodu(() => depo.anahtarDogrula(anahtar, '1.1.1.1')), 'GECERSIZ_ANAHTAR');
-    assert.equal(depo.anahtarDogrula(yeni.anahtar, '1.1.1.1').id, kayit.id);
+    const fresh = await repo.rotateKey(record.id);
+    assert.equal(fresh.record.id, record.id);
+    assert.equal(await errorCode(() => repo.verifyKey(key, '1.1.1.1')), 'INVALID_KEY');
+    assert.equal(repo.verifyKey(fresh.key, '1.1.1.1').id, record.id);
     // güncelleme
-    assert.equal((await depo.anahtarGuncelle(kayit.id, { ad: 'b', hizLimiti: 10 })).ad, 'b');
-    assert.equal(await hatakodu(() => depo.anahtarGuncelle(kayit.id, { rol: 'yok' })), 'GECERSIZ_ISTEK');
-    // iptal: doğrulama ANAHTAR_IPTAL; güncelleme/yenileme reddedilir
-    await depo.anahtarIptal(kayit.id, 'admin');
-    assert.equal(await hatakodu(() => depo.anahtarDogrula(yeni.anahtar, '1.1.1.1')), 'ANAHTAR_IPTAL');
-    assert.equal(await hatakodu(() => depo.anahtarYenile(kayit.id)), 'CAKISMA');
-    assert.equal(await hatakodu(() => depo.anahtarGuncelle(kayit.id, { ad: 'c' })), 'CAKISMA');
-    assert.equal(depo.anahtarBul(kayit.id).aktif, false);
-    await depo.anahtarSil(kayit.id);
-    assert.equal(depo.anahtarBul(kayit.id), null);
-    assert.equal(await hatakodu(() => depo.anahtarSil(kayit.id)), 'BULUNAMADI');
+    assert.equal((await repo.updateKey(record.id, { name: 'b', rateLimit: 10 })).name, 'b');
+    assert.equal(await errorCode(() => repo.updateKey(record.id, { role: 'yok' })), 'INVALID_REQUEST');
+    // iptal: doğrulama KEY_REVOKED; güncelleme/yenileme reddedilir
+    await repo.revokeKey(record.id, 'admin');
+    assert.equal(await errorCode(() => repo.verifyKey(fresh.key, '1.1.1.1')), 'KEY_REVOKED');
+    assert.equal(await errorCode(() => repo.rotateKey(record.id)), 'CONFLICT');
+    assert.equal(await errorCode(() => repo.updateKey(record.id, { name: 'c' })), 'CONFLICT');
+    assert.equal(repo.findKey(record.id).active, false);
+    await repo.removeKey(record.id);
+    assert.equal(repo.findKey(record.id), null);
+    assert.equal(await errorCode(() => repo.removeKey(record.id)), 'NOT_FOUND');
     // kaba kuvvet: 10 hatadan sonra kilit (doğru anahtar bile reddedilir)
-    const { anahtar: iyi } = await depo.anahtarOlustur({ ad: 'k', rol: 'izleyici' }, 'admin');
-    for (let i = 0; i < 10; i++) hatakodu(() => depo.anahtarDogrula('kp_00000000_' + 'A'.repeat(43), '9.9.9.9'));
-    assert.equal(await hatakodu(() => depo.anahtarDogrula(iyi, '9.9.9.9')), 'COK_FAZLA_DENEME');
-    assert.equal(depo.anahtarDogrula(iyi, '9.9.9.10') ? 'tamam' : '', 'tamam');       // başka IP etkilenmez
-  } finally { await temizle(); }
+    const { key: good } = await repo.createKey({ name: 'k', role: 'viewer' }, 'admin');
+    for (let i = 0; i < 10; i++) errorCode(() => repo.verifyKey('kp_00000000_' + 'A'.repeat(43), '9.9.9.9'));
+    assert.equal(await errorCode(() => repo.verifyKey(good, '9.9.9.9')), 'TOO_MANY_ATTEMPTS');
+    assert.equal(repo.verifyKey(good, '9.9.9.10') ? 'tamam' : '', 'tamam');       // başka IP etkilenmez
+  } finally { await clear(); }
 });
 
 test('Asal: izin, kapsam, günlük adı', async () => {
-  const ctx = { cihazIdOf, kanalToplam: () => KANAL_TOPLAM };
-  const uye = new Asal({ tur: 'uye', ad: 'ali', kimlik: 'uye:ali', rol: 'kullanici', izinler: ['canli.izle', 'kayit.listele', 'kayit.izle', 'kayit.indir'] }, ctx);
-  assert.ok(uye.izinVar('canli.izle') && !uye.izinVar('cihaz.yonet'));
-  assert.ok(uye.kanalIzinli(7) && uye.kapsamsiz());
-  assert.equal(uye.gunlukAdi, 'ali');
-  const anahtar = new Asal({ tur: 'anahtar', ad: 'mobil', kimlik: 'anahtar:ab12', anahtarId: 'ab12', izinler: ['canli.izle'], kapsam: { cihazlar: ['bbbb2222'] }, yontem: 'anahtar' }, ctx);
-  assert.ok(anahtar.kanalIzinli(5) && !anahtar.kanalIzinli(1));
-  assert.equal(anahtar.gunlukAdi, 'anahtar:ab12');
-  assert.ok(anahtar.herhangiIzin(['kayit.izle', 'canli.izle']) && !anahtar.herhangiIzin(['kayit.izle']));
-  assert.deepEqual(anahtar.acik().izinler, ['canli.izle']);
+  const ctx = { deviceIdOf, channelTotal: () => CHANNEL_TOTAL };
+  const member = new Principal({ type: 'member', name: 'ali', identity: 'member:ali', role: 'user', permissions: ['live.view', 'recording.list', 'recording.play', 'recording.download'] }, ctx);
+  assert.ok(member.hasPermission('live.view') && !member.hasPermission('device.manage'));
+  assert.ok(member.channelAllowed(7) && member.isUnscoped());
+  assert.equal(member.auditActor, 'ali');
+  const key = new Principal({ type: 'key', name: 'mobil', identity: 'key:ab12', keyId: 'ab12', permissions: ['live.view'], scope: { devices: ['bbbb2222'] }, method: 'key' }, ctx);
+  assert.ok(key.channelAllowed(5) && !key.channelAllowed(1));
+  assert.equal(key.auditActor, 'key:ab12');
+  assert.ok(key.anyPermission(['recording.play', 'live.view']) && !key.anyPermission(['recording.play']));
+  assert.deepEqual(key.toPublic().permissions, ['live.view']);
 });
 
 test('hız sınırı ve eşzamanlı akış: asal başına', async () => {
-  const { depo, temizle } = await yeniDepo();
-  await ozelRoller(depo);
+  const { repo, clear } = await newRepo();
+  await customRoles(repo);
   try {
-    const asal = new Asal({ tur: 'anahtar', kimlik: 'anahtar:z', hizLimiti: 2, eszamanliAkis: 1, izinler: ['canli.izle'] }, {});
-    depo.hizDene(asal, 1000); depo.hizDene(asal, 1001);
-    const e = (() => { try { depo.hizDene(asal, 1002); } catch (x) { return x; } })();
-    assert.equal(e.kod, 'HIZ_SINIRI'); assert.equal(e.durum, 429); assert.ok(e.ekstra.yenidenDenemeSn >= 1);
-    const birak = depo.akisAc(asal);
-    assert.equal(await hatakodu(() => depo.akisAc(asal)), 'AKIS_SINIRI');
-    birak(); birak();                                  // ikinci çağrı zararsız
-    const birak2 = depo.akisAc(asal); birak2();
-    const sinirsiz = new Asal({ tur: 'uye', kimlik: 'uye:s', eszamanliAkis: 3, izinler: [] }, {});
-    const b = [depo.akisAc(sinirsiz), depo.akisAc(sinirsiz), depo.akisAc(sinirsiz)];
-    assert.equal(await hatakodu(() => depo.akisAc(sinirsiz)), 'AKIS_SINIRI');
+    const principal = new Principal({ type: 'key', identity: 'key:z', rateLimit: 2, concurrentStreams: 1, permissions: ['live.view'] }, {});
+    repo.attemptRate(principal, 1000); repo.attemptRate(principal, 1001);
+    const e = (() => { try { repo.attemptRate(principal, 1002); } catch (x) { return x; } })();
+    assert.equal(e.code, 'RATE_LIMIT'); assert.equal(e.status, 429); assert.ok(e.extra.retryAfterSec >= 1);
+    const release = repo.openStream(principal);
+    assert.equal(await errorCode(() => repo.openStream(principal)), 'STREAM_LIMIT');
+    release(); release();                                  // ikinci çağrı zararsız
+    const release2 = repo.openStream(principal); release2();
+    const unlimited = new Principal({ type: 'member', identity: 'member:s', concurrentStreams: 3, permissions: [] }, {});
+    const b = [repo.openStream(unlimited), repo.openStream(unlimited), repo.openStream(unlimited)];
+    assert.equal(await errorCode(() => repo.openStream(unlimited)), 'STREAM_LIMIT');
     b.forEach((f) => f());
     // ayni ortak akis (ikinci sekme) hak harcamaz; farkli akis harcar; son izleyici birakinca hak geri gelir
-    const s1 = new Asal({ tur: 'uye', kimlik: 'uye:o', eszamanliAkis: 2, izinler: [] }, {});
-    const o = [depo.akisAc(s1, 'canli:1'), depo.akisAc(s1, 'canli:1'), depo.akisAc(s1, 'canli:1'), depo.akisAc(s1, 'canli:2')];
-    assert.equal(await hatakodu(() => depo.akisAc(s1, 'canli:3')), 'AKIS_SINIRI');
-    assert.equal(await hatakodu(() => depo.akisAc(s1)), 'AKIS_SINIRI');
-    const o2 = depo.akisAc(s1, 'canli:2'); o2();
+    const s1 = new Principal({ type: 'member', identity: 'member:o', concurrentStreams: 2, permissions: [] }, {});
+    const o = [repo.openStream(s1, 'live:1'), repo.openStream(s1, 'live:1'), repo.openStream(s1, 'live:1'), repo.openStream(s1, 'live:2')];
+    assert.equal(await errorCode(() => repo.openStream(s1, 'live:3')), 'STREAM_LIMIT');
+    assert.equal(await errorCode(() => repo.openStream(s1)), 'STREAM_LIMIT');
+    const o2 = repo.openStream(s1, 'live:2'); o2();
     o[0](); o[1]();
-    assert.equal(await hatakodu(() => depo.akisAc(s1, 'canli:3')), 'AKIS_SINIRI');   // canli:1'in bir izleyicisi hala var
-    o[2](); const o3 = depo.akisAc(s1, 'canli:3');
+    assert.equal(await errorCode(() => repo.openStream(s1, 'live:3')), 'STREAM_LIMIT');   // live:1'in bir izleyicisi hala var
+    o[2](); const o3 = repo.openStream(s1, 'live:3');
     o3(); o[3]();
-    assert.equal(depo.akislar.has('uye:o'), false);
-  } finally { await temizle(); }
+    assert.equal(repo.streams.has('member:o'), false);
+  } finally { await clear(); }
 });

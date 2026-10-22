@@ -1,15 +1,15 @@
-/** Denetim gunlugu (gunluk.oku). */
+/** Denetim gunlugu (audit.read). */
 import { json } from '../core/http.mjs';
 
-export function gunlukDenetleyici({ gunluk }) {
+export function auditLogController({ auditLog }) {
   return {
-    async liste(ctx) {
+    async list(ctx) {
       const q = ctx.q;
-      return json(ctx.res, 200, await gunluk.listele({
-        boyut: Math.min(200, Math.max(10, Number(q.get('boyut')) || 50)), sayfa: Math.max(1, Number(q.get('sayfa')) || 1),
-        olay: q.get('olay') || '', kullanici: q.get('kullanici') || '', ip: q.get('ip') || '', gun: q.get('gun') || '',
+      return json(ctx.res, 200, await auditLog.list({
+        size: Math.min(200, Math.max(10, Number(q.get('size')) || 50)), page: Math.max(1, Number(q.get('page')) || 1),
+        event: q.get('event') || '', username: q.get('username') || '', ip: q.get('ip') || '', day: q.get('day') || '',
       }));
     },
-    async dogrula(ctx) { return json(ctx.res, 200, await gunluk.dogrula()); },
+    async verify(ctx) { return json(ctx.res, 200, await auditLog.verify()); },
   };
 }

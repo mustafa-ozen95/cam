@@ -6,451 +6,451 @@
 import { spawn } from 'node:child_process';
 import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { Baglanti, CerceveAyirici } from './xiongmai-dvrip.mjs';
+import { Connection, FrameSplitter } from './xiongmai-dvrip.mjs';
 
-const JPEG_BAS = Buffer.from([0xff, 0xd8]);
-const JPEG_SON = Buffer.from([0xff, 0xd9]);
+const JPEG_START = Buffer.from([0xff, 0xd8]);
+const JPEG_END = Buffer.from([0xff, 0xd9]);
 
 export class Dvr {
-  constructor({ ayar, ffmpeg, veriKlasoru }) {
-    this.ayar = ayar; this.ffmpeg = ffmpeg;
-    this.denetim = null; this.girisSozu = null; this.kilit = Promise.resolve();
-    this.yayinlar = new Map(); this.indirSayac = 0;
-    this.kanalAdlari = null; this.sonHata = null;
-    this.oynatSayac = 0;
-    this.oynatMax = Number(process.env.KAMERA_OYNATMA_MAX ?? 4);                  // ayni anda cihazdan en fazla bu kadar kayit oynatma
-    this.indirMax = Number(process.env.KAMERA_INDIRME_MAX ?? 2);                  // ayni anda cihazdan en fazla bu kadar kayit indirme (digerleri sirada bekler)
-    this.olay = null;   // saat yalniz elle (Esitle dugmesi) ayarlanir
+  constructor({ setting, ffmpeg, dataDir }) {
+    this.setting = setting; this.ffmpeg = ffmpeg;
+    this.audit = null; this.loginPromise = null; this.lock = Promise.resolve();
+    this.feeds = new Map(); this.downloadCounter = 0;
+    this.channelNames = null; this.lastError = null;
+    this.playCounter = 0;
+    this.playMax = Number(process.env.CAM_PLAYBACK_MAX ?? 4);                  // ayni anda cihazdan en fazla bu kadar kayit oynatma
+    this.downloadMax = Number(process.env.CAM_DOWNLOAD_MAX ?? 2);                  // ayni anda cihazdan en fazla bu kadar kayit indirme (digerleri sirada bekler)
+    this.event = null;   // saat yalniz elle (Esitle dugmesi) ayarlanir
   }
 
-  /** Goruntu orani [en, boy] ya da null (kaynak oranini koru). ayar.oran: "16:9" | "4:3" | "kaynak"; KAMERA_ORAN ile de verilir. */
-  get oran() {
-    const o = String(process.env.KAMERA_ORAN ?? this.ayar.oran ?? '16:9');
+  /** Goruntu orani [en, boy] ya da null (kaynak oranini koru). ayar.oran: "16:9" | "4:3" | "kaynak"; CAM_RATIO ile de verilir. */
+  get ratio() {
+    const o = String(process.env.CAM_RATIO ?? this.setting.ratio ?? '16:9');
     const m = /^(\d+):(\d+)$/.exec(o);
     return m ? [Number(m[1]), Number(m[2])] : null;
   }
   /** ffmpeg olcek suzgeci: genislik w, oran duzeltilmis yukseklik. */
-  olcek(w) { const o = this.oran; return o ? `scale=${w}:${Math.max(2, Math.round((w * o[1]) / o[0] / 2) * 2)}` : `scale='min(${w},iw)':-2`; }
+  scale(w) { const o = this.ratio; return o ? `scale=${w}:${Math.max(2, Math.round((w * o[1]) / o[0] / 2) * 2)}` : `scale='min(${w},iw)':-2`; }
 
   // ---------- cihaz saati ----------
-  static yerelZaman(d = new Date()) { return d.toLocaleString('sv-SE', { timeZone: 'Europe/Istanbul' }); }
-  async saatFarki() {
-    const dvr = await this.istek(1452, 'OPTimeQuery').then((y) => y.OPTimeQuery);
-    const sunucu = Dvr.yerelZaman();
-    return { dvr, sunucu, fark: Math.round((Date.parse(dvr.replace(' ', 'T') + 'Z') - Date.parse(sunucu.replace(' ', 'T') + 'Z')) / 1000) };
+  static localTime(d = new Date()) { return d.toLocaleString('sv-SE', { timeZone: 'Europe/Istanbul' }); }
+  async clockDifference() {
+    const dvr = await this.req(1452, 'OPTimeQuery').then((y) => y.OPTimeQuery);
+    const server = Dvr.localTime();
+    return { dvr, server, diff: Math.round((Date.parse(dvr.replace(' ', 'T') + 'Z') - Date.parse(server.replace(' ', 'T') + 'Z')) / 1000) };
   }
   /** Cihaz saatini sunucu saatine (Europe/Istanbul) esitler. fark: cihaz - sunucu (sn). */
-  async saatiSenkronla() {
-    const once = await this.saatFarki();
-    const y = await this.istek(1450, 'OPTimeSetting', Dvr.yerelZaman(), 10_000);
+  async syncClock() {
+    const before = await this.clockDifference();
+    const y = await this.req(1450, 'OPTimeSetting', Dvr.localTime(), 10_000);
     if (y.Ret !== 100) throw new Error(`Cihaz saati ayarlamadı (Ret ${y.Ret})`);
     await new Promise((r) => setTimeout(r, 1200));
-    const sonra = await this.saatFarki();
-    return { once: once.dvr, oncekiFark: once.fark, sonra: sonra.dvr, sunucu: sonra.sunucu, sonFark: sonra.fark };
+    const after = await this.clockDifference();
+    return { before: before.dvr, previousDiff: before.diff, after: after.dvr, server: after.server, lastDiff: after.diff };
   }
 
   /** Cihaz TCP baglanti butcesi (10): denetim 1 + canli yayin basina 1 + oynatma/indirme basina 2 (ayri oturum + veri soketi). */
-  butceVar() { return 1 + this.yayinlar.size + 2 * (this.oynatSayac + this.indirSayac) + 2 <= 10; }
-  oynatabilir() { return this.oynatSayac < this.oynatMax && this.butceVar(); }
-  indirabilir() { return this.indirSayac < this.indirMax && this.butceVar(); }
+  budgetVar() { return 1 + this.feeds.size + 2 * (this.playCounter + this.downloadCounter) + 2 <= 10; }
+  canPlay() { return this.playCounter < this.playMax && this.budgetVar(); }
+  canDownload() { return this.downloadCounter < this.downloadMax && this.budgetVar(); }
 
   // ---------- denetim oturumu ----------
-  async oturum() {
-    if (this.denetim && !this.denetim.kapandi) return this.denetim;
-    this.girisSozu ??= (async () => {
+  async session() {
+    if (this.audit && !this.audit.closed) return this.audit;
+    this.loginPromise ??= (async () => {
       try {
-        const b = new Baglanti(this.ayar.ana, this.ayar.port);
-        await b.baglan();
-        await b.giris(this.ayar.kullanici, this.ayar.parola);
-        b.kapanisDinleyici = () => { clearInterval(b.canli); if (this.denetim === b) this.denetim = null; };
-        b.canli = setInterval(() => { if (!b.kapandi) b.gonder(1006, { Name: 'KeepAlive', SessionID: b.oturumKimlik }); }, 10_000);
-        b.veriDinleyici = (m) => m === 1007;
-        this.denetim = b; this.sonHata = null;
+        const b = new Connection(this.setting.host, this.setting.port);
+        await b.connect();
+        await b.login(this.setting.username, this.setting.password);
+        b.shutdownListener = () => { clearInterval(b.live); if (this.audit === b) this.audit = null; };
+        b.live = setInterval(() => { if (!b.closed) b.send(1006, { Name: 'KeepAlive', SessionID: b.sessionIdentity }); }, 10_000);
+        b.dataListener = (m) => m === 1007;
+        this.audit = b; this.lastError = null;
         return b;
-      } catch (e) { this.sonHata = e.message; throw e; } finally { this.girisSozu = null; }
+      } catch (e) { this.lastError = e.message; throw e; } finally { this.loginPromise = null; }
     })();
-    return this.girisSozu;
+    return this.loginPromise;
   }
 
   /** Denetim isteklerini sirayla yurutur (ayni mesaj numarasi cakismasin). */
-  istek(msj, ad, ic, zamanAsimi) {
-    const calis = async () => {
-      const b = await this.oturum();
-      const govde = { Name: ad, SessionID: b.oturumKimlik };
-      if (ic !== undefined) govde[ad] = ic;
-      return b.istek(msj, govde, zamanAsimi);
+  req(msg, name, inner, timeOverflow) {
+    const run = async () => {
+      const b = await this.session();
+      const body = { Name: name, SessionID: b.sessionIdentity };
+      if (inner !== undefined) body[name] = inner;
+      return b.req(msg, body, timeOverflow);
     };
-    const s = this.kilit.then(calis, calis);
-    this.kilit = s.catch(() => {});
+    const s = this.lock.then(run, run);
+    this.lock = s.catch(() => {});
     return s;
   }
 
-  async ayarAl(ad) {
-    const y = await this.istek(1042, ad);
-    if (y.Ret !== 100) throw new Error(`${ad}: Ret ${y.Ret}`);
-    return y[ad];
+  async getSetting(name) {
+    const y = await this.req(1042, name);
+    if (y.Ret !== 100) throw new Error(`${name}: Ret ${y.Ret}`);
+    return y[name];
   }
 
-  async bilgi() {
-    const [sis, disk, saat] = await Promise.all([
-      this.istek(1020, 'SystemInfo').then((y) => y.SystemInfo),
-      this.istek(1020, 'StorageInfo').then((y) => y.StorageInfo).catch(() => null),
-      this.istek(1452, 'OPTimeQuery').then((y) => y.OPTimeQuery).catch(() => null),
+  async info() {
+    const [sysInfo, disk, clock] = await Promise.all([
+      this.req(1020, 'SystemInfo').then((y) => y.SystemInfo),
+      this.req(1020, 'StorageInfo').then((y) => y.StorageInfo).catch(() => null),
+      this.req(1452, 'OPTimeQuery').then((y) => y.OPTimeQuery).catch(() => null),
     ]);
-    const kanal = sis.VideoInChannel ?? this.ayar.kanalSayisi;
-    this.kanalAdlari ??= await this.ayarAl('AVEnc.VideoWidget').then((v) => v.map((k) => k?.ChannelTitle?.Name)).catch(() => []);
-    let toplam = 0, bos = 0;
-    for (const p of disk ?? []) for (const x of p.Partition ?? []) { toplam += parseInt(x.TotalSpace, 16) || 0; bos += parseInt(x.RemainSpace, 16) || 0; }
-    const kanalBos = await this.kanalBosDurum(kanal);
-    const diskler = [];
+    const channel = sysInfo.VideoInChannel ?? this.setting.channelCount;
+    this.channelNames ??= await this.getSetting('AVEnc.VideoWidget').then((v) => v.map((k) => k?.ChannelTitle?.Name)).catch(() => []);
+    let total = 0, empty = 0;
+    for (const p of disk ?? []) for (const x of p.Partition ?? []) { total += parseInt(x.TotalSpace, 16) || 0; empty += parseInt(x.RemainSpace, 16) || 0; }
+    const channelEmpty = await this.channelEmptyStatus(channel);
+    const disks = [];
     for (const [pi, p] of (disk ?? []).entries()) for (const [xi, x] of (p.Partition ?? []).entries()) {
       const tp = parseInt(x.TotalSpace, 16) || 0; if (!tp) continue;
-      const gecerli = (z) => (z && !z.startsWith('0000') && !z.startsWith('2000') ? z : null);
-      diskler.push({ ad: `Disk ${pi + 1}${(p.Partition ?? []).filter((y) => parseInt(y.TotalSpace, 16)).length > 1 ? `.${xi + 1}` : ''}`, uretici: '', toplamMB: tp, bosMB: parseInt(x.RemainSpace, 16) || 0, sicaklik: null,
-        durum: x.Status === 0 ? 'iyi' : 'hata', durumYazi: x.Status === 0 ? 'Normal' : `Durum kodu ${x.Status}`, kayitBas: gecerli(x.NewStartTime), kayitSon: gecerli(x.NewEndTime), mevcut: !!x.IsCurrent });
+      const valid = (z) => (z && !z.startsWith('0000') && !z.startsWith('2000') ? z : null);
+      disks.push({ name: `Disk ${pi + 1}${(p.Partition ?? []).filter((y) => parseInt(y.TotalSpace, 16)).length > 1 ? `.${xi + 1}` : ''}`, manufacturer: '', totalMB: tp, freeMB: parseInt(x.RemainSpace, 16) || 0, temperature: null,
+        status: x.Status === 0 ? 'good' : 'error', statusText: x.Status === 0 ? 'Normal' : `Durum kodu ${x.Status}`, recordStart: valid(x.NewStartTime), recordEnd: valid(x.NewEndTime), existing: !!x.IsCurrent });
     }
     return {
-      diskler,
-      kanalBos,
-      sunucuSaat: Dvr.yerelZaman(),
-      ana: this.ayar.ana, model: sis.HardWare, surum: sis.SoftWareVersion, seriNo: sis.SerialNo, derleme: sis.BuildTime,
-      calismaSn: (parseInt(sis.DeviceRunTime, 16) || 0) * 1, saat, kanal,
-      kanalAdlari: Array.from({ length: kanal }, (_, i) => this.kanalAdlari[i] || `Kanal ${i + 1}`),
-      diskMB: { toplam, bos },
+      disks,
+      channelEmpty,
+      serverClock: Dvr.localTime(),
+      host: this.setting.host, model: sysInfo.HardWare, version: sysInfo.SoftWareVersion, serialNo: sysInfo.SerialNo, build: sysInfo.BuildTime,
+      uptimeSec: (parseInt(sysInfo.DeviceRunTime, 16) || 0) * 1, clock, channel,
+      channelNames: Array.from({ length: channel }, (_, i) => this.channelNames[i] || `Kanal ${i + 1}`),
+      diskMB: { total, empty },
     };
   }
 
   // ---------- bos (kamera takili olmayan) kanal tespiti ----------
-  /** Dondurur: kanal basina true = bos. ayar.gizliKanallar (0 tabanli) kesin gizler; ayar.otomatikGizle=false tespiti kapatir. */
-  async kanalBosDurum(kanal) {
-    const zorla = new Set(this.ayar.gizliKanallar ?? []);
-    const bas = (k) => zorla.has(k);
-    if (this.ayar.otomatikGizle === false) return Array.from({ length: kanal }, (_, k) => bas(k));
-    const simdi = Date.now();
-    if (this.bosOnbellek && simdi - this.bosOnbellek.z < 5 * 60_000 && this.bosOnbellek.n === kanal) return this.bosOnbellek.liste.map((b, k) => b || bas(k));
-    const hesapla = async () => {
-      // Her kanal: 'bos' (siyah goruntu), 'canli' ya da 'yok' (akistan kare alinamadi: bagli kamera yok ya da gecici hata)
-      const sonuc = await Promise.all(Array.from({ length: kanal }, async (_, k) => {
-        if (bas(k)) return 'bos';
-        this.canliGorulen ??= new Set();
-        if (this.canliGorulen.has(k)) return 'canli';   // bir kez goruntu verdi: asla gizleme (gece/karanlik sahne yaniltmasin)
+  /** Dondurur: kanal basina true = bos. ayar.hiddenChannels (0 tabanli) kesin gizler; ayar.hideAuto=false tespiti kapatir. */
+  async channelEmptyStatus(channel) {
+    const force = new Set(this.setting.hiddenChannels ?? []);
+    const from = (k) => force.has(k);
+    if (this.setting.hideAuto === false) return Array.from({ length: channel }, (_, k) => from(k));
+    const now = Date.now();
+    if (this.emptyCache && now - this.emptyCache.z < 5 * 60_000 && this.emptyCache.n === channel) return this.emptyCache.list.map((b, k) => b || from(k));
+    const compute = async () => {
+      // Her kanal: 'empty' (siyah goruntu), 'live' ya da 'none' (akistan kare alinamadi: bagli kamera yok ya da gecici hata)
+      const result = await Promise.all(Array.from({ length: channel }, async (_, k) => {
+        if (from(k)) return 'empty';
+        this.liveSeen ??= new Set();
+        if (this.liveSeen.has(k)) return 'live';   // bir kez goruntu verdi: asla gizleme (gece/karanlik sahne yaniltmasin)
         try {
           // Alt akisin ilk karesi bozuk gelebiliyor: ana akistan iki ayri kare (1.5 sn arayla), ikisi de siyahsa bos
-          const [x, y] = await this.ikiKare(k);
-          const [px, py] = [await this.parlaklik(x), await this.parlaklik(y)];
-          if (px >= 6 || py >= 6) { this.canliGorulen.add(k); return 'canli'; }
-          return 'bos';
-        } catch { return 'yok'; }
+          const [x, y] = await this.twoFrame(k);
+          const [px, py] = [await this.brightness(x), await this.brightness(y)];
+          if (px >= 6 || py >= 6) { this.liveSeen.add(k); return 'live'; }
+          return 'empty';
+        } catch { return 'none'; }
       }));
       // Bazi ffmpeg surumleri bos kanaldan hic kare uretmez: baska kanallar goruntu veriyorsa, kare vermeyen ve hic goruntu gormemis kanal bostur.
-      const biriCanli = sonuc.includes('canli');
-      const liste = sonuc.map((r, k) => r === 'bos' || (r === 'yok' && biriCanli && !this.canliGorulen.has(k)));
-      this.bosOnbellek = { z: Date.now(), n: kanal, liste };
-      return liste;
+      const oneLive = result.includes('live');
+      const list = result.map((r, k) => r === 'empty' || (r === 'none' && oneLive && !this.liveSeen.has(k)));
+      this.emptyCache = { z: Date.now(), n: channel, list };
+      return list;
     };
     // Ilk seferde bekle (arayuz bos kanali hic cizmesin); sonra arka planda tazele, eski sonucu dondur.
-    if (!this.bosOnbellek || this.bosOnbellek.n !== kanal) return hesapla();
-    this.bosHesap ??= hesapla().finally(() => { this.bosHesap = null; });
-    return this.bosOnbellek.liste.map((b, k) => b || bas(k));
+    if (!this.emptyCache || this.emptyCache.n !== channel) return compute();
+    this.pendingCompute ??= compute().finally(() => { this.pendingCompute = null; });
+    return this.emptyCache.list.map((b, k) => b || from(k));
   }
 
   /** Ana akistan iki kare: ilk kare + 1.5 sn sonraki. */
-  async ikiKare(kanal) {
-    const y = this.yayin(kanal, 'Main', 320);
+  async twoFrame(channel) {
+    const y = this.feed(channel, 'Main', 320);
     try {
-      const a = await y.ilkKare();
+      const a = await y.firstFrame();
       if (!a) throw new Error('kare yok');
       await new Promise((r) => setTimeout(r, 1500));
-      return [a, y.son ?? a];
-    } finally { if (!y.aboneler.size) { clearTimeout(y.bosZaman); y.bosZaman = setTimeout(() => y.durdur(), 1500); } }
+      return [a, y.last ?? a];
+    } finally { if (!y.subscribers.size) { clearTimeout(y.idleTimer); y.idleTimer = setTimeout(() => y.stop(), 1500); } }
   }
 
   /** Bir kanaldan tek kare (JPEG) alir ve akisi hemen birakir. */
-  async anlikKare(kanal, tur, genislik) {
-    const y = this.yayin(kanal, tur, genislik);
-    try { return await y.ilkKare(); } finally { if (!y.aboneler.size) { clearTimeout(y.bosZaman); y.bosZaman = setTimeout(() => y.durdur(), 1500); } }
+  async instantFrame(channel, type, width) {
+    const y = this.feed(channel, type, width);
+    try { return await y.firstFrame(); } finally { if (!y.subscribers.size) { clearTimeout(y.idleTimer); y.idleTimer = setTimeout(() => y.stop(), 1500); } }
   }
 
   /** JPEG'in ortalama parlakligi (0-255): ffmpeg signalstats YAVG. */
-  parlaklik(jpeg) {
-    return new Promise((coz, red) => {
+  brightness(jpeg) {
+    return new Promise((resolve, red) => {
       const ff = spawn(this.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'image2pipe', '-i', 'pipe:0', '-vf', 'signalstats,metadata=print:file=-', '-frames:v', '1', '-f', 'null', '-'], { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
       ff.on('error', red);          // baslatilamazsa dinleyicisiz 'error' paneli dusurur
-      let cikti = '';
-      ff.stdout.on('data', (b) => (cikti += b));
+      let output = '';
+      ff.stdout.on('data', (b) => (output += b));
       ff.stdin.on('error', () => {});
-      ff.on('close', () => { const m = /YAVG=([\d.]+)/.exec(cikti); m ? coz(Number(m[1])) : red(new Error('parlaklik okunamadi')); });
+      ff.on('close', () => { const m = /YAVG=([\d.]+)/.exec(output); m ? resolve(Number(m[1])) : red(new Error('parlaklik okunamadi')); });
       ff.stdin.end(jpeg);
     });
   }
 
   // ---------- kayit sorgusu ----------
-  async kayitlar(kanal, bas, bit) {
-    const sonuc = new Map();
-    let b = bas;
-    for (let tur = 0; tur < 40; tur++) {
-      const y = await this.istek(1440, 'OPFileQuery', { BeginTime: b, EndTime: bit, Channel: kanal, DriveNo: '0', Event: '*', StreamType: '0x00000000', Type: 'h264' }, 15_000);
-      const liste = Array.isArray(y.OPFileQuery) ? y.OPFileQuery : [];
-      for (const f of liste) sonuc.set(f.FileName, f);
-      if (liste.length < 64) break;
-      const son = liste[liste.length - 1].EndTime;
-      if (!son || son <= b) break;
-      b = son;
+  async records(channel, from, to) {
+    const result = new Map();
+    let b = from;
+    for (let type = 0; type < 40; type++) {
+      const y = await this.req(1440, 'OPFileQuery', { BeginTime: b, EndTime: to, Channel: channel, DriveNo: '0', Event: '*', StreamType: '0x00000000', Type: 'h264' }, 15_000);
+      const list = Array.isArray(y.OPFileQuery) ? y.OPFileQuery : [];
+      for (const f of list) result.set(f.FileName, f);
+      if (list.length < 64) break;
+      const last = list[list.length - 1].EndTime;
+      if (!last || last <= b) break;
+      b = last;
     }
-    return [...sonuc.values()].map((f) => ({
-      ad: f.FileName, bas: f.BeginTime, bit: f.EndTime, boyut: (parseInt(f.FileLength, 16) || 0) * 1024,
-      tur: /\[([RMAH])\]/.exec(f.FileName)?.[1] ?? 'R',
-    })).sort((x, y) => x.bas.localeCompare(y.bas));
+    return [...result.values()].map((f) => ({
+      name: f.FileName, from: f.BeginTime, to: f.EndTime, size: (parseInt(f.FileLength, 16) || 0) * 1024,
+      type: /\[([RMAH])\]/.exec(f.FileName)?.[1] ?? 'R',
+    })).sort((x, y) => x.from.localeCompare(y.from));
   }
 
   // ---------- akis (claim soketi + baslat) ----------
   /** ic(eylem) -> komut govdesi. Veri paketleri `veri(buf)`'a gider. Dondurur { soket, durdur() }. */
-  async akisAc({ ad, claimMsj, baslatMsj, ic, veriMsj, veri, kapandi, ayriOturum = false }) {
-    let ana, ozel = null;
-    if (ayriOturum) {
-      ozel = new Baglanti(this.ayar.ana, this.ayar.port);
-      await ozel.baglan();
-      try { await ozel.giris(this.ayar.kullanici, this.ayar.parola); } catch (e) { ozel.kapat(); throw e; }
-      ozel.veriDinleyici = (m) => m === 1007;
-      ozel.canli = setInterval(() => { if (!ozel.kapandi) ozel.gonder(1006, { Name: 'KeepAlive', SessionID: ozel.oturumKimlik }); }, 10_000);
-      ana = ozel;
-    } else ana = await this.oturum();
-    const baslat = (eylem, ms) => (ozel ? ozel.istek(baslatMsj, { Name: ad, SessionID: ozel.oturumKimlik, [ad]: ic(eylem) }, ms) : this.istek(baslatMsj, ad, ic(eylem), ms));
-    const kapatOzel = () => { if (ozel) { clearInterval(ozel.canli); setTimeout(() => ozel.kapat(), 150); } };
-    const s = new Baglanti(this.ayar.ana, this.ayar.port);
-    await s.baglan();
-    s.oturum = ana.oturum;
-    let claimCoz;
-    const claim = new Promise((coz, red) => { claimCoz = coz; setTimeout(() => red(new Error('Akış sahiplenme yanıtı gelmedi')), 6000); });
-    s.veriDinleyici = (m, g) => {
-      if (veriMsj.includes(m)) { veri(g); return true; }
-      if (m === claimMsj + 1) { try { claimCoz(JSON.parse(g.toString().replace(/[\0\n]+$/, ''))); } catch { claimCoz({ Ret: -1 }); } }
+  async openStream({ name, claimMsg, startMsg, inner, dataMsg, data, closed, separateSession = false }) {
+    let host, custom = null;
+    if (separateSession) {
+      custom = new Connection(this.setting.host, this.setting.port);
+      await custom.connect();
+      try { await custom.login(this.setting.username, this.setting.password); } catch (e) { custom.close(); throw e; }
+      custom.dataListener = (m) => m === 1007;
+      custom.live = setInterval(() => { if (!custom.closed) custom.send(1006, { Name: 'KeepAlive', SessionID: custom.sessionIdentity }); }, 10_000);
+      host = custom;
+    } else host = await this.session();
+    const start = (action, ms) => (custom ? custom.req(startMsg, { Name: name, SessionID: custom.sessionIdentity, [name]: inner(action) }, ms) : this.req(startMsg, name, inner(action), ms));
+    const closeCustom = () => { if (custom) { clearInterval(custom.live); setTimeout(() => custom.close(), 150); } };
+    const s = new Connection(this.setting.host, this.setting.port);
+    await s.connect();
+    s.session = host.session;
+    let parseClaim;
+    const claim = new Promise((resolve, red) => { parseClaim = resolve; setTimeout(() => red(new Error('Akış sahiplenme yanıtı gelmedi')), 6000); });
+    s.dataListener = (m, g) => {
+      if (dataMsg.includes(m)) { data(g); return true; }
+      if (m === claimMsg + 1) { try { parseClaim(JSON.parse(g.toString().replace(/[\0\n]+$/, ''))); } catch { parseClaim({ Ret: -1 }); } }
       return true;
     };
-    s.kapanisDinleyici = () => { kapandi?.(); kapatOzel(); };
+    s.shutdownListener = () => { closed?.(); closeCustom(); };
     try {
-      s.gonder(claimMsj, { Name: ad, SessionID: ana.oturumKimlik, [ad]: ic('Claim') });
+      s.send(claimMsg, { Name: name, SessionID: host.sessionIdentity, [name]: inner('Claim') });
       const c = await claim;
       if (c.Ret !== 100) throw new Error(`Akış reddedildi (Ret ${c.Ret}; bağlantı sınırı dolu olabilir)`);
-      const y = await baslat('Start', 8000);
+      const y = await start('Start', 8000);
       if (y.Ret !== 100) throw new Error(`Akış başlatılamadı (Ret ${y.Ret})`);
-    } catch (e) { s.kapat(); kapatOzel(); throw e; }
-    let bitti = false;
+    } catch (e) { s.close(); closeCustom(); throw e; }
+    let ended = false;
     return {
-      baglanti: s,
-      durdur: () => {
-        if (bitti) return; bitti = true;
-        baslat('Stop', 2000).catch(() => {});
-        setTimeout(() => s.kapat(), 100);
-        kapatOzel();
+      connection: s,
+      stop: () => {
+        if (ended) return; ended = true;
+        start('Stop', 2000).catch(() => {});
+        setTimeout(() => s.close(), 100);
+        closeCustom();
       },
     };
   }
 
-  izleIc = (kanal, tur) => (eylem) => ({ Action: eylem, Parameter: { Channel: kanal, CombinMode: 'NONE', StreamType: tur, TransMode: 'TCP' } });
-  oynatIc = (kanal, bas, bit, dosya) => (eylem) => ({
-    Action: eylem, StartTime: bas, EndTime: bit,
-    Parameter: { PlayMode: dosya ? 'ByName' : 'ByTime', FileName: dosya ?? '', StreamType: 0, Value: 0, TransMode: 'TCP', Channel: kanal, Type: 'h264' },
+  watchInner = (channel, type) => (action) => ({ Action: action, Parameter: { Channel: channel, CombinMode: 'NONE', StreamType: type, TransMode: 'TCP' } });
+  playInner = (channel, from, to, file) => (action) => ({
+    Action: action, StartTime: from, EndTime: to,
+    Parameter: { PlayMode: file ? 'ByName' : 'ByTime', FileName: file ?? '', StreamType: 0, Value: 0, TransMode: 'TCP', Channel: channel, Type: 'h264' },
   });
 
   // ---------- canli yayin (MJPEG, paylasimli) ----------
-  yayin(kanal, tur, _genislik) {
+  feed(channel, type, _width) {
     // Genislik tur basina SABIT (istemci ne isterse): her kanal/tur icin cihaza tek baglanti, tum izleyiciler paylasir.
-    const genislik = tur === 'Extra1' ? 480 : 1280;
-    const anahtar = `${kanal}/${tur}/${genislik}`;
-    let y = this.yayinlar.get(anahtar);
-    if (!y) { y = new CanliYayin(this, kanal, tur, genislik, () => this.yayinlar.delete(anahtar)); this.yayinlar.set(anahtar, y); y.baslat(); }
+    const width = type === 'Extra1' ? 480 : 1280;
+    const key = `${channel}/${type}/${width}`;
+    let y = this.feeds.get(key);
+    if (!y) { y = new LiveFeed(this, channel, type, width, () => this.feeds.delete(key)); this.feeds.set(key, y); y.start(); }
     return y;
   }
 
   // ---------- kayitli oynatma (MJPEG, izleyici basina; tum tarayicilarda calisir) ----------
-  oynatMjpeg(res, kanal, bas, bit, genislik) {
-    if (!this.oynatabilir()) { try { res.end(); } catch {} return null; }   // cihaz bagli kalmasin: sinir doluysa istemci birazdan yeniden dener
-    this.oynatSayac++;
-    res.on('close', () => { this.oynatSayac = Math.max(0, this.oynatSayac - 1); });
+  playMjpeg(res, channel, from, to, width) {
+    if (!this.canPlay()) { try { res.end(); } catch {} return null; }   // cihaz bagli kalmasin: sinir doluysa istemci birazdan yeniden dener
+    this.playCounter++;
+    res.on('close', () => { this.playCounter = Math.max(0, this.playCounter - 1); });
     // Cihaz ByTime oynatmada kanal parametresini yok sayiyor (hep CAM01): kanal klasorundeki dosya adiyla (ByName) oynatilir.
-    const mod = { oynatma: { kanal, bas } };
-    const y = new CanliYayin(this, kanal, 'oynat', genislik, () => {}, mod);
-    y.baslat();
-    y.abone(res);
+    const mod = { playback: { channel, from } };
+    const y = new LiveFeed(this, channel, 'play', width, () => {}, mod);
+    y.start();
+    y.subscriber(res);
     // Kayit bitince (cihaz akisi kapatir ya da sessizlesir) yaniti kapat: istemci "kayit sonu" gorur.
-    let son = Date.now(), sayac = -1;
-    const bekci = setInterval(() => {
-      if (y.durduruldu) return clearInterval(bekci);
-      if (y.kareSayac !== sayac) { sayac = y.kareSayac; son = Date.now(); } else if (Date.now() - son > 8000) { clearInterval(bekci); y.durdur(); }
+    let last = Date.now(), counter = -1;
+    const watcher = setInterval(() => {
+      if (y.stopped) return clearInterval(watcher);
+      if (y.frameCounter !== counter) { counter = y.frameCounter; last = Date.now(); } else if (Date.now() - last > 8000) { clearInterval(watcher); y.stop(); }
     }, 1000);
-    res.on('close', () => { clearInterval(bekci); });
+    res.on('close', () => { clearInterval(watcher); });
     return y;
   }
 
   // ---------- kayit indirme: cihazdan dogrudan indirenin tarayicisina AKAR; sunucu diskine hicbir sey yazilmaz ----------
-  indirAdi(kanal, kayit) {
+  downloadName(channel, record) {
     // Kamera adi + tarih + baslangic-bitis saati: CAM01_2026-01-01_10.00.00-10.01.00.mp4
-    const kamera = String(this.adlarGecersiz?.[kanal] || this.kanalAdlari?.[kanal] || `K${kanal + 1}`).replace(/[ıİğĞüÜşŞöÖçÇ]/g, (c) => ({ ı: 'i', İ: 'I', ğ: 'g', Ğ: 'G', ü: 'u', Ü: 'U', ş: 's', Ş: 'S', ö: 'o', Ö: 'O', ç: 'c', Ç: 'C' })[c]).replace(/\s+/g, '-').replace(/[^\w-]+/g, '') || `K${kanal + 1}`;
-    return `${kamera}_${kayit.bas.slice(0, 10)}_${kayit.bas.slice(11).replaceAll(':', '.')}-${kayit.bit.slice(11).replaceAll(':', '.')}.mp4`;
+    const camera = String(this.nameOverrides?.[channel] || this.channelNames?.[channel] || `K${channel + 1}`).replace(/[ıİğĞüÜşŞöÖçÇ]/g, (c) => ({ ı: 'i', İ: 'I', ğ: 'g', Ğ: 'G', ü: 'u', Ü: 'U', ş: 's', Ş: 'S', ö: 'o', Ö: 'O', ç: 'c', Ç: 'C' })[c]).replace(/\s+/g, '-').replace(/[^\w-]+/g, '') || `K${channel + 1}`;
+    return `${camera}_${record.from.slice(0, 10)}_${record.from.slice(11).replaceAll(':', '.')}-${record.to.slice(11).replaceAll(':', '.')}.mp4`;
   }
 
   /** Kuyrukta sirasini bekler, sonra DownloadStart ile cihazdan cekip parcali mp4 olarak res'e yazar. bitince({ tamam, bayt }) */
-  async indirAkit(res, kanal, kayit, ad, bitince) {
-    res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Disposition': `attachment; filename="${ad}"`, 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+  async pipeDownload(res, channel, record, name, onEnd) {
+    res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
     res.flushHeaders?.();
-    let ff = null, akis = null, kapali = false, bayt = 0, bitirildi = false, sonZ = Date.now(), alinan = 0, sayildi = false;
-    const bekci = setInterval(() => {
-      if (!akis || bitirildi) return;
-      const sessiz = Date.now() - sonZ;
-      if (alinan > 0 && sessiz > 4000) tamamla(true);            // dosya sonunda cihaz akisi kapatmaz, yalniz veri kesilir
-      else if (sessiz > 20_000) tamamla(false);
+    let ff = null, stream = null, closed = false, byte = 0, finished = false, lastZ = Date.now(), taken = 0, counted = false;
+    const watcher = setInterval(() => {
+      if (!stream || finished) return;
+      const muted = Date.now() - lastZ;
+      if (taken > 0 && muted > 4000) complete(true);            // dosya sonunda cihaz akisi kapatmaz, yalniz veri kesilir
+      else if (muted > 20_000) complete(false);
     }, 1000);
-    const say = (art) => { if (art && !sayildi) { sayildi = true; this.indirSayac++; } else if (!art && sayildi) { sayildi = false; this.indirSayac = Math.max(0, this.indirSayac - 1); } };
-    const sonlan = (tamam) => { if (bitirildi) return; bitirildi = true; clearInterval(bekci); say(false); try { akis?.durdur(); } catch {} bitince?.({ tamam, bayt }); };
-    function tamamla(tamam) { if (bitirildi) return; try { akis?.durdur(); } catch {} if (ff && tamam) { try { ff.stdin.end(); } catch {} } else { try { ff?.kill('SIGKILL'); } catch {} try { res.end(); } catch {} } sonlan(tamam && alinan > 0); }
-    res.on('close', () => { kapali = true; if (!bitirildi) { try { ff?.stdin.destroy(); ff?.kill('SIGKILL'); } catch {} sonlan(false); } });
-    // sira: ayni anda en fazla indirMax; cihaz baglanti butcesi doluysa bekle
-    for (let t = 0; !this.indirabilir(); t++) { if (kapali || t > 900) { sonlan(false); try { res.end(); } catch {} return; } await new Promise((r) => setTimeout(r, 1000)); }
-    if (kapali) return sonlan(false);
-    say(true);
-    const ayirici = new CerceveAyirici((v) => {
-      if (bitirildi) return;
+    const count = (art) => { if (art && !counted) { counted = true; this.downloadCounter++; } else if (!art && counted) { counted = false; this.downloadCounter = Math.max(0, this.downloadCounter - 1); } };
+    const finish = (ok) => { if (finished) return; finished = true; clearInterval(watcher); count(false); try { stream?.stop(); } catch {} onEnd?.({ ok, byte }); };
+    function complete(ok) { if (finished) return; try { stream?.stop(); } catch {} if (ff && ok) { try { ff.stdin.end(); } catch {} } else { try { ff?.kill('SIGKILL'); } catch {} try { res.end(); } catch {} } finish(ok && taken > 0); }
+    res.on('close', () => { closed = true; if (!finished) { try { ff?.stdin.destroy(); ff?.kill('SIGKILL'); } catch {} finish(false); } });
+    // sira: ayni anda en fazla downloadMax; cihaz baglanti butcesi doluysa bekle
+    for (let t = 0; !this.canDownload(); t++) { if (closed || t > 900) { finish(false); try { res.end(); } catch {} return; } await new Promise((r) => setTimeout(r, 1000)); }
+    if (closed) return finish(false);
+    count(true);
+    const splitter = new FrameSplitter((v) => {
+      if (finished) return;
       if (!ff) {
-        const fps = ayirici.bilgi.fps || 25;
-        ff = spawn(this.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'h264', '-framerate', String(fps), '-i', 'pipe:0', ...(this.oran ? ['-aspect', this.oran.join(':')] : []),
+        const fps = splitter.info.fps || 25;
+        ff = spawn(this.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'h264', '-framerate', String(fps), '-i', 'pipe:0', ...(this.ratio ? ['-aspect', this.ratio.join(':')] : []),
           '-c:v', 'copy', '-bsf:v', `setts=ts=N/${fps}/TB`, '-movflags', 'frag_keyframe+empty_moov+default_base_moof', '-f', 'mp4', 'pipe:1'], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-        ff.on('error', () => tamamla(false));          // baslatilamazsa dinleyicisiz 'error' paneli dusurur
+        ff.on('error', () => complete(false));          // baslatilamazsa dinleyicisiz 'error' paneli dusurur
         ff.stdin.on('error', () => {}); ff.stderr.on('data', () => {});
-        ff.stdout.on('data', (b) => { bayt += b.length; });
+        ff.stdout.on('data', (b) => { byte += b.length; });
         ff.stdout.pipe(res);
-        ff.on('close', () => { try { res.end(); } catch {} if (!bitirildi) sonlan(alinan > 0); });
+        ff.on('close', () => { try { res.end(); } catch {} if (!finished) finish(taken > 0); });
       }
-      if (!ff.stdin.write(v)) { akis?.baglanti.soket.pause(); ff.stdin.once('drain', () => akis?.baglanti.soket.resume()); }
+      if (!ff.stdin.write(v)) { stream?.connection.socket.pause(); ff.stdin.once('drain', () => stream?.connection.socket.resume()); }
     }, null);
-    const eylem = (e) => ({ ...this.oynatIc(kanal, kayit.bas, kayit.bit, kayit.ad)(e), Action: e === 'Start' ? 'DownloadStart' : e === 'Stop' ? 'DownloadStop' : e });
+    const action = (e) => ({ ...this.playInner(channel, record.from, record.to, record.name)(e), Action: e === 'Start' ? 'DownloadStart' : e === 'Stop' ? 'DownloadStop' : e });
     try {
-      akis = await this.akisAc({ ad: 'OPPlayBack', claimMsj: 1424, baslatMsj: 1420, ic: eylem, veriMsj: [1426, 1422], ayriOturum: true,
-        veri: (g) => { alinan += g.length; sonZ = Date.now(); ayirici.ekle(g); }, kapandi: () => { if (!bitirildi && alinan > 0) tamamla(true); } });
-      if (bitirildi) akis.durdur();
-    } catch (e) { sonZ = 0; try { res.end(); } catch {} sonlan(false); throw e; }
+      stream = await this.openStream({ name: 'OPPlayBack', claimMsg: 1424, startMsg: 1420, inner: action, dataMsg: [1426, 1422], separateSession: true,
+        data: (g) => { taken += g.length; lastZ = Date.now(); splitter.add(g); }, closed: () => { if (!finished && taken > 0) complete(true); } });
+      if (finished) stream.stop();
+    } catch (e) { lastZ = 0; try { res.end(); } catch {} finish(false); throw e; }
   }
 
   /** DVR diskindeki TUM kayitlari siler (bicimlendirme). Cihaz tek tek dosya silmeyi desteklemez. */
-  async diskiTemizle() {
-    return this.istek(1450, 'OPStorageManager', { Action: 'Clear', PartNo: 0, PlysicalNo: 0, Type: 'Data' }, 60_000);
+  async diskClear() {
+    return this.req(1450, 'OPStorageManager', { Action: 'Clear', PartNo: 0, PlysicalNo: 0, Type: 'Data' }, 60_000);
   }
 
-  kapat() { for (const y of [...this.yayinlar.values()]) y.durdur(); this.denetim?.kapat(); }
+  close() { for (const y of [...this.feeds.values()]) y.stop(); this.audit?.close(); }
 }
 
-class CanliYayin {
-  constructor(dvr, kanal, tur, genislik, bitince, mod = null) {
-    Object.assign(this, { dvr, kanal, tur, genislik, bitince, mod });
-    this.aboneler = new Set(); this.sonZ = Date.now(); this.son = null; this.durduruldu = false; this.jpegTampon = Buffer.alloc(0); this.hata = null;
+class LiveFeed {
+  constructor(dvr, channel, type, width, onEnd, mod = null) {
+    Object.assign(this, { dvr, channel, type, width, onEnd, mod });
+    this.subscribers = new Set(); this.lastZ = Date.now(); this.last = null; this.stopped = false; this.jpegBuffer = Buffer.alloc(0); this.error = null;
   }
 
-  baslat() {
-    this.hazir = this.#kur().catch((e) => { this.hata = e.message; this.durdur(); });
+  start() {
+    this.ready = this.#setup().catch((e) => { this.error = e.message; this.stop(); });
     // Kare akisi 10 sn durursa (kamera/cihaz takildi) yayini kapat: izleyiciler kendiliginden yeniden baglanir.
-    this.bekci = setInterval(() => { if (this.son && Date.now() - this.sonZ > 10_000) this.durdur(); }, 2000);
+    this.watcher = setInterval(() => { if (this.last && Date.now() - this.lastZ > 10_000) this.stop(); }, 2000);
   }
 
-  async #kur() {
+  async #setup() {
     const { dvr } = this;
-    const ayirici = new CerceveAyirici((v) => {
-      if (this.durduruldu) return;
-      if (!this.ff.stdin.write(v)) { this.akis?.baglanti.soket.pause(); this.ff.stdin.once('drain', () => this.akis?.baglanti.soket.resume()); }
+    const splitter = new FrameSplitter((v) => {
+      if (this.stopped) return;
+      if (!this.ff.stdin.write(v)) { this.stream?.connection.socket.pause(); this.ff.stdin.once('drain', () => this.stream?.connection.socket.resume()); }
     }, null);
-    const w = Math.max(160, Math.min(1920, this.genislik || 640));
+    const w = Math.max(160, Math.min(1920, this.width || 640));
     this.ff = spawn(dvr.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-flags', 'low_delay', '-probesize', '32768', '-analyzeduration', '0',
-      '-f', 'h264', '-i', 'pipe:0', '-an', '-vf', dvr.olcek(w), '-q:v', '5', '-f', 'image2pipe', '-c:v', 'mjpeg', 'pipe:1'], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-    this.ff.on('error', () => this.durdur());       // baslatilamazsa dinleyicisiz 'error' paneli dusurur
+      '-f', 'h264', '-i', 'pipe:0', '-an', '-vf', dvr.scale(w), '-q:v', '5', '-f', 'image2pipe', '-c:v', 'mjpeg', 'pipe:1'], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    this.ff.on('error', () => this.stop());       // baslatilamazsa dinleyicisiz 'error' paneli dusurur
     this.ff.stdin.on('error', () => {}); this.ff.stderr.on('data', () => {});
     this.ff.stdout.on('data', (b) => this.#jpeg(b));
-    this.ff.on('close', () => this.durdur());
-    if (this.mod?.oynatma) { this.ayirici = ayirici; await this.#oynatKur(); }
+    this.ff.on('close', () => this.stop());
+    if (this.mod?.playback) { this.splitter = splitter; await this.#playSetup(); }
     else {
-      this.akis = await dvr.akisAc({ ad: 'OPMonitor', claimMsj: 1413, baslatMsj: 1410, ic: dvr.izleIc(this.kanal, this.tur), veriMsj: [1412], veri: (g) => ayirici.ekle(g), kapandi: () => this.durdur() });
-      if (this.durduruldu) { this.akis.durdur(); return; }
+      this.stream = await dvr.openStream({ name: 'OPMonitor', claimMsg: 1413, startMsg: 1410, inner: dvr.watchInner(this.channel, this.type), dataMsg: [1412], data: (g) => splitter.add(g), closed: () => this.stop() });
+      if (this.stopped) { this.stream.stop(); return; }
     }
     const t0 = Date.now();
-    while (!this.son && !this.durduruldu) {
+    while (!this.last && !this.stopped) {
       if (Date.now() - t0 > 8000) throw new Error('Kameradan görüntü gelmedi');
       await new Promise((r) => setTimeout(r, 100));
     }
   }
 
   /** Kayitli oynatma: hedef andan baslayarak kanalin dosyalarini sirayla (ByName + dosya ici baslangic zamani) oynatir. */
-  async #oynatKur() {
-    const { dvr } = this; const { kanal, bas } = this.mod.oynatma;
-    const gun = bas.slice(0, 10);
-    const ertesi = new Date(Date.parse(`${gun}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-    this.dosyalar = (await dvr.kayitlar(kanal, `${gun} 00:00:00`, `${ertesi} 23:59:59`)).filter((f) => f.bit > bas);
-    if (!this.dosyalar.length) throw new Error('Bu anda kayıt yok');
-    this.sira = 0; this.hedef = bas; this.jeton = 0; this.alinan = 0; this.sonVeriZ = Date.now();
-    await this.#dosyaOynat();
+  async #playSetup() {
+    const { dvr } = this; const { channel, from } = this.mod.playback;
+    const day = from.slice(0, 10);
+    const next = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    this.files = (await dvr.records(channel, `${day} 00:00:00`, `${next} 23:59:59`)).filter((f) => f.to > from);
+    if (!this.files.length) throw new Error('Bu anda kayıt yok');
+    this.order = 0; this.target = from; this.token = 0; this.taken = 0; this.lastDataZ = Date.now();
+    await this.#playFile();
     // dosya sonunda cihaz akisi kapatmaz, yalniz veri kesilir: 4 sn sessizlikte siradaki dosyaya gec
-    this.dosyaBekci = setInterval(() => { if (this.akis && this.alinan > 0 && Date.now() - this.sonVeriZ > 4000) this.#dosyaOynat().catch(() => this.durdur()); }, 1000);
+    this.fileWatcher = setInterval(() => { if (this.stream && this.taken > 0 && Date.now() - this.lastDataZ > 4000) this.#playFile().catch(() => this.stop()); }, 1000);
   }
-  async #dosyaOynat() {
-    if (this.gecis || this.durduruldu) return;
-    this.gecis = true;
+  async #playFile() {
+    if (this.transition || this.stopped) return;
+    this.transition = true;
     try {
-      const jeton = ++this.jeton;
-      this.akis?.durdur(); this.akis = null;
-      const f = this.dosyalar[this.sira++];
-      if (!f) { this.durdur(); return; }
-      const baslangic = f.bas > this.hedef ? f.bas : this.hedef;
-      this.alinan = 0; this.sonVeriZ = Date.now();
-      this.akis = await this.dvr.akisAc({
-        ad: 'OPPlayBack', claimMsj: 1424, baslatMsj: 1420, ic: this.dvr.oynatIc(this.kanal, baslangic, f.bit, f.ad), veriMsj: [1422, 1426], ayriOturum: true,
-        veri: (g) => { this.alinan += g.length; this.sonVeriZ = Date.now(); this.ayirici.ekle(g); },
-        kapandi: () => { if (jeton === this.jeton && !this.gecis) this.#dosyaOynat().catch(() => this.durdur()); },
+      const token = ++this.token;
+      this.stream?.stop(); this.stream = null;
+      const f = this.files[this.order++];
+      if (!f) { this.stop(); return; }
+      const startIndex = f.from > this.target ? f.from : this.target;
+      this.taken = 0; this.lastDataZ = Date.now();
+      this.stream = await this.dvr.openStream({
+        name: 'OPPlayBack', claimMsg: 1424, startMsg: 1420, inner: this.dvr.playInner(this.channel, startIndex, f.to, f.name), dataMsg: [1422, 1426], separateSession: true,
+        data: (g) => { this.taken += g.length; this.lastDataZ = Date.now(); this.splitter.add(g); },
+        closed: () => { if (token === this.token && !this.transition) this.#playFile().catch(() => this.stop()); },
       });
-      if (this.durduruldu) this.akis.durdur();
-    } finally { this.gecis = false; }
+      if (this.stopped) this.stream.stop();
+    } finally { this.transition = false; }
   }
 
   // ham=true: fetch okuyucusu icin yalniz ardisik JPEG baytlari (WebKit fetch'te multipart/x-mixed-replace'i reddeder)
-  #parca(kare, r) { return r.ham ? [kare] : [`--kare\r\nContent-Type: image/jpeg\r\nContent-Length: ${kare.length}\r\n\r\n`, kare, '\r\n']; }
+  #part(frame, r) { return r.raw ? [frame] : [`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`, frame, '\r\n']; }
 
   #jpeg(b) {
-    this.jpegTampon = this.jpegTampon.length ? Buffer.concat([this.jpegTampon, b]) : b;
+    this.jpegBuffer = this.jpegBuffer.length ? Buffer.concat([this.jpegBuffer, b]) : b;
     for (;;) {
-      const bas = this.jpegTampon.indexOf(JPEG_BAS);
-      if (bas < 0) { this.jpegTampon = Buffer.alloc(0); return; }
-      const son = this.jpegTampon.indexOf(JPEG_SON, bas + 2);
-      if (son < 0) { this.jpegTampon = this.jpegTampon.subarray(bas); return; }
-      const kare = Buffer.from(this.jpegTampon.subarray(bas, son + 2));
-      this.jpegTampon = this.jpegTampon.subarray(son + 2);
-      this.son = kare; this.sonZ = Date.now(); this.kareSayac = (this.kareSayac ?? 0) + 1;
-      for (const r of this.aboneler) {
+      const from = this.jpegBuffer.indexOf(JPEG_START);
+      if (from < 0) { this.jpegBuffer = Buffer.alloc(0); return; }
+      const last = this.jpegBuffer.indexOf(JPEG_END, from + 2);
+      if (last < 0) { this.jpegBuffer = this.jpegBuffer.subarray(from); return; }
+      const frame = Buffer.from(this.jpegBuffer.subarray(from, last + 2));
+      this.jpegBuffer = this.jpegBuffer.subarray(last + 2);
+      this.last = frame; this.lastZ = Date.now(); this.frameCounter = (this.frameCounter ?? 0) + 1;
+      for (const r of this.subscribers) {
         if (r.writableNeedDrain) continue;
-        for (const p of this.#parca(kare, r)) r.write(p);
+        for (const p of this.#part(frame, r)) r.write(p);
       }
     }
   }
 
-  abone(res) {
-    this.aboneler.add(res);
-    clearTimeout(this.bosZaman);
-    if (this.son) for (const p of this.#parca(this.son, res)) res.write(p);
+  subscriber(res) {
+    this.subscribers.add(res);
+    clearTimeout(this.idleTimer);
+    if (this.last) for (const p of this.#part(this.last, res)) res.write(p);
     res.on('close', () => {
-      this.aboneler.delete(res);
-      if (!this.aboneler.size) this.bosZaman = setTimeout(() => this.durdur(), this.mod ? 300 : 4000);
+      this.subscribers.delete(res);
+      if (!this.subscribers.size) this.idleTimer = setTimeout(() => this.stop(), this.mod ? 300 : 4000);
     });
   }
 
   /** Ilk kare gelene dek bekler (anlik goruntu icin). */
-  async ilkKare() {
-    await this.hazir;
-    return this.son;
+  async firstFrame() {
+    await this.ready;
+    return this.last;
   }
 
-  durdur() {
-    if (this.durduruldu) return;
-    this.durduruldu = true;
-    clearTimeout(this.bosZaman); clearInterval(this.bekci); clearInterval(this.dosyaBekci);
-    this.akis?.durdur();
+  stop() {
+    if (this.stopped) return;
+    this.stopped = true;
+    clearTimeout(this.idleTimer); clearInterval(this.watcher); clearInterval(this.fileWatcher);
+    this.stream?.stop();
     try { this.ff?.stdin.destroy(); this.ff?.kill('SIGKILL'); } catch {}
-    for (const r of this.aboneler) { try { r.end(); } catch {} }
-    this.aboneler.clear();
-    this.bitince();
+    for (const r of this.subscribers) { try { r.end(); } catch {} }
+    this.subscribers.clear();
+    this.onEnd();
   }
 }

@@ -6,7 +6,7 @@
 <meta name="tema-alan" content="">
 <meta name="robots" content="noindex, nofollow">
 <title>Giriş · Kamera Paneli</title>
-<link rel="icon" href="./simge.svg" type="image/svg+xml">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="./css/app.css">
 <script type="module">
   /* Tema: EYS theme.js birebir (cerez dc-tema; paneller arasi ortak secim). */
@@ -19,8 +19,8 @@
   GİRİŞ EKRANI EYS İLE BİREBİR AYNI DÜZENDE:
   gate__mark / gate__lead, merkez düğmesi, "veya" ayracı, katlı parola formu,
   alt not. Sınıflar ve CSS DC panellerinden; burada yalnızca işaretleme var.
-  Sunucu doldurur: MERKEZ (düğme + ayraç), MERKEZ_HATA, ACIK (merkez yoksa
-  parola formu açık), BIRINCIL (merkez yoksa "Oturum aç" birincil düğme).
+  Sunucu doldurur: HUB (düğme + ayraç), HUB_ERROR, OPEN (merkez yoksa
+  parola formu açık), PRIMARY (merkez yoksa "Oturum aç" birincil düğme).
 -->
 <button type="button" class="btn btn--ghost btn--icon btn--sm gate__tema" data-theme-toggle aria-label="Temayı değiştir">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
@@ -33,27 +33,27 @@
     <div class="gate__mark">Kamera Paneli</div>
     <p class="gate__lead">NVR ve kamera izleme — devam etmek için oturum açın.</p>
 
-    <!--MERKEZ_HATA-->
-    <div class="alert alert--danger gate__alert" id="hata" role="alert" hidden></div>
+    <!--HUB_ERROR-->
+    <div class="alert alert--danger gate__alert" id="error" role="alert" hidden></div>
 
-    <!--MERKEZ-->
+    <!--HUB-->
 
-    <details class="gate__katlanir"<!--ACIK-->>
+    <details class="gate__katlanir"<!--OPEN-->>
       <summary class="gate__katlanir-baslik">Parolayla giriş</summary>
 
       <form id="form" autocomplete="on">
         <div class="field">
-          <label class="field__label" for="ad">Kullanıcı adı</label>
-          <input class="input input--mono" id="ad" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          <label class="field__label" for="name">Kullanıcı adı</label>
+          <input class="input input--mono" id="name" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
         </div>
 
         <div class="field">
-          <label class="field__label" for="parola">Parola</label>
-          <input class="input" id="parola" name="password" type="password" autocomplete="current-password" required>
+          <label class="field__label" for="password">Parola</label>
+          <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
         </div>
 
         <div class="form-actions">
-          <button type="submit" class="btn btn--block<!--BIRINCIL-->" id="gonder">Oturum aç</button>
+          <button type="submit" class="btn btn--block<!--PRIMARY-->" id="send">Oturum aç</button>
         </div>
       </form>
 
@@ -62,15 +62,15 @@
   </div>
 </main>
 <script>
-  const f = document.getElementById('form'), hata = document.getElementById('hata'), dugme = document.getElementById('gonder');
+  const f = document.getElementById('form'), error = document.getElementById('error'), button = document.getElementById('send');
   f.addEventListener('submit', async (e) => {
-    e.preventDefault(); hata.hidden = true; dugme.disabled = true;
+    e.preventDefault(); error.hidden = true; button.disabled = true;
     try {
-      const y = await fetch('/api/giris', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kamera': '1' }, body: JSON.stringify({ ad: document.getElementById('ad').value.trim(), parola: document.getElementById('parola').value }) });
+      const y = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Cam': '1' }, body: JSON.stringify({ name: document.getElementById('name').value.trim(), password: document.getElementById('password').value }) });
       const j = await y.json().catch(() => ({}));
-      if (!y.ok) throw new Error(j.hata ?? `Hata ${y.status}`);
+      if (!y.ok) throw new Error(j.error ?? `Hata ${y.status}`);
       location.reload(); // ayni adres: replace() sayfayi yenilemez, reload() yeni cerezle paneli getirir
-    } catch (err) { hata.textContent = err.message; hata.hidden = false; dugme.disabled = false; document.getElementById('parola').select(); }
+    } catch (err) { error.textContent = err.message; error.hidden = false; button.disabled = false; document.getElementById('password').select(); }
   });
 </script>
 </body>

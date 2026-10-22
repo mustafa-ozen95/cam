@@ -4,7 +4,7 @@
 services:
   cam:
     ports:
-      - "${KAMERA_DIS_PORT:-1165}:80"
+      - "${CAM_EXTERNAL_PORT:-1165}:80"
     environment:
       # Önde vekil yok: X-Real-IP'ye güvenilmez (istemci taklit edebilir), çerez düz HTTP'de de çalışır.
-      KAMERA_IP_BASLIGI: ""
+      CAM_IP_HEADER: ""
