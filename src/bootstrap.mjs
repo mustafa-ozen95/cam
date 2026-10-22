@@ -3,7 +3,7 @@
  * Giris noktasi bin/cam.mjs; testler de buradan uygulama kurar (gercek cihaz yerine sahte surucuyle).
  */
 import { join } from 'node:path';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { Uygulama } from './core/app.mjs';
 import { Veritabani } from './core/database.mjs';
@@ -35,6 +35,8 @@ import { apiV1Rotalari } from '../routes/api-v1.mjs';
 
 export async function uygulamaKur(yapilandirma) {
   mkdirSync(yapilandirma.veriKlasoru, { recursive: true });
+  const eskiIlkAdmin = join(yapilandirma.veriKlasoru, 'ilk-admin.txt'), yeniIlkAdmin = join(yapilandirma.veriKlasoru, 'initial-admin.txt');
+  if (existsSync(eskiIlkAdmin) && !existsSync(yeniIlkAdmin)) renameSync(eskiIlkAdmin, yeniIlkAdmin);
   // veritabani: gelene kadar bekler, gocleri kosturur, eski JSON verisini (varsa) bir kez aktarir
   const vt = await new Veritabani(yapilandirma.veritabani).baglan({ beklemeSn: yapilandirma.veritabani.beklemeSn });
   try { return await uygulamaKurVt(yapilandirma, vt); } catch (e) { await vt.kapat(); throw e; }
@@ -43,10 +45,10 @@ export async function uygulamaKur(yapilandirma) {
 async function uygulamaKurVt(yapilandirma, vt) {
   await vt.gocYap();
   const ayarlar = new Ayarlar(vt);
-  const gizli = gizliAnahtarCoz({ ortam: yapilandirma.gizliAnahtar, dosya: join(yapilandirma.veriKlasoru, 'gizli.anahtar') });
+  const gizli = gizliAnahtarCoz({ ortam: yapilandirma.gizliAnahtar, dosya: join(yapilandirma.veriKlasoru, 'secret.key') });
   // Bu veritabani baska bir anahtarla dolduysa acilis durur: yanlis anahtarla cihaz parolalari cozulemez, oturumlar ve gunluk imzalari tutmaz.
   const iz = anahtarIzi(gizli), kayitliIz = await ayarlar.oku('key-fingerprint');
-  if (kayitliIz !== undefined && kayitliIz !== iz) throw new Error('Gizli anahtar bu veritabanını dolduran anahtarla aynı değil (KAMERA_GIZLI_ANAHTAR ya da veri/gizli.anahtar). Doğru anahtarı verin; anahtar kaybolduysa kayıtlı cihaz parolaları yeniden girilmelidir.');
+  if (kayitliIz !== undefined && kayitliIz !== iz) throw new Error('Gizli anahtar bu veritabanını dolduran anahtarla aynı değil (KAMERA_GIZLI_ANAHTAR ya da data/secret.key). Doğru anahtarı verin; anahtar kaybolduysa kayıtlı cihaz parolaları yeniden girilmelidir.');
   await eskiVeriyiAktar({ vt, veriKlasoru: yapilandirma.veriKlasoru, gizli });
   if (kayitliIz === undefined) await ayarlar.yaz('key-fingerprint', iz);
   // modeller (veritabanindan bellege)
@@ -56,7 +58,7 @@ async function uygulamaKurVt(yapilandirma, vt) {
   if (uyeler.bos()) {
     const parola = yapilandirma.yetki.ilkAdminParola || randomBytes(9).toString('base64url');
     await uyeler.ekle('admin', parola, 'admin');
-    if (!yapilandirma.yetki.ilkAdminParola) { writeFileSync(join(yapilandirma.veriKlasoru, 'ilk-admin.txt'), `Kullanıcı adı: admin\nParola: ${parola}\n\nGiriş yaptıktan sonra Üyeler sekmesinden parolayı değiştirin ve bu dosyayı silin.\n`, { mode: 0o600 }); console.log('İlk admin hesabı oluşturuldu: veri/ilk-admin.txt'); }
+    if (!yapilandirma.yetki.ilkAdminParola) { writeFileSync(join(yapilandirma.veriKlasoru, 'initial-admin.txt'), `Kullanıcı adı: admin\nParola: ${parola}\n\nGiriş yaptıktan sonra Üyeler sekmesinden parolayı değiştirin ve bu dosyayı silin.\n`, { mode: 0o600 }); console.log('İlk admin hesabı oluşturuldu: veri/ilk-admin.txt'); }
   }
   // hizmetler
   const cihazlar = new CihazHizmeti({ yapilandirma, gizli: uyeler.gizli, vt, ayarlar });

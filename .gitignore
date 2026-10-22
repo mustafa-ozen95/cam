@@ -1,4 +1,4 @@
-veri/
+data/
 ayar.json
 .env
 docker-compose.override.yml

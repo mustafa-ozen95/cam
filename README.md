@@ -31,7 +31,7 @@ docs/                      api-v1.tr.md, api-v1.en.md, openapi.json (generated b
 scripts/                   openapi.mjs, eys-sync.mjs
 test/                      *.test.mjs (unit + API/security integration), helpers.mjs
 src/database/             schema migrations, table mapping, one-time import of the JSON-era files
-veri/                      (outside git) gizli.anahtar (if KAMERA_GIZLI_ANAHTAR is empty), ilk-admin.txt; JSON-era data files until imported
+data/                      (outside git) secret.key (if KAMERA_GIZLI_ANAHTAR is empty), initial-admin.txt; JSON-era data files until imported
 ```
 
 ## Installation
@@ -48,7 +48,7 @@ cp docker-compose.override.example.yml docker-compose.override.yml   # without a
 npm test                      # unit + integration (fake device; needs a MariaDB, see "Database and backup")
 node scripts/openapi.mjs      # regenerate the OpenAPI document from the routes
 ```
-On first start `admin` is created (if `KAMERA_ADMIN_PAROLA` is not set, the password is in `veri/ilk-admin.txt`). Devices are added
+On first start `admin` is created (if `KAMERA_ADMIN_PAROLA` is not set, the password is in `data/initial-admin.txt`). Devices are added
 from the **Cihaz** (device) tab (the connection is tested before saving); `KAMERA_CIHAZLAR` is only the initial seed while
 the `devices` table is empty.
 
@@ -58,9 +58,9 @@ All data (members, devices, roles, API keys, audit log, channel settings, /live 
 `DB_PASSWORD` (required). At start the panel waits for the database (`DB_BEKLEME_SN`, default 60 s) and then runs its own migrations
 (version table `migrations`, ordered, repeating does nothing). `/api/v1/saglik` is unhealthy when the database is unreachable.
 - Tables: `users`, `devices`, `roles`, `builtin_role_permissions`, `api_keys`, `hub_links`, `audit_log` (one row per entry; the signature chain is kept and verified from the database), `settings` (name → JSON), `migrations`.
-- The **secret key** is never stored in the database (a dump must not sit next to the encrypted device passwords): `KAMERA_GIZLI_ANAHTAR` (base64, 32 bytes; `openssl rand -base64 32`); if empty, `veri/gizli.anahtar` is used (generated with mode 0600 when missing). If the variable differs from that file, or from the key that filled the database, start-up stops with a clear message. Keep the key together with the backups.
+- The **secret key** is never stored in the database (a dump must not sit next to the encrypted device passwords): `KAMERA_GIZLI_ANAHTAR` (base64, 32 bytes; `openssl rand -base64 32`); if empty, `data/secret.key` is used (generated with mode 0600 when missing). If the variable differs from that file, or from the key that filled the database, start-up stops with a clear message. Keep the key together with the backups.
 - **Backup = a database dump** (e.g. `docker compose exec db sh -c 'mariadb-dump --single-transaction -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE"' > cam.sql`) plus the secret key.
-- **One-time import**: at start, if all tables are empty and JSON-era files exist in `veri/` (kullanicilar.json, yetki.json, cihazlar.json, kanallar.json, gunluk.jsonl, merkez-baglari.json, guncelleme.json, live-duzen.json) they are imported in a single transaction; the audit chain is verified from the database and the row counts are compared with the files. Only if all of it matches are the files renamed to `<name>.aktarildi` (never deleted). Otherwise everything is rolled back, the files stay and start-up stops with the reason. If the tables are already filled and old files remain, nothing is touched and a warning is written. The import prints what it did (counts) to stdout.
+- **One-time import**: at start, if all tables are empty and JSON-era files exist in `data/` (kullanicilar.json, yetki.json, cihazlar.json, kanallar.json, gunluk.jsonl, merkez-baglari.json, guncelleme.json, live-duzen.json) they are imported in a single transaction; the audit chain is verified from the database and the row counts are compared with the files. Only if all of it matches are the files renamed to `<name>.imported` (never deleted). Otherwise everything is rolled back, the files stay and start-up stops with the reason. If the tables are already filled and old files remain, nothing is touched and a warning is written. The import prints what it did (counts) to stdout.
 
 ## Permissions and API
 - Permission catalog, DC roles (admin, network, teknik, muhasebe) and custom roles, camera **scope** (device/channel list), account expiry, IP/CIDR list.

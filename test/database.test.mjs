@@ -66,7 +66,7 @@ test('gecici ariza: ulasilamayan veritabani sure dolunca anlasilir hatayla biter
 });
 
 test('gizli anahtar: ortamdan, dosyadan; farkliysa ya da bozuksa acilis durur', () => {
-  const k = yeniKlasor(), dosya = join(k, 'gizli.anahtar');
+  const k = yeniKlasor(), dosya = join(k, 'secret.key');
   try {
     const a = gizliAnahtarCoz({ ortam: '', dosya });
     assert.equal(a.length, 32); assert.ok(existsSync(dosya));
@@ -81,6 +81,18 @@ test('gizli anahtar: ortamdan, dosyadan; farkliysa ya da bozuksa acilis durur', 
   } finally { sil(k); }
 });
 
+test('gizli anahtar: eski ad (gizli.anahtar) secret.key olur, anahtar ayni kalir', () => {
+  const k = yeniKlasor(), eski = join(k, 'gizli.anahtar'), yeni = join(k, 'secret.key'), a = randomBytes(32);
+  try {
+    writeFileSync(eski, a);
+    assert.deepEqual(gizliAnahtarCoz({ ortam: '', dosya: yeni }), a);
+    assert.ok(existsSync(yeni) && !existsSync(eski), 'eski ad yeniden adlandirildi');
+    writeFileSync(eski, randomBytes(32));
+    assert.deepEqual(gizliAnahtarCoz({ ortam: '', dosya: yeni }), a, 'yeni ad varsa eskiye dokunulmaz');
+    assert.ok(existsSync(eski));
+  } finally { sil(k); }
+});
+
 test('gizli anahtar: veritabanini dolduran anahtardan farkliysa acilis durur (anahtar veritabanina girmez)', async () => {
   const g = await gecicivt(), k = yeniKlasor();
   try {
@@ -88,7 +100,7 @@ test('gizli anahtar: veritabanini dolduran anahtardan farkliysa acilis durur (an
     const t = await uygulamaAc({ veri: k, veritabani: g, gizliAnahtar: anahtar });
     const depolanan = JSON.stringify(await t.hizmetler.vt.sorgu('SELECT * FROM settings'));
     assert.ok(!depolanan.includes(anahtar), 'anahtarin kendisi veritabaninda yok');
-    assert.ok(!existsSync(join(k, 'gizli.anahtar')), 'ortamdan gelen anahtar dosyaya yazilmaz');
+    assert.ok(!existsSync(join(k, 'secret.key')), 'ortamdan gelen anahtar dosyaya yazilmaz');
     await t.kapat();
     await assert.rejects(() => uygulamaAc({ veri: yeniKlasor(), veritabani: g, gizliAnahtar: randomBytes(32).toString('base64') }), /Gizli anahtar bu veritabanını/);
     const t2 = await uygulamaAc({ veri: k, veritabani: g, gizliAnahtar: anahtar });   // dogru anahtarla yeniden acilir
@@ -96,7 +108,7 @@ test('gizli anahtar: veritabanini dolduran anahtardan farkliysa acilis durur (an
   } finally { sil(k); await g.sil(); }
 });
 
-test('aktarim: eski dosyalar tek islemde tablolara gecer, sayilar ve zincir tutar, dosyalar .aktarildi olur, tekrar acilista bir sey yapmaz', async () => {
+test('aktarim: eski dosyalar tek islemde tablolara gecer, sayilar ve zincir tutar, dosyalar .imported olur, tekrar acilista bir sey yapmaz', async () => {
   const gizli = randomBytes(32), k = eskiKlasor(gizli), g = await gecicivt();
   try {
     const t = await uygulamaAc({ veri: k, veritabani: g });
@@ -105,7 +117,7 @@ test('aktarim: eski dosyalar tek islemde tablolara gecer, sayilar ve zincir tuta
     const ayar = (await t.hizmetler.vt.sorgu('SELECT name FROM settings ORDER BY name')).map((r) => r.name);
     assert.ok(['channels', 'device-block-limit', 'live-layout', 'update-status'].every((a) => ayar.includes(a)), ayar.join());
     assert.equal(JSON.parse((await t.hizmetler.vt.sorgu("SELECT value FROM settings WHERE name = 'device-block-limit'"))[0].value), 8);
-    for (const d of ESKI) { assert.ok(!existsSync(join(k, d)), `${d} yeniden adlandirilmali`); assert.ok(existsSync(join(k, `${d}.aktarildi`)), `${d}.aktarildi var olmali`); }
+    for (const d of ESKI) { assert.ok(!existsSync(join(k, d)), `${d} yeniden adlandirilmali`); assert.ok(existsSync(join(k, `${d}.imported`)), `${d}.imported var olmali`); }
     // giris eski parolayla, gunluk zinciri veritabanindan dogrulanir, cihaz parolasi eski anahtarla cozulur
     await t.giris('admin', 'eskiparola1');
     const z = await t.istek('/api/gunluk/dogrula');
@@ -127,13 +139,13 @@ test('aktarim: tablolar doluysa ve eski dosyalar varsa dokunulmaz (dosyalar yeri
   const g = await gecicivt(), k = yeniKlasor();
   try {
     const t = await uygulamaAc({ veri: k, veritabani: g });          // bos veritabani: admin olusur
-    const gizli = readFileSync(join(k, 'gizli.anahtar'));
+    const gizli = readFileSync(join(k, 'secret.key'));
     await t.kapat();
     yaz(k, 'kullanicilar.json', [{ ad: 'hayalet', rol: 'admin', tuz: '00', karma: '00', olusturma: '2026-10-01T08:00:00.000Z' }]);
     const t2 = await uygulamaAc({ veri: k, veritabani: g });
     assert.equal((await t2.hizmetler.vt.sorgu("SELECT name FROM users WHERE name = 'hayalet'")).length, 0);
     assert.ok(existsSync(join(k, 'kullanicilar.json')), 'dosya yerinde');
-    assert.deepEqual(readFileSync(join(k, 'gizli.anahtar')), gizli);
+    assert.deepEqual(readFileSync(join(k, 'secret.key')), gizli);
     await t2.kapat();
   } finally { sil(k); await g.sil(); }
 });

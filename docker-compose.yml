@@ -6,7 +6,7 @@
 #
 #  Veri MariaDB'dedir (db servisi, kendi hacmi). Dışarıdaki bir veritabanı
 #  kullanmak için DB_HOST ve kimlik bilgilerini verin, VT_KOPYA=0 ile db
-#  servisi hiç kalkmaz. JSON dönemindeki veri/ klasörü varsa ilk açılışta bir
+#  servisi hiç kalkmaz. JSON dönemindeki data/ klasörü varsa ilk açılışta bir
 #  kez veritabanına aktarılır (README).
 #
 #  HTTP portu dışarı AÇILMAZ: alan adını ve TLS'i önündeki ters
@@ -18,7 +18,7 @@
 #  Görüntünün kendisi tarayıcıyla mediamtx arasında 8189/udp'den akar.
 #
 #  Aynı sunucuda ikinci kurulum: ayrı klasör ve ayrı .env (KAMERA_KONTEYNER,
-#  KAMERA_RTC_KONTEYNER, KAMERA_DB_KONTEYNER, KAMERA_VERI_VOLUME, KAMERA_DB_VOLUME, KAMERA_RTC_PORT, KAMERA_CEREZ).
+#  KAMERA_RTC_KONTEYNER, KAMERA_DB_KONTEYNER, KAMERA_DATA_VOLUME, KAMERA_DB_VOLUME, KAMERA_RTC_PORT, KAMERA_CEREZ).
 # =============================================================================
 
 services:
@@ -56,10 +56,10 @@ services:
       DB_DATABASE: ${DB_DATABASE:-cam}
       DB_USERNAME: ${DB_USERNAME:-cam}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD gerekli (.env.example)}
-      # base64, 32 bayt (openssl rand -base64 32). Boşsa veri/gizli.anahtar dosyası kullanılır. Veritabanına girmez.
+      # base64, 32 bayt (openssl rand -base64 32). Boşsa data/secret.key dosyası kullanılır. Veritabanına girmez.
       KAMERA_GIZLI_ANAHTAR: ${KAMERA_GIZLI_ANAHTAR:-}
     volumes:
-      - veri:/app/veri
+      - data:/app/data
     # VT_KOPYA=0 (dışarıdaki veritabanı) iken db servisi yoktur; bağımlılık o zaman aranmaz.
     depends_on:
       db:
@@ -116,9 +116,9 @@ networks:
     internal: ${AG_YALITIMI:-false}
 
 volumes:
-  veri:
+  data:
     # Gizli anahtar dosyası, ilk admin parolası ve (varsa) JSON dönemi verisi; mevcut bir kurulumun hacmi için adını verin.
-    name: ${KAMERA_VERI_VOLUME:-cam_veri}
+    name: ${KAMERA_DATA_VOLUME:-cam_data}
   database:
     # MariaDB verisi (üyeler, cihazlar, günlük, roller, anahtarlar...).
     name: ${KAMERA_DB_VOLUME:-cam_database}

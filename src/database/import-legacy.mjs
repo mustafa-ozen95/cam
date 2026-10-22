@@ -1,11 +1,11 @@
 /**
- * Bir kerelik veri aktarimi: JSON donemindeki veri/ dosyalari -> veritabani tablolari.
+ * Bir kerelik veri aktarimi: JSON donemindeki data/ dosyalari -> veritabani tablolari.
  *
- * Acilista tablolar BOS ve veri/ klasorunde eski dosyalar varsa hepsi TEK islemde aktarilir:
+ * Acilista tablolar BOS ve data/ klasorunde eski dosyalar varsa hepsi TEK islemde aktarilir:
  *   1) dosyalar okunur ve eski bicim dönüşümleri uygulanir (uye damgasi, merkez bagi damgasi, cihaz ust siniri, yetki varsayilanlari);
  *   2) tek islemde tablolara yazilir;
  *   3) ayni islemde sayilar kaynakla karsilastirilir, gunluk imza zinciri VERITABANINDAN dogrulanir, ayarlar geri okunup karsilastirilir;
- *   4) hepsi tutarsa islem onaylanir, ardindan dosyalar `<ad>.aktarildi` adiyla yeniden adlandirilir (SILINMEZ).
+ *   4) hepsi tutarsa islem onaylanir, ardindan dosyalar `<ad>.imported` adiyla yeniden adlandirilir (SILINMEZ).
  * Tutmayan bir sey olursa islem geri alinir, dosyalara dokunulmaz ve acilis durur (hata iletisi nedeni soyler).
  * Tablolar doluysa ve eski dosyalar duruyorsa: dokunulmaz, uyari yazilir.
  */
@@ -64,7 +64,7 @@ export async function eskiVeriyiAktar({ vt, veriKlasoru, gizli, gunlukYaz = cons
   const var_ = ESKI_DOSYALAR.filter((d) => existsSync(join(veriKlasoru, d)));
   if (!var_.length) return { durum: 'yok' };
   if (!(await tablolarBosMu(vt))) {
-    gunlukYaz(`UYARI: veri/ klasöründe eski JSON dosyaları var (${var_.join(', ')}) ama veritabanı tabloları dolu; dosyalara dokunulmadı. Veri artık veritabanında; bu dosyaları yedekledikten sonra silebilirsiniz.`);
+    gunlukYaz(`UYARI: data/ klasöründe eski JSON dosyaları var (${var_.join(', ')}) ama veritabanı tabloları dolu; dosyalara dokunulmadı. Veri artık veritabanında; bu dosyaları yedekledikten sonra silebilirsiniz.`);
     return { durum: 'atlandi' };
   }
   const yol = (d) => join(veriKlasoru, d);
@@ -123,10 +123,10 @@ export async function eskiVeriyiAktar({ vt, veriKlasoru, gizli, gunlukYaz = cons
   // 4) onaylandi: dosyalar yeniden adlandirilir (silinmez)
   const adlandirilan = [];
   for (const dosya of var_) {
-    let hedef = `${yol(dosya)}.aktarildi`;
+    let hedef = `${yol(dosya)}.imported`;
     if (existsSync(hedef)) hedef = `${hedef}.${Date.now()}`;
     renameSync(yol(dosya), hedef); adlandirilan.push(dosya);
   }
-  gunlukYaz(`eski veri aktarıldı: ${Object.entries(beklenen).map(([t, n]) => `${t}=${n}`).join(', ')}; settings=${Object.keys(ayarBelgeleri).join(',') || '-'}; günlük zinciri doğrulandı; dosyalar .aktarildi adıyla saklandı (${adlandirilan.join(', ')})`);
+  gunlukYaz(`eski veri aktarıldı: ${Object.entries(beklenen).map(([t, n]) => `${t}=${n}`).join(', ')}; settings=${Object.keys(ayarBelgeleri).join(',') || '-'}; günlük zinciri doğrulandı; dosyalar .imported adıyla saklandı (${adlandirilan.join(', ')})`);
   return { durum: 'aktarildi', sayilar: beklenen };
 }

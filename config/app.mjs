@@ -13,8 +13,8 @@ const dosyaSatiri = (yol) => { try { return readFileSync(yol, 'utf8').trim(); } 
 
 export const yapilandirma = Object.freeze({
   kok: KOK,
-  veriKlasoru: env.KAMERA_VERI ?? join(KOK, 'veri'),
-  /** Gizli anahtar (base64, 32 bayt). Bossa veri/gizli.anahtar dosyasi kullanilir (yoksa uretilir). Veritabanina GIRMEZ. */
+  veriKlasoru: env.KAMERA_VERI ?? join(KOK, 'data'),
+  /** Gizli anahtar (base64, 32 bayt). Bossa data/secret.key dosyasi kullanilir (yoksa uretilir). Veritabanina GIRMEZ. */
   gizliAnahtar: env.KAMERA_GIZLI_ANAHTAR || '',
 
   /** Veritabani (MariaDB/MySQL): diger panellerle ayni degisken adlari. Acilista veritabani gelmezse beklemeSn kadar yeniden denenir. */

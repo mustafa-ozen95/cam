@@ -12,10 +12,10 @@ COPY routes ./routes
 COPY config ./config
 COPY resources ./resources
 COPY docs ./docs
-RUN mkdir -p /app/veri && chown -R node:node /app/veri
+RUN mkdir -p /app/data && chown -R node:node /app/data
 # Konteynerde 80: Docker (20.10+) kök olmayan kullanıcıya düşük portu açar (ip_unprivileged_port_start=0).
 ENV KAMERA_PORT=80 KAMERA_ADRES=0.0.0.0 TZ=Europe/Istanbul NODE_ENV=production
-VOLUME /app/veri
+VOLUME /app/data
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1/api/v1/saglik').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 # Hangi commit'ten derlendigi: panel kendi surumunu buradan bilir (Güncelleme sekmesi). Son katmanda: degeri her

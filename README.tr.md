@@ -29,7 +29,7 @@ docs/                      api-v1.tr.md, api-v1.en.md, openapi.json (scripts/ope
 scripts/                   openapi.mjs, eys-sync.mjs
 test/                      *.test.mjs (birim + API/güvenlik entegrasyon), helpers.mjs
 src/database/             şema göçleri, tablo eşlemesi, JSON dönemi dosyalarının bir kerelik aktarımı
-veri/                      (git dışı) gizli.anahtar (KAMERA_GIZLI_ANAHTAR boşsa), ilk-admin.txt; aktarılana kadar JSON dönemi dosyaları
+data/                      (git dışı) secret.key (KAMERA_GIZLI_ANAHTAR boşsa), initial-admin.txt; aktarılana kadar JSON dönemi dosyaları
 ```
 
 ## Kurulum
@@ -46,7 +46,7 @@ cp docker-compose.override.example.yml docker-compose.override.yml   # vekil yok
 npm test                      # birim + entegrasyon (sahte cihaz; bir MariaDB gerekir, bkz. "Veritabanı ve yedek")
 node scripts/openapi.mjs      # OpenAPI belgesini rotalardan yeniden üret
 ```
-İlk açılışta `admin` oluşturulur (`KAMERA_ADMIN_PAROLA` yoksa parola `veri/ilk-admin.txt`). Cihazlar **Cihaz** sekmesinden eklenir (kaydetmeden önce bağlantı denenir); `KAMERA_CIHAZLAR` yalnız `devices` tablosu boşken ilk tohumdur.
+İlk açılışta `admin` oluşturulur (`KAMERA_ADMIN_PAROLA` yoksa parola `data/initial-admin.txt`). Cihazlar **Cihaz** sekmesinden eklenir (kaydetmeden önce bağlantı denenir); `KAMERA_CIHAZLAR` yalnız `devices` tablosu boşken ilk tohumdur.
 
 ## Veritabanı ve yedek
 Bütün veri (üyeler, cihazlar, roller, API anahtarları, denetim günlüğü, kanal ayarı, /live düzeni, güncelleme durumu, KYM bağları)
@@ -54,9 +54,9 @@ MariaDB/MySQL'dedir (sürücü `mysql2`, utf8mb4). Bağlantı: `DB_HOST` (varsay
 `DB_USERNAME` (`cam`), `DB_PASSWORD` (zorunlu). Açılışta panel veritabanını bekler (`DB_BEKLEME_SN`, varsayılan 60 sn), sonra kendi
 göçlerini çalıştırır (sürüm tablosu `migrations`, sıralı, tekrar çalıştırmak bir şey yapmaz). Veritabanına ulaşılamıyorsa `/api/v1/saglik` sağlıksızdır.
 - Tablolar: `users`, `devices`, `roles`, `builtin_role_permissions`, `api_keys`, `hub_links`, `audit_log` (satır başına kayıt; imza zinciri korunur ve veritabanından doğrulanır), `settings` (ad → JSON), `migrations`.
-- **Gizli anahtar** veritabanına girmez (döküm, şifreli cihaz parolalarıyla aynı yerde durmasın): `KAMERA_GIZLI_ANAHTAR` (base64, 32 bayt; `openssl rand -base64 32`); boşsa `veri/gizli.anahtar` kullanılır (yoksa 0600 ile üretilir). Değişken o dosyadan ya da veritabanını dolduran anahtardan farklıysa açılış açık bir iletiyle durur. Anahtarı yedeklerle birlikte saklayın.
+- **Gizli anahtar** veritabanına girmez (döküm, şifreli cihaz parolalarıyla aynı yerde durmasın): `KAMERA_GIZLI_ANAHTAR` (base64, 32 bayt; `openssl rand -base64 32`); boşsa `data/secret.key` kullanılır (yoksa 0600 ile üretilir). Değişken o dosyadan ya da veritabanını dolduran anahtardan farklıysa açılış açık bir iletiyle durur. Anahtarı yedeklerle birlikte saklayın.
 - **Yedek = veritabanı dökümü** (ör. `docker compose exec db sh -c 'mariadb-dump --single-transaction -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE"' > cam.sql`) + gizli anahtar.
-- **Bir kerelik aktarım**: açılışta tüm tablolar boşsa ve `veri/` içinde JSON dönemi dosyaları varsa (kullanicilar.json, yetki.json, cihazlar.json, kanallar.json, gunluk.jsonl, merkez-baglari.json, guncelleme.json, live-duzen.json) hepsi tek işlemde aktarılır; günlük zinciri veritabanından doğrulanır, satır sayıları dosyalarla karşılaştırılır. Yalnız hepsi tutarsa dosyalar `<ad>.aktarildi` adıyla yeniden adlandırılır (silinmez). Tutmazsa her şey geri alınır, dosyalar yerinde kalır ve açılış nedeniyle durur. Tablolar doluyken eski dosyalar duruyorsa hiçbir şeye dokunulmaz, uyarı yazılır. Aktarım ne yaptığını sayılarla stdout'a yazar.
+- **Bir kerelik aktarım**: açılışta tüm tablolar boşsa ve `data/` içinde JSON dönemi dosyaları varsa (kullanicilar.json, yetki.json, cihazlar.json, kanallar.json, gunluk.jsonl, merkez-baglari.json, guncelleme.json, live-duzen.json) hepsi tek işlemde aktarılır; günlük zinciri veritabanından doğrulanır, satır sayıları dosyalarla karşılaştırılır. Yalnız hepsi tutarsa dosyalar `<ad>.imported` adıyla yeniden adlandırılır (silinmez). Tutmazsa her şey geri alınır, dosyalar yerinde kalır ve açılış nedeniyle durur. Tablolar doluyken eski dosyalar duruyorsa hiçbir şeye dokunulmaz, uyarı yazılır. Aktarım ne yaptığını sayılarla stdout'a yazar.
 
 ## Yetki ve API
 - İzin kataloğu, DC rolleri (admin, network, teknik, muhasebe) ve özel roller, kamera **kapsamı** (cihaz/kanal listesi), hesap bitişi, IP/CIDR listesi.
