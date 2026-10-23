@@ -126,3 +126,35 @@ test('EYS betiklerinin okudugu data-* adlari kamera sayfalarinda yazilanlarla ay
 test('web/css/eys ve web/js/eys altinda Turkce adli dosya yok', () => {
   for (const root of ['css/eys', 'js/eys']) for (const d of readdirSync(join(WEB, root), { recursive: true }).map(String)) assert.ok(!/kullanici|toplu|ilerleme|katlanir|ipucu|kayit-formu|dondurme/.test(d), `Turkce dosya adi: ${root}/${d}`);
 });
+
+/*
+ * Ad degisikligi CSS'te yapilip isaretlemede unutulursa stil SESSIZCE kopar: sunucunun urettigi "veya" ayraci
+ * (gate__ayrac -> gate__divider) ve kayit zaman cizelgesindeki parcalar (parca -> chunk) boyle kaybolmustu.
+ * Arayuzde ve sunucuda kullanilan her BEM sinifi (blok__oge, blok--degistirici) CSS'te tanimli olmali.
+ * EYS'nin de stilsiz biraktigi iki sinif bilerek disarida.
+ */
+test('kullanılan her BEM sınıfı CSS\'te tanımlı (ad değişikliği stili sessizce koparmaz)', () => {
+  const ROOT = join(WEB, '..', '..', '..');
+  const cssFiles = [];
+  const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith('.css')) cssFiles.push(p); } };
+  walk(join(WEB, 'css'));
+  const defined = new Set();
+  for (const f of cssFiles) for (const m of readFileSync(f, 'utf8').matchAll(/\.([a-zA-Z][\w-]*)/g)) defined.add(m[1]);
+  const KNOWN_UNSTYLED = new Set(['empty__icon', 'btn--secondary']);
+  const missing = [];
+  for (const f of [join(WEB, 'index.html'), join(WEB, 'login.html'), join(ROOT, 'src', 'controllers', 'views.mjs')]) {
+    for (const m of readFileSync(f, 'utf8').matchAll(/class(?:Name)?\s*[:=]\s*["'`]([^"'`]*)["'`]/g)) {
+      for (const c of m[1].split(/\s+/)) {
+        if (/^[a-z][\w]*(__|--)[\w-]+$/.test(c) && !defined.has(c) && !KNOWN_UNSTYLED.has(c)) missing.push(`${c} (${f.slice(ROOT.length + 1)})`);
+      }
+    }
+  }
+  assert.deepEqual(missing, []);
+});
+
+test('zaman çizelgesindeki kayıt parçasının sınıfı CSS\'te tanımlı', () => {
+  const html = readFileSync(join(WEB, 'index.html'), 'utf8');
+  const cls = html.match(/sat\.append\(el\('div', \{ class: `(\w+) \$\{s\.type\}`/)?.[1];
+  assert.ok(cls, 'kayıt parçası işaretlemesi bulunamadı');
+  assert.match(readFileSync(join(WEB, 'css', 'camera.css'), 'utf8'), new RegExp(`\\.timeline \\.${cls}\\b`));
+});

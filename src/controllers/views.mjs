@@ -20,7 +20,7 @@ export function viewController({ config, hub = null }) {
         // Merkez ile giris dugmesi yalnizca yapilandirilmissa; hata metni adres cubugundaki KODA gore sunucuda secilir.
         const open = !!hub?.isEnabled();
         // EYS ile ayni: merkez acikken birincil dugme + "veya" ayraci, parola formu katli; kapaliyken form acik ve birincil.
-        const button = open ? `<a class="btn btn--primary btn--block" href="/login/hub">${escape(config.identity.name)} ile giriş</a>\n\n    <div class="gate__ayrac"><span>veya</span></div>` : '';
+        const button = open ? `<a class="btn btn--primary btn--block" href="/login/hub">${escape(config.identity.name)} ile giriş</a>\n\n    <div class="gate__divider"><span>veya</span></div>` : '';
         const error = HUB_ERRORS[ctx.q.get('hub') ?? ''] ?? '';
         html = html.replace('<!--HUB-->', button)
           .replace('<!--HUB_ERROR-->', error ? `<div class="alert alert--danger gate__alert" role="alert">${escape(error)}</div>` : '')

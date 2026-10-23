@@ -1854,7 +1854,7 @@ function drawTime() {
     for (const g of days) for (const s of tl.record.get(`${k}|${g}`) ?? []) {
       if (s.e < w0 || s.b > w1) continue;
       const left = Math.max(0, ((s.b - w0) / tl.timeRange) * 100), right = Math.min(100, ((s.e - w0) / tl.timeRange) * 100);
-      sat.append(el('div', { class: `parca ${s.type}`, style: `left:${left}%;width:${Math.max(0.3, right - left)}%` }));
+      sat.append(el('div', { class: `chunk ${s.type}`, style: `left:${left}%;width:${Math.max(0.3, right - left)}%` }));
     }
     for (const g of days) for (const s of tl.motion.get(`${k}|${g}`) ?? []) {
       if (s.e < w0 || s.b > w1) continue;
