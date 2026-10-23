@@ -169,3 +169,18 @@ test('zaman çizelgesindeki kayıt parçasının sınıfı CSS\'te tanımlı', (
   assert.ok(cls, 'kayıt parçası işaretlemesi bulunamadı');
   assert.match(readFileSync(join(WEB, 'css', 'camera.css'), 'utf8'), new RegExp(`\\.timeline \\.${cls}\\b`));
 });
+
+/*
+ * Ust duzeyde calisan bir satir sayfada olmayan bir ogeye baglanirsa hata atar ve betigin geri kalani (sekmeler, acilis) HIC
+ * calismaz: video penceresinin kimligi dlg -> dialog olmus, onClose('dlg') kalmisti ve ana sayfa acilista duruyordu. Betikte
+ * adi gecen her kimlik sayfada (ya da betigin kendi urettigi ogelerde: el(..., { id: '...' })) olmali.
+ */
+test('betikte adı geçen her öğe kimliği sayfada var (eksik kimlik açılışı durdurmaz)', () => {
+  const html = readFileSync(join(WEB, 'index.html'), 'utf8');
+  const ids = new Set([...html.matchAll(/\sid="([^"]+)"/g), ...html.matchAll(/\bid:\s*'([^']+)'/g)].map((m) => m[1]));
+  const refs = new Set([
+    ...html.matchAll(/onClose\('([^']+)'/g), ...html.matchAll(/openWindow\('([^']+)'/g),
+    ...html.matchAll(/\$\('#([A-Za-z][\w-]*)'\)/g), ...html.matchAll(/getElementById\('([^']+)'\)/g),
+  ].map((m) => m[1]));
+  assert.deepEqual([...refs].filter((r) => !ids.has(r)), []);
+});

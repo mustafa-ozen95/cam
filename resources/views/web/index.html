@@ -2021,7 +2021,7 @@ function drawArchive(allRows) {
       button('Sil', 'danger', async () => { if (await askConfirm(`“${a.name}” sunucudan silinsin mi? (Cihazdaki kayıt etkilenmez.)`, 'sil')) { await api(`/api/archive/${encodeURIComponent(a.name)}`, { method: 'DELETE' }); reloadDownloaded(); } })))))));
 }
 function copyPlay(name) { $('#dialogName').textContent = name; $('#dialogVideo').src = `/arsiv/${encodeURIComponent(name)}`; openWindow('dialog'); $('#dialogVideo').play().catch(() => {}); }
-onClose('dlg', () => { const v = $('#dialogVideo'); v.pause(); v.removeAttribute('src'); v.load(); });
+onClose('dialog', () => { const v = $('#dialogVideo'); v.pause(); v.removeAttribute('src'); v.load(); });
 $('#jobClear').addEventListener('click', () => api('/api/jobs/wipe', { method: 'POST' }).then(reloadDownloaded));
 
 // ---------- yazili onay (EYS onay penceresi) ----------
