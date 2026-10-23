@@ -17,6 +17,7 @@ import { DeviceService } from './services/devices.mjs';
 import { LiveService } from './services/live.mjs';
 import { AuditLog } from './services/audit-log.mjs';
 import { UpdateService } from './services/updates.mjs';
+import { ConnectionFile } from './services/database-move.mjs';
 import { HubLinks, HubClient } from './services/hub.mjs';
 import { hubController } from './controllers/hub.mjs';
 import { loginController } from './controllers/login.mjs';
@@ -26,21 +27,35 @@ import { streamController } from './controllers/streams.mjs';
 import { permissionController } from './controllers/permissions.mjs';
 import { auditLogController } from './controllers/audit-log.mjs';
 import { updateController } from './controllers/updates.mjs';
+import { databaseController } from './controllers/database.mjs';
 import { viewController } from './controllers/views.mjs';
 import { liveController } from './controllers/live.mjs';
 import { webRoutes } from '../routes/web.mjs';
 import { apiRoutes } from '../routes/api.mjs';
 import { apiV1Routes } from '../routes/api-v1.mjs';
 
-export async function createApp(config) {
+/** Panelin gizli anahtari (data/secret.key ya da CAM_SECRET_KEY); acilis veritabani adimi da ister (bkz. bin/cam.mjs). */
+export function panelSecret(config) {
+  mkdirSync(config.dataDir, { recursive: true });
+  return resolveSecretKey({ env: config.secretKey, file: join(config.dataDir, 'secret.key') });
+}
+
+/** Veritabani sekmesinin dosyalari (data/database): uzak baglanti ve tasima/baglanma asamasi. */
+export const databaseFile = (config, secret) => new ConnectionFile(join(config.dataDir, 'database'), secret);
+
+/**
+ * extra.databaseMove: { restart, connect } — testler sureci kapatmayan restart ve sahte baglanti verir. Varsayilan restart sureci
+ * SIGTERM ile bitirir; konteyner (restart: unless-stopped) yeniden kalkar, acilis istenen islemi yapar.
+ */
+export async function createApp(config, extra = {}) {
   mkdirSync(config.dataDir, { recursive: true });
   // veritabani: gelene kadar bekler (gocleri createAppWithDb kosturur)
   const db = await new Database(config.database).connect({ waitingSec: config.database.waitingSec });
-  try { return await createAppWithDb(config, db); } catch (e) { await db.close(); throw e; }
+  try { return await createAppWithDb(config, db, extra); } catch (e) { await db.close(); throw e; }
 }
 
-async function createAppWithDb(config, db) {
-  const secret = resolveSecretKey({ env: config.secretKey, file: join(config.dataDir, 'secret.key') });
+async function createAppWithDb(config, db, extra) {
+  const secret = panelSecret(config);
   await db.runMigrations({ secret });   // gizli anahtara bagli kayitli veriyi tasiyan gocler (surum 3) anahtari ister
   const settings = new Settings(db);
   // Bu veritabani baska bir anahtarla dolduysa acilis durur: yanlis anahtarla cihaz parolalari cozulemez, oturumlar ve gunluk imzalari tutmaz.
@@ -67,13 +82,15 @@ async function createAppWithDb(config, db) {
   const links = await new HubLinks(db, { hub, members, auditLog, config }).load();
   const live = await new LiveService({ config, devices, settings }).load();
   const updates = await new UpdateService({ settings, setting: config.updates }).load();
-  const services = { db, members, permissions, devices, auditLog, config, hub, links, live, updates };
+  const databaseMove = { file: databaseFile(config, secret), secret, restart: () => process.kill(process.pid, 'SIGTERM'), ...extra.databaseMove };
+  const services = { db, members, permissions, devices, auditLog, config, hub, links, live, updates, databaseMove };
 
   // denetleyiciler + ara katmanlar
   const d = {
     login: loginController(services), members: membersController(services), devices: devicesController(services),
     stream: streamController(services), permissions: permissionController(services), auditLog: auditLogController(services), view: viewController(services),
     hub: hubController(services), live: liveController(services), updates: updateController(services),
+    database: databaseController(services),
   };
   const middleware = setupIdentity(services);
 

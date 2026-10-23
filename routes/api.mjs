@@ -40,6 +40,10 @@ export function apiRoutes(r, d, middleware) {
     r.get('/api/update', d.updates.status, [permission('update.check')]);
     r.post('/api/update/check', d.updates.check, [permission('update.check')]);
     r.post('/api/update/apply', d.updates.apply, [permission('update.apply')]);
+    // veritabani: tasi ya da mevcut veritabanina baglan (once sina); islem acilista yapilir
+    r.get('/api/database', d.database.info, [permission('database.manage')]);
+    r.post('/api/database/test', d.database.test, [permission('database.manage')]);
+    r.post('/api/database/migrate', d.database.migrate, [permission('database.manage')]);
     // devices
     r.get('/api/devices', d.devices.list, [permission('device.read')]);
     r.post('/api/devices', d.devices.add, [permission('device.manage')]);

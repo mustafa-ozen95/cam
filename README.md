@@ -97,6 +97,13 @@ Passwords use scrypt; device passwords AES-256-GCM; keys an HMAC digest; cookies
 - The repository is public: no token is needed, GitHub is asked anonymously (limit: 60 requests per hour per IP). For a private repository `UPDATE_TOKEN` must be a read-only token (fine-grained, panel repositories only, Contents and Actions: read).
 - If the panel cannot reach GitHub (closed network), the check says "erişilemedi" (unreachable).
 
+## Database (move or connect)
+**Veritabanı** in the top menu (`database.manage` permission; admin has it) shows where the panel's database is and moves it to a remote server or connects a new installation to an existing one. Same flow as Settings → Veritabanı in the DC panels: test first, then confirm by typing the database name.
+- **Taşı** (move) copies the current database into an EMPTY target and compares table/row counts on both sides.
+- **Bağlan** (connect) does not copy: the new installation opens the old installation's database. The target must be this panel's (its migrations table), not newer than this version, and filled with the same secret key (`CAM_SECRET_KEY` or `data/secret.key`; checked against the stored key fingerprint).
+- The work happens at startup, before the panel listens: the panel leaves a request in `data/database` and exits, the container restarts (`restart: unless-stopped`). If the first start on the remote database fails the panel returns to the environment's database (nothing was written there); once the move is complete it never falls back.
+- The connection is stored in `data/database/connection.json`, encrypted with a key derived from the panel's secret key, and overrides `DB_*`.
+
 ## Language
 Interface strings are written in Turkish; the dictionary and rules in `resources/views/web/js/lang.js` translate them to EN (the choice is made from the account menu in the top bar and stored in the browser). When adding a new string, add its English to the dictionary; write a rule (regex) for dynamic text. Role/permission names come from the server as `{tr, en}`.
 

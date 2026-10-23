@@ -21,6 +21,7 @@
       <a href="#members" class="topbar__link" data-tab="members" hidden>Üyeler</a>
       <a href="#audit" class="topbar__link" data-tab="audit" hidden>Günlük</a>
       <a href="#updates" class="topbar__link" data-tab="updates" hidden>Güncelleme</a>
+      <a href="#database" class="topbar__link" data-tab="database" hidden>Veritabanı</a>
     </nav>
 
     <span class="topbar__spacer"></span>
@@ -268,6 +269,55 @@
           <li>Karşılaştırma, deponun main dalındaki son başarılı imaj derlemesiyle yapılır. Derlemesi bitmemiş ya da düşmüş bir commit kurulamaz; yeni sürüm sayılmaz.</li>
           <li>Yön de ölçülür: çalışan sürüm son derlemeden yeniyse bu "güncelleme" değil, geri alma olurdu; ekran bunu ayrıca söyler.</li>
           <li>Yeni sürüm varsa "Şimdi güncelle" görünür: platformun deploy hook'unu tetikler, kurulumu platform yapar. Panel yalnızca deponun main dalını yeniden kurdurabilir, sunucuda başka bir şey çalıştıramaz.</li>
+        </ul></div>
+      </section>
+    </div></section>
+
+    <!--
+      VERITABANI (database.manage): nerede; uzak sunucuya TASI ya da mevcut veritabanina BAGLAN. DC panellerindeki Ayarlar ->
+      Veritabani ile ayni duzen ve ayni onay penceresi (veritabani adi yazilir). Islem acilista yapilir (bkz. services/database-move.mjs).
+    -->
+    <section class="page" id="s-database" hidden><div class="page__inner page__inner--wide">
+      <header class="page-head">
+        <div class="page-head__text"><h1>Veritabanı</h1><p class="page-head__subtitle">Panelin veritabanı: nerede duruyor, uzak bir sunucuya taşınması ya da mevcut bir veritabanına bağlanması.</p></div>
+      </header>
+      <section class="panel">
+        <header class="panel__head"><h2 class="panel__title">Şu anki veritabanı</h2></header>
+        <div class="panel__body"><dl class="facts" id="dbInfo"></dl></div>
+      </section>
+      <section class="panel" id="dbStatusPanel" hidden>
+        <header class="panel__head"><h2 class="panel__title" id="dbStatusTitle">Son taşıma</h2></header>
+        <div class="panel__body"><dl class="facts" id="dbStatus"></dl></div>
+      </section>
+      <section class="panel" id="dbFormPanel" hidden>
+        <header class="panel__head"><div><h2 class="panel__title">Uzak veritabanına taşı ya da bağlan</h2><p class="text-sm text-muted">Taşı: hedef veritabanını ve kullanıcısını önce uzak sunucuda açın; veritabanı boş olmalı. Bağlan: eski kurulumun dolu veritabanını yeni kuruluma bağlar, kopyalamaz.</p></div></header>
+        <div class="panel__body">
+          <form id="dbForm" class="stack" autocomplete="off">
+            <div class="field"><label class="field__label" for="dbOperation">İşlem</label><select class="select" id="dbOperation" name="islem"><option value="tasi">Taşı: şu anki veritabanını boş hedefe kopyala</option><option value="baglan">Bağlan: hedefteki mevcut veriyle aç (kopyalamaz)</option></select></div>
+            <div class="field-row">
+              <div class="field"><label class="field__label" for="dbHost">Sunucu</label><input class="input input--mono" id="dbHost" name="host" required maxlength="255" placeholder="db.ornek.local"></div>
+              <div class="field"><label class="field__label" for="dbPort">Port</label><input class="input input--mono" id="dbPort" name="port" type="number" required min="1" max="65535" value="3306"></div>
+            </div>
+            <div class="field-row">
+              <div class="field"><label class="field__label" for="dbName">Veritabanı</label><input class="input input--mono" id="dbName" name="database" required maxlength="64"></div>
+              <div class="field"><label class="field__label" for="dbUser">Kullanıcı</label><input class="input input--mono" id="dbUser" name="username" required maxlength="80"></div>
+              <div class="field"><label class="field__label" for="dbPassword">Parola</label><input class="input" id="dbPassword" name="password" type="password" required maxlength="200" autocomplete="new-password"><span class="field__hint">Saklanmaz; sınama ve taşıma için kullanılır.</span></div>
+            </div>
+            <p class="text-sm text-muted">Bağlan için anahtarı ayrıca onaylamanız gerekmez: sınama, hedefin bu kurulumun gizli anahtarıyla (CAM_SECRET_KEY ya da data/secret.key) doldurulup doldurulmadığına kendisi bakar.</p>
+            <div class="form-actions"><button type="submit" class="btn" id="dbTest">Bağlantıyı sına</button></div>
+          </form>
+          <div class="table-wrap" id="dbResults" hidden></div>
+          <div class="form-actions" id="dbActions" hidden><button type="button" class="btn btn--primary" id="dbGo"></button></div>
+        </div>
+      </section>
+      <section class="panel">
+        <header class="panel__head"><h2 class="panel__title">Nasıl çalışır</h2></header>
+        <div class="panel__body"><ul class="text-sm stack">
+          <li>Taşıma panel kapalıyken yapılır: panel yeniden başlar, açılışta şu anki veritabanı hedefe kopyalanır. Kopya alınırken kimse yazmadığı için veri tutarlıdır.</li>
+          <li>Kopyadan sonra her tablonun satır sayısı iki tarafta karşılaştırılır. Tutmazsa ya da bir adım başarısız olursa panel şu anki veritabanıyla açılır ve sebep bu sekmede görünür.</li>
+          <li>Bağlan, yeni bir kurulumu eski kurulumun dolu veritabanına geçirir; kopya yapılmaz. Hedef bu panelin olmalı (göç kayıtları tutmalı), bu sürümden yeni olmamalı ve bu kurulumun gizli anahtarıyla doldurulmuş olmalı; bekleyen göçler açılışta hedefte uygulanır, olmazsa panel şu anki veritabanıyla açılır.</li>
+          <li>İşlem tamamlandıktan sonra panel yalnızca uzak veritabanını kullanır. Uzak sunucu kapanırsa panel açılmayı bekler; eski veritabanı taşıma anındaki hâliyle durduğu için ona kendiliğinden dönülmez.</li>
+          <li>Bağlantı veri hacminde (data/database), panelin gizli anahtarıyla şifreli durur ve kurulumdaki DB_* ayarlarının yerine geçer. Uzak veritabanının yedeğini o sunucunun yöneticisi alır.</li>
         </ul></div>
       </section>
     </div></section>
@@ -693,10 +743,10 @@ function table(headers, rows) {
 let info = null;
 const visible = () => (info ? info.channelNames.map((_, k) => k).filter((k) => !info.channelEmpty?.[k]) : []);
 const status = { tab: 'live', focus: null, device: null, deviceSelected: false };
-const TABS = ['live', 'recordings', 'downloads', 'devices', 'members', 'audit', 'updates', 'access'];
+const TABS = ['live', 'recordings', 'downloads', 'devices', 'members', 'audit', 'updates', 'database', 'access'];
 // İzin tabanlı görünürlük: sunucunun /api/ben ile verdiği izin listesi (models/permission.mjs kataloğu)
 const hasPermission = (i) => !!me?.permissions?.includes(i);
-const TAB_PERMISSION = { live: ['live.view'], recordings: ['recording.list', 'recording.play', 'recording.download'], devices: ['device.read'], members: ['member.manage'], audit: ['audit.read'], updates: ['update.check'], access: ['permission.manage', 'api.key'] };
+const TAB_PERMISSION = { live: ['live.view'], recordings: ['recording.list', 'recording.play', 'recording.download'], devices: ['device.read'], members: ['member.manage'], audit: ['audit.read'], updates: ['update.check'], database: ['database.manage'], access: ['permission.manage', 'api.key'] };
 // Ust baslikta konum yolu (kirinti) YOK: bolum menude secili, alt duzey orta bolmenin basliginda.
 const allowed = (s) => TABS.includes(s) && s !== 'downloads' && (TAB_PERMISSION[s] ?? []).some(hasPermission);
 
@@ -716,6 +766,7 @@ function openTab(name) {
   if (name === 'members') reloadMembers();
   if (name === 'audit') reloadAuditLog();
   if (name === 'updates') updateReload();
+  if (name === 'database') dbReload();
   if (name !== 'recordings') pauseTl();
 }
 document.addEventListener('click', (e) => {
@@ -2420,7 +2471,7 @@ function applyRole() {
   $('#identity').textContent = me.name; $('#identity').title = roleName(me.role);
   $('#identityInitial').textContent = fromLetters(me.name);
   $('[data-tab=downloads]').hidden = true;                                       // indirme kuyruğu/önbellek yok: doğrudan akar
-  for (const s of ['devices', 'audit', 'updates']) $(`#tabs [data-tab=${s}]`).hidden = !allowed(s);
+  for (const s of ['devices', 'audit', 'updates', 'database']) $(`#tabs [data-tab=${s}]`).hidden = !allowed(s);
   $('[data-tab=members]').hidden = !allowed('members') && !allowed('access');          // Yetki de bu menunun icinde
   if (!hasPermission('*') && !hasPermission('device.manage')) document.body.dataset.role = 'user';
   $('#removeAll').closest('.panel').hidden = true;   // NVR'larda kayit silme panelden yapilmaz (bolum yalniz eski XM surumu icin)
@@ -2480,6 +2531,74 @@ $('#updateApply').addEventListener('click', async () => {
   const d = $('#updateApply'); d.disabled = true;
   try { const g = await api('/api/update/apply', { method: 'POST' }); updateDraw(g); notify(g.message, 'success'); }
   catch (err) { notify(err.message, 'danger'); } finally { d.disabled = false; }
+});
+
+// ---------- veritabani (tasi / baglan) ----------
+const DB_STAGES = {
+  tasinacak: ['istendi, yeniden başlatma bekleniyor', 'blue'], baglanacak: ['bağlanma istendi, yeniden başlatma bekleniyor', 'blue'],
+  tasiniyor: ['kopyalanıyor', 'blue'], deneniyor: ['uzak veritabanıyla açılıyor', 'blue'], etkin: ['tamamlandı', 'green'], basarisiz: ['yapılmadı', 'red'],
+};
+const DB_SOURCES = {
+  ortam: ['Kurulum ayarı', 'Bağlantı kurulumun ortam değişkenlerinden (DB_*) geliyor; varsayılanı compose\'taki db servisi.'],
+  panel: ['Uzak (panel ayarı)', 'Bu sekmeden taşındı ya da bağlandı; bağlantı veri hacminde şifreli duruyor ve kurulum ayarını eziyor.'],
+};
+let dbTested = null;
+function dbDraw(g) {
+  const c = g.current, k = $('#dbInfo'); k.replaceChildren(); const row = makeRow(k);
+  const [label, note] = DB_SOURCES[c.source] ?? [c.source, ''];
+  row('Kaynak', el('span', {}, label, el('span', { class: 'text-sm text-muted' }, ` · ${note}`)));
+  row('Adres', el('span', { class: 'mono' }, `${c.username}@${c.host}:${c.port}/${c.database}`));
+  row('Sürüm', c.version ?? 'okunamadı');
+  row('Tablo', c.tables ?? '—');
+  row('Boyut', c.size == null ? '—' : writeSize(c.size));
+  const st = g.status;
+  $('#dbStatusPanel').hidden = !st;
+  if (st) {
+    $('#dbStatusTitle').textContent = st.islem === 'baglan' ? 'Son bağlanma' : 'Son taşıma';
+    const s = $('#dbStatus'); s.replaceChildren(); const r = makeRow(s);
+    const [sl, color] = DB_STAGES[st.durum] ?? [st.durum, 'gray'];
+    r('Durum', el('span', { class: `badge badge--${color}` }, sl));
+    if (st.aciklama) r('Ayrıntı', st.aciklama, st.durum === 'basarisiz');
+    r('Hedef', el('span', { class: 'mono' }, st.hedef ?? '—'));
+    r('İsteyen', `${st.isteyen ?? '—'} · ${writeDate(st.istenme)}`);
+    r('Son değişiklik', writeDate(st.zaman));
+  }
+  $('#dbFormPanel').hidden = !g.canStart;
+  dbTested = g.tested;
+  const go = $('#dbGo');
+  $('#dbActions').hidden = !dbTested;
+  if (dbTested) go.textContent = dbTested.islem === 'baglan' ? `${dbTested.adres} veritabanına bağlan` : `${dbTested.adres} hedefine taşı`;
+}
+function dbResults(items) {
+  const w = $('#dbResults'); w.hidden = !items?.length;
+  if (!items?.length) { w.replaceChildren(); return; }
+  w.replaceChildren(table(['Sınama', 'Sonuç', 'Ayrıntı'], items.map((m) => el('tr', {},
+    el('td', { 'data-label': 'Sınama' }, m.name),
+    el('td', { 'data-label': 'Sonuç' }, el('span', { class: `badge badge--${m.ok ? 'green' : 'red'}` }, m.ok ? 'geçti' : 'geçmedi')),
+    el('td', { 'data-label': 'Ayrıntı', class: 'text-sm' }, m.detail)))));
+}
+async function dbReload() {
+  try { dbDraw(await api('/api/database')); } catch (err) { $('#dbInfo').replaceChildren(writeError(err.message)); }
+}
+$('#dbForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const b = $('#dbTest'); b.disabled = true;
+  const body = Object.fromEntries(new FormData($('#dbForm')));
+  try {
+    const g = await api('/api/database/test', { method: 'POST', body: JSON.stringify(body) });
+    dbDraw(g); dbResults(g.results); notify(g.message, g.ok ? 'success' : 'danger');
+  } catch (err) { notify(err.message, 'danger'); } finally { b.disabled = false; $('#dbPassword').value = ''; }
+});
+$('#dbGo').addEventListener('click', async () => {
+  if (!dbTested) return;
+  const linking = dbTested.islem === 'baglan';
+  const text = linking
+    ? `Panel yeniden başlayacak ve bundan sonra ${dbTested.adres} veritabanındaki mevcut veriyle çalışacak. Şu anki veritabanı kopyalanmaz, olduğu gibi bırakılır. Oturumlar kapanır. Doğrulamak için veritabanı adını yazın.`
+    : `Panel yeniden başlayacak; şu anki veritabanı ${dbTested.adres} hedefine kopyalanacak ve panel bundan sonra orada çalışacak. Kopya bitene kadar panele erişilemez, oturumlar kapanır. Doğrulamak için veritabanı adını yazın.`;
+  if (!await askConfirm(text, dbTested.database, { header: linking ? 'Mevcut veritabanına bağlan' : 'Veritabanını taşı', danger: true })) return;
+  const b = $('#dbGo'); b.disabled = true;
+  try { const g = await api('/api/database/migrate', { method: 'POST', body: JSON.stringify({}) }); dbDraw(g); dbResults([]); notify(g.message, 'success'); }
+  catch (err) { notify(err.message, 'danger'); } finally { b.disabled = false; }
 });
 
 // ---------- acilis ----------

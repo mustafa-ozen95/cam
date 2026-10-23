@@ -14,7 +14,11 @@ export const LABELS = {
   devicePassword: 'cam/device-password',   // device password encryption key (stored)
   auditLog: 'cam/audit-log',               // audit log chain signatures (stored)
   keyFingerprint: 'cam/key-fingerprint',   // secret key fingerprint (stored in settings)
+  databaseConnection: 'cam/database-connection',   // remote database connection file (data/database/connection.json)
 };
+
+/** AES-256 key for the remote database connection file (Settings -> Veritabanı). */
+export const databaseConnectionKey = (secret, label = LABELS.databaseConnection) => createHmac('sha256', secret).update(label).digest();
 
 /** AES-256 key for device passwords. */
 export const devicePasswordKey = (secret, label = LABELS.devicePassword) => createHash('sha256').update(`${label}|${secret.toString('hex')}`).digest();

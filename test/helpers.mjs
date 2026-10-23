@@ -55,7 +55,7 @@ export async function openApp(extra = {}) {
     device: { ...base.device, test: true, seed: JSON.stringify(extra.devices ?? DEVICES) },
     permissions: { ...base.permissions, initialAdminPassword: 'adminparola1' }, identity: { ...base.identity, ...extra.identity }, live: { ...base.live, ...extra.live } };
   let app;
-  try { app = await createApp(y); } catch (e) { if (!extra.database) await g.remove(); if (!extra.data) rmSync(data, { recursive: true, force: true }); throw e; }
+  try { app = await createApp(y, { databaseMove: extra.databaseMove }); } catch (e) { if (!extra.database) await g.remove(); if (!extra.data) rmSync(data, { recursive: true, force: true }); throw e; }
   const server = app.listen();
   await new Promise((r) => server.once('listening', r));
   const B = `http://127.0.0.1:${server.address().port}`;
