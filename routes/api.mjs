@@ -39,6 +39,7 @@ export function apiRoutes(r, d, middleware) {
     // Guncelleme kontrolu: yalnizca bakar (GitHub'daki son basarili derleme); guncelleme sunucudan yapilir.
     r.get('/api/update', d.updates.status, [permission('update.check')]);
     r.post('/api/update/check', d.updates.check, [permission('update.check')]);
+    r.post('/api/update/apply', d.updates.apply, [permission('update.apply')]);
     // devices
     r.get('/api/devices', d.devices.list, [permission('device.read')]);
     r.post('/api/devices', d.devices.add, [permission('device.manage')]);

@@ -165,3 +165,84 @@ test('uçlar: admin kontrol eder; izni olmayan 403 ve gerekenIzin döner; jeton 
     }
   } finally { await close(); }
 });
+
+const HOOK = 'http://10.0.0.9:3000/v1/deploy-hooks/GIZLI_HOOK_JETONU';
+
+/** Sahte GitHub + sahte platform: hook istegi `hookIstekleri`ne duser. */
+function mockPlatform({ diff, hookCode = 202, hookBody = { deploymentId: 77 } } = {}) {
+  const gh = mockGithub({ diff }), hookRequests = [];
+  const fetch = async (url, option) => {
+    if (String(url).startsWith('http://10.0.0.9:3000/')) {
+      hookRequests.push({ url: String(url), option });
+      return new Response(JSON.stringify(hookBody), { status: hookCode, headers: { 'Content-Type': 'application/json' } });
+    }
+    return gh.fetch(url, option);
+  };
+  return { fetch, hookRequests };
+}
+const NEW_DIFF = { status: 'ahead', ahead_by: 3, behind_by: 0, commits: [commit(LAST, 'Yeni özellik', '2026-10-20T09:00:00Z')] };
+
+test('güncelle: yalnız hook ve yeni sürüm varken mümkün; güncellenince kaybolur', async () => {
+  const p = mockPlatform({ diff: NEW_DIFF });
+  const { h, clear } = await service({ hook: '' }, p);
+  assert.equal(h.canApply(), false);
+  await h.check('sınama');
+  assert.equal(h.hasNew(), true); assert.equal(h.hookReady(), false); assert.equal(h.canApply(), false);
+  await assert.rejects(h.apply(), /UPDATE_HOOK_URL/);
+  h.setting = { ...h.setting, hook: HOOK };
+  assert.equal(h.canApply(), true);
+  h.setting = { ...h.setting, version: LAST };   // panel guncellendi: eski "yeni surum" sonucu susar
+  assert.equal(h.canApply(), false);
+  assert.equal(p.hookRequests.length, 0);
+  await clear();
+});
+
+test('güncelle: hook POST edilir; yeni sürüm yoksa çağrılmaz; ret iletisinde hook geçmez', async () => {
+  const p = mockPlatform({ diff: NEW_DIFF });
+  const { h, clear } = await service({ hook: HOOK }, p);
+  await assert.rejects(h.apply(), /yeni sürüm yok/);
+  assert.equal(p.hookRequests.length, 0);
+  await h.check('sınama');
+  assert.equal(await h.apply(), 'deploy #77');
+  assert.equal(p.hookRequests.length, 1); assert.equal(p.hookRequests[0].url, HOOK); assert.equal(p.hookRequests[0].option.method, 'POST');
+  await clear();
+
+  const q = mockPlatform({ diff: NEW_DIFF, hookCode: 404, hookBody: { message: 'not found' } });
+  const s = await service({ hook: HOOK }, q);
+  await s.h.check('sınama');
+  await assert.rejects(s.h.apply(), (e) => /404/.test(e.message) && !e.message.includes('GIZLI_HOOK_JETONU'));
+  await s.clear();
+});
+
+test('güncelle ucu: update.apply ister; yanıtta hook yok; denetim kaydına düşer', async () => {
+  const { req, login, services, close } = await openApp();
+  try {
+    await login('admin', 'adminparola1');
+    const p = mockPlatform({ diff: NEW_DIFF });
+    services.updates.setting = { ...services.updates.setting, ...SETTING, hook: HOOK };
+    services.updates.fetch = p.fetch;
+
+    const none = await req('/api/update/apply', { method: 'POST', body: {} });
+    assert.equal(none.status, 409, none.text); assert.equal(p.hookRequests.length, 0);
+
+    const c = await req('/api/update/check', { method: 'POST', body: {} });
+    assert.equal(c.json.canApply, true); assert.equal(c.json.hookReady, true); assert.ok(!c.text.includes('GIZLI_HOOK_JETONU'));
+
+    const r = await req('/api/update/apply', { method: 'POST', body: {} });
+    assert.equal(r.status, 202, r.text); assert.match(r.json.message, /deploy #77/); assert.ok(!r.text.includes('GIZLI_HOOK_JETONU'));
+    assert.equal(p.hookRequests.length, 1);
+    await services.auditLog.wait();
+    const log = await req('/api/audit-log');
+    assert.ok(log.text.includes('update-start'), log.text.slice(0, 300)); assert.ok(!log.text.includes('GIZLI_HOOK_JETONU'));
+
+    // update.check izni olan ama update.apply olmayan kurduramaz.
+    const role = await req('/api/access/roles', { method: 'POST', body: { id: 'kontrolcu', name: 'Kontrolcü', permissions: ['update.check'] } });
+    assert.ok(role.status === 200 || role.status === 201, role.text);
+    const u = await req('/api/members', { method: 'POST', body: { name: 'veli', password: 'veliparola1', role: 'kontrolcu' } });
+    assert.equal(u.status, 200, u.text);
+    await login('veli', 'veliparola1');
+    const y = await req('/api/update/apply', { who: 'veli', method: 'POST', body: {} });
+    assert.equal(y.status, 403, y.text); assert.equal(y.json.requiredPermission, 'update.apply');
+    assert.equal(p.hookRequests.length, 1);
+  } finally { await close(); }
+});

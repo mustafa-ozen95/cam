@@ -97,13 +97,16 @@ export const config = Object.freeze({
 
   /**
    * Guncelleme kontrolu (ust menude "Güncelleme"): calisan surum, deponun main dalindaki son BASARILI imaj derlemesiyle
-   * karsilastirilir. Yalniz bakar, kurmaz. Acik depo jetonsuz sorulur; ozel depo salt okunur jeton ister (fine-grained;
-   * Contents ve Actions: read). Erisilemezse kontrol hata der; panelin baska yeri etkilenmez.
+   * karsilastirilir. Acik depo jetonsuz sorulur; ozel depo salt okunur jeton ister (fine-grained; Contents ve Actions:
+   * read). Erisilemezse kontrol hata der; panelin baska yeri etkilenmez. hook: platformun deploy hook adresi (NineDeploy:
+   * Service -> Settings -> Deploy hook); tanimliysa ve yeni surum varsa "Şimdi güncelle" onu tetikler. Icindeki jeton
+   * deploy yetkisidir: gizli degisken olarak verilir, yanitta ve gunlukte gecmez.
    */
   updates: {
     repo: env.UPDATE_REPO || 'mustafa-ozen95/cam',
     is: 'image.yml', branch: 'main',
     token: env.UPDATE_TOKEN || '',
+    hook: env.UPDATE_HOOK_URL || '',
     version: env.APP_VERSION || fileRow(join(ROOT, 'VERSION')),   // imaja derlemede yazilir (Dockerfile: ARG VERSION ya da .git)
     clock: '06:50',                                  // her sabah (sunucu saati, TZ)
     api: 'https://api.github.com',

@@ -247,15 +247,15 @@
       <div id="auditPage"></div>
     </div></section>
 
-    <!-- GUNCELLEME (update.check): yalnizca bakar; guncelleme sunucudan yapilir -->
+    <!-- GUNCELLEME (update.check): durum ve kontrol; update.apply: yeni surum varsa platformun deploy hook'unu tetikler -->
     <section class="page" id="s-updates" hidden><div class="page__inner page__inner--wide">
       <header class="page-head">
         <div class="page-head__text"><h1>Güncelleme</h1><p class="page-head__subtitle">Panelin sürümü ve GitHub'daki son başarılı derleme.</p></div>
-        <div class="page-head__actions"><button type="button" class="btn btn--primary btn--sm" id="updateCheck">Şimdi kontrol et</button></div>
+        <div class="page-head__actions"><button type="button" class="btn btn--sm" id="updateCheck">Şimdi kontrol et</button><button type="button" class="btn btn--primary btn--sm" id="updateApply" hidden>Şimdi güncelle</button></div>
       </header>
       <section class="panel">
         <header class="panel__head"><h2 class="panel__title">Sürüm</h2></header>
-        <div class="panel__body"><dl class="facts" id="updateInfo"></dl></div>
+        <div class="panel__body"><dl class="facts" id="updateInfo"></dl><p class="text-sm text-muted" id="updateHookHint" hidden>Güncelleme düğmesi için kurulumda UPDATE_HOOK_URL (platformun deploy hook adresi) tanımlanmalı.</p></div>
       </section>
       <section class="panel" id="updateCommitPanel" hidden>
         <header class="panel__head"><div><h2 class="panel__title">Yeni commit'ler</h2><p class="text-sm text-muted">Çalışan sürümden sonra gelenler, en yenisi üstte.</p></div></header>
@@ -267,7 +267,7 @@
           <li>Kontrol her sabah kendiliğinden yapılır; düğme aynı kontrolü hemen yapar. Yeni sürüm varsa bu izni olanlar sayfanın üstünde uyarı görür.</li>
           <li>Karşılaştırma, deponun main dalındaki son başarılı imaj derlemesiyle yapılır. Derlemesi bitmemiş ya da düşmüş bir commit kurulamaz; yeni sürüm sayılmaz.</li>
           <li>Yön de ölçülür: çalışan sürüm son derlemeden yeniyse bu "güncelleme" değil, geri alma olurdu; ekran bunu ayrıca söyler.</li>
-          <li>Bu ekran yalnızca bakar. Güncellemenin kendisi sunucudan, yedek alınarak ve onayla yapılır.</li>
+          <li>Yeni sürüm varsa "Şimdi güncelle" görünür: platformun deploy hook'unu tetikler, kurulumu platform yapar. Panel yalnızca deponun main dalını yeniden kurdurabilir, sunucuda başka bir şey çalıştıramaz.</li>
         </ul></div>
       </section>
     </div></section>
@@ -2435,7 +2435,7 @@ async function showLiveLink() {
   try { $('#liveLink').hidden = !(await fetch('/live/cameras.json', { method: 'HEAD', cache: 'no-store' })).ok; } catch {}
 }
 
-// ---------- guncelleme (yalnizca bakar) ----------
+// ---------- guncelleme (kontrol; yeni surum varsa platformun deploy hook'u) ----------
 const UPDATE_STATUS = {
   current: ['güncel', 'green'], new: ['yeni sürüm var', 'blue'], ahead: ['son derlemeden ileride', 'yellow'],
   diverged: ['main dalında değil', 'yellow'], unknown: ['çalışan sürüm bilinmiyor', 'yellow'], error: ['kontrol edilemedi', 'red'],
@@ -2445,6 +2445,8 @@ const writeDate = (iso) => (iso ? new Date(iso).toLocaleString('tr-TR', { dateSt
 function updateDraw(g) {
   const last = g.last, warning = $('#updateWarning');
   warning.hidden = !g.hasNew;
+  $('#updateApply').hidden = !(g.canApply && hasPermission('update.apply'));
+  $('#updateHookHint').hidden = !(g.hasNew && !g.hookReady);
   if (g.hasNew) $('#updateWarningText').textContent = `Çalışan sürüm ${last.behind ?? 0} commit geride.`;
   const k = $('#updateInfo'); k.replaceChildren(); const row = makeRow(k);
   row('Çalışan sürüm', el('span', { class: 'mono', title: g.running ?? '' }, g.running ? shortSha(g.running) : 'bilinmiyor'));
@@ -2471,6 +2473,13 @@ $('#updateCheck').addEventListener('click', async () => {
     const s = g.last?.status;
     notify(s === 'error' ? `Kontrol edilemedi: ${g.last.description ?? ''}` : s === 'current' ? 'Kontrol edildi: panel son sürümde.' : `Kontrol edildi: ${g.last?.description ?? ''}`, s === 'error' ? 'danger' : 'success');
   } catch (err) { notify(err.message, 'danger'); } finally { d.disabled = false; }
+});
+
+$('#updateApply').addEventListener('click', async () => {
+  if (!await askConfirm('Panel son başarılı derlemeye güncellenecek. Platform yeni imajı kurarken panel birkaç dakika kapanıp açılır.', '', { header: 'Paneli güncelle' })) return;
+  const d = $('#updateApply'); d.disabled = true;
+  try { const g = await api('/api/update/apply', { method: 'POST' }); updateDraw(g); notify(g.message, 'success'); }
+  catch (err) { notify(err.message, 'danger'); } finally { d.disabled = false; }
 });
 
 // ---------- acilis ----------

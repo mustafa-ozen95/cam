@@ -11,7 +11,8 @@
  * JETON ISTEGE BAGLI: depo acikken jetonsuz sorulur (GitHub'in jetonsuz siniri IP basina saatte 60 istek; gunde bir tur
  * ve elle basilan dugme icin yeter). Ozel depo jeton ister; jetonsuz sorulan ozel depo 404 doner.
  *
- * YALNIZCA BAKAR, KURMAZ: guncelleme sunucudan, onayli yapilir. Sonuc veritabaninda (ayarlar tablosu, "guncelleme"): her sabahki tur
+ * KENDINI KURMAZ: yeni surum varsa apply() platformun deploy hook'unu (UPDATE_HOOK_URL) tetikler; ne ve nasil kurulacagina
+ * platform karar verir. Ele gecen bir panel bununla sunucuda komut calistiramaz, en cok ayni depoyu yeniden kurdurur. Sonuc veritabaninda (ayarlar tablosu, "guncelleme"): her sabahki tur
  * yazar, ekran ve uyari seridi okur. Jeton sonucta ve iletilerde gecmez.
  */
 import { DatabaseError } from '../core/errors.mjs';
@@ -45,6 +46,31 @@ export class UpdateService {
   hasNew() {
     const s = this.last();
     return s?.status === 'new' && s.running === this.version();
+  }
+
+  /** Deploy hook tanimli mi (dugme ve ipucu icin; adresin kendisi disari cikmaz). */
+  hookReady() { return String(this.setting.hook ?? '').trim() !== ''; }
+
+  /** "Şimdi güncelle" gorunsun mu: hook tanimli ve yeni surum var. */
+  canApply() { return this.hookReady() && this.hasNew(); }
+
+  /**
+   * Guncellemeyi BASLATIR: platformun deploy hook'una POST. Karar sunucuda: son kontrol yeni surum bulmadiysa hook
+   * cagrilmaz (dugme gizli olsa da istek elle gonderilebilir). NineDeploy 202 { deploymentId } ya da suren deploy icin
+   * { alreadyInProgress: true, deploymentId } doner. Hata iletisinde hook adresi gecmez.
+   */
+  async apply() {
+    const hook = String(this.setting.hook ?? '').trim();
+    if (!hook) throw new Error('Güncelleme bağlantısı (UPDATE_HOOK_URL) tanımlı değil.');
+    if (!this.hasNew()) throw new Error('Kurulacak yeni sürüm yok; önce yeniden kontrol edin.');
+    let r;
+    try {
+      r = await this.fetch(hook, { method: 'POST', headers: { Accept: 'application/json', 'User-Agent': 'cam' }, signal: AbortSignal.timeout(15_000) });
+    } catch { throw new Error('Platforma ulaşılamadı (deploy hook yanıt vermedi).'); }
+    if (!r.ok) throw new Error(`Platform isteği reddetti (${r.status}): hook kapatılmış ya da yenilenmiş olabilir.`);
+    let b = {}; try { b = await r.json(); } catch { /* govde JSON degil */ }
+    if (b?.alreadyInProgress) return `zaten süren bir deploy var (#${b.deploymentId})`;
+    return b?.deploymentId != null ? `deploy #${b.deploymentId}` : 'deploy sıraya alındı';
   }
 
   /** GitHub'a sorar, sonucu yazar ve dondurur. Hata FIRLATMAZ: sonuc "hata" durumuyla yazilir. */

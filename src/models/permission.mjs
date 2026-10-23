@@ -32,6 +32,7 @@ export const PERMISSIONS = {
   'permission.manage': { group: 'management', tr: 'Rolleri ve tüm API anahtarlarını yönetme', en: 'Manage roles and all API keys' },
   'api.key': { group: 'management', tr: 'Yalnız kendi API anahtarlarını yönetme', en: 'Manage own API keys only' },
   'update.check': { group: 'management', tr: 'Güncelleme durumunu görme ve kontrol etme', en: 'View and check for updates' },
+  'update.apply': { group: 'management', tr: 'Yeni sürümü kurdurma (platformun deploy hook\'u)', en: 'Start an update (platform deploy hook)' },
 };
 export const PERMISSION_GROUPS = {
   viewing: { tr: 'İzleme', en: 'Viewing' },
