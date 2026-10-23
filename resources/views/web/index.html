@@ -753,7 +753,7 @@ async function getInfo() {
     return null;
   }
 }
-const makeRow = (container) => (a, b, error) => container.append(el('div', { class: 'facts__row' }, el('dt', { class: 'facts__key' }, a), el('dd', { class: `facts__value${error ? ' hata-yazi' : ''}` }, b instanceof Node ? b : String(b ?? '—'))));
+const makeRow = (container) => (a, b, error) => container.append(el('div', { class: 'facts__row' }, el('dt', { class: 'facts__key' }, a), el('dd', { class: `facts__value${error ? ' error-text' : ''}` }, b instanceof Node ? b : String(b ?? '—'))));
 /** Saat farki: [yazi, buyuk mu]. */
 const clockDifference = (clock) => {
   const diff = clock && info?.serverClock ? Math.round((Date.parse(clock.replace(' ', 'T') + 'Z') - Date.parse(info.serverClock.replace(' ', 'T') + 'Z')) / 1000) : null;
@@ -1998,7 +1998,7 @@ function drawJob(jobs) {
       el('div', { class: 'progress__top' }, el('span', { class: 'progress__text' }, stage), el('span', { class: 'progress__step' }, given ? `%${percent}` : '')),
       el('div', { class: 'progress__track', role: 'progressbar', 'aria-label': 'İlerleme', 'aria-valuemin': '0', 'aria-valuemax': '100', ...(given ? { 'aria-valuenow': String(percent) } : {}) },
         el('div', { class: 'progress__bar', style: `width:${given ? percent : 100}%` })))
-      : el('span', { class: i.error ? 'text-sm hata-yazi' : 'text-sm text-muted' }, stage);
+      : el('span', { class: i.error ? 'text-sm error-text' : 'text-sm text-muted' }, stage);
     const action = ['waiting', 'downloading'].includes(i.status) ? button('İptal', 'danger', () => api(`/api/jobs/${i.id}/revoke`, { method: 'POST' }).then(reloadDownloaded))
       : i.status === 'finished' ? el('a', { class: 'btn btn--sm btn--primary', href: `/archive/${encodeURIComponent(i.name)}?download=1` }, 'Tekrar kaydet') : '';
     return el('tr', {}, el('td', { class: 'table__cell--mono' }, el('span', { class: 'truncate', title: i.name }, i.name)), el('td', {}, statusPoint(color, name)), el('td', {}, progress),

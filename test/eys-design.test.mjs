@@ -129,27 +129,38 @@ test('web/css/eys ve web/js/eys altinda Turkce adli dosya yok', () => {
 
 /*
  * Ad degisikligi CSS'te yapilip isaretlemede unutulursa stil SESSIZCE kopar: sunucunun urettigi "veya" ayraci
- * (gate__ayrac -> gate__divider) ve kayit zaman cizelgesindeki parcalar (parca -> chunk) boyle kaybolmustu.
- * Arayuzde ve sunucuda kullanilan her BEM sinifi (blok__oge, blok--degistirici) CSS'te tanimli olmali.
- * EYS'nin de stilsiz biraktigi iki sinif bilerek disarida.
+ * (gate__ayrac -> gate__divider), kayit zaman cizelgesindeki parcalar (parca -> chunk) ve bilgi satirlarindaki hata metni
+ * (hata-yazi -> error-text) boyle kaybolmustu. Arayuzde ve sunucuda kullanilan her sinif CSS'te tanimli olmali: class/className
+ * ifadesindeki her metin (kosullu yazim dahil) ve classList cagrilari. Stilsiz kullanilanlar asagida, sebebiyle.
  */
-test('kullanılan her BEM sınıfı CSS\'te tanımlı (ad değişikliği stili sessizce koparmaz)', () => {
+const UNSTYLED = new Set([
+  'devCamRow', 'devChannelRow', 'devHttpRow', 'devPortRow', 'devRtspRow',   // cihaz penceresi: JS satir secicileri
+  'member-tabs', 'scope-device', 'type',                                 // JS secicileri / veri isareti
+  'empty__icon', 'btn--secondary',                                       // EYS'de de stilsiz
+]);
+test('kullanılan her sınıf CSS\'te tanımlı (ad değişikliği stili sessizce koparmaz)', () => {
   const ROOT = join(WEB, '..', '..', '..');
   const cssFiles = [];
   const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith('.css')) cssFiles.push(p); } };
   walk(join(WEB, 'css'));
   const defined = new Set();
   for (const f of cssFiles) for (const m of readFileSync(f, 'utf8').matchAll(/\.([a-zA-Z][\w-]*)/g)) defined.add(m[1]);
-  const KNOWN_UNSTYLED = new Set(['empty__icon', 'btn--secondary']);
-  const missing = [];
+  const missing = new Set();
+  const check = (c, f) => { if (/^[a-zA-Z][\w-]*$/.test(c) && !defined.has(c) && !UNSTYLED.has(c)) missing.add(`${c} (${f.slice(ROOT.length + 1)})`); };
   for (const f of [join(WEB, 'index.html'), join(WEB, 'login.html'), join(ROOT, 'src', 'controllers', 'views.mjs')]) {
-    for (const m of readFileSync(f, 'utf8').matchAll(/class(?:Name)?\s*[:=]\s*["'`]([^"'`]*)["'`]/g)) {
-      for (const c of m[1].split(/\s+/)) {
-        if (/^[a-z][\w]*(__|--)[\w-]+$/.test(c) && !defined.has(c) && !KNOWN_UNSTYLED.has(c)) missing.push(`${c} (${f.slice(ROOT.length + 1)})`);
-      }
+    const text = readFileSync(f, 'utf8');
+    // badge--${renk} gibi dinamik onekler (sonu tire) sinif degil; ${...} icindeki metinler (karsilastirma) atlanir.
+    const words = (t) => { for (const c of t.split(/\s+/)) if (c && !c.endsWith('-')) check(c, f); };
+    const noInterp = (t) => { let o = '', d = 0; for (let i = 0; i < t.length; i++) { if (t[i] === '$' && t[i + 1] === '{') { d++; i++; continue; } if (d && t[i] === '{') d++; else if (d && t[i] === '}') { d--; if (!d) o += ' '; continue; } if (!d) o += t[i]; } return o; };
+    // HTML: class="..."
+    for (const m of text.matchAll(/\sclass="([^"]*)"/g)) words(m[1]);
+    // JS: class: '...' / class: kosul ? 'a b' : 'c' — ifadedeki her metin; ${...} parcalari atlanir
+    for (const m of text.matchAll(/\bclass(?:Name)?\s*:\s*((?:`[^`]*`|[^,}\n])*)/g)) {
+      for (const lit of noInterp(m[1]).matchAll(/(["'`])((?:(?!\1).)*)\1/g)) words(lit[2]);
     }
+    for (const m of text.matchAll(/classList\.(?:add|remove|toggle|contains)\(\s*'([^']+)'/g)) check(m[1], f);
   }
-  assert.deepEqual(missing, []);
+  assert.deepEqual([...missing], []);
 });
 
 test('zaman çizelgesindeki kayıt parçasının sınıfı CSS\'te tanımlı', () => {
