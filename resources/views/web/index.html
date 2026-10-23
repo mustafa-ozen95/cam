@@ -17,11 +17,8 @@
       <a href="#live" class="topbar__link" data-tab="live">Canlı</a>
       <a href="#recordings" class="topbar__link" data-tab="recordings">Kayıtlar</a>
       <a href="#downloads" class="topbar__link" data-tab="downloads">İndirmeler</a>
-      <a href="#devices" class="topbar__link" data-tab="devices">Cihaz</a>
-      <a href="#members" class="topbar__link" data-tab="members" hidden>Üyeler</a>
-      <a href="#audit" class="topbar__link" data-tab="audit" hidden>Günlük</a>
-      <a href="#updates" class="topbar__link" data-tab="updates" hidden>Güncelleme</a>
-      <a href="#database" class="topbar__link" data-tab="database" hidden>Veritabanı</a>
+      <!-- Cihaz, Üyeler, Günlük, Güncelleme, Veritabanı: Ayarlar'in alt sekmeleri (DC panellerindeki Ayarlar gibi) -->
+      <a href="#settings" class="topbar__link" data-tab="settings" hidden>Ayarlar</a>
     </nav>
 
     <span class="topbar__spacer"></span>
@@ -206,7 +203,7 @@
     <!-- UYELER (yalniz admin) -->
     <section class="page" id="s-members" hidden><div class="page__inner page__inner--wide">
       <header class="page-head">
-        <div class="page-head__text"><h1>Üyeler</h1><p class="page-head__subtitle">Roller DC panelleriyle aynı: <b>Yönetici</b> her şeyi yapar; <b>Network</b>, <b>Teknik</b> ve <b>Muhasebe</b> rollerinin izinleri Roller sekmesinden verilir. Merkezle girenlerin rolü merkezden gelir.</p></div>
+        <div class="page-head__text"><h1>Ayarlar</h1><p class="page-head__subtitle">Roller DC panelleriyle aynı: <b>Yönetici</b> her şeyi yapar; <b>Network</b>, <b>Teknik</b> ve <b>Muhasebe</b> rollerinin izinleri Roller sekmesinden verilir. Merkezle girenlerin rolü merkezden gelir.</p></div>
         <div class="page-head__actions"><button type="button" class="btn btn--primary btn--sm" id="memberAdd">Yeni üye</button></div>
       </header>
       <nav class="tabs member-tabs" aria-label="Üyeler ve yetki">
@@ -224,7 +221,7 @@
     <!-- GUNLUK (yalniz admin) -->
     <section class="page" id="s-audit" hidden><div class="page__inner page__inner--wide">
       <header class="page-head">
-        <div class="page-head__text"><h1>Günlük</h1><p class="page-head__subtitle">Giriş, izleme, indirme ve saat ayarı olayları; IP, kaynak port ve zamanla. Yalnızca admin görür; liste kendiliğinden güncellenir.</p></div>
+        <div class="page-head__text"><h1>Ayarlar</h1><p class="page-head__subtitle">Giriş, izleme, indirme ve saat ayarı olayları; IP, kaynak port ve zamanla. Yalnızca admin görür; liste kendiliğinden güncellenir.</p></div>
       </header>
       <div class="chain chain--unknown" id="auditChain">
         <span class="text-muted" id="auditChainText">Zincir henüz doğrulanmadı.</span>
@@ -251,7 +248,7 @@
     <!-- GUNCELLEME (update.check): durum ve kontrol; update.apply: yeni surum varsa platformun deploy hook'unu tetikler -->
     <section class="page" id="s-updates" hidden><div class="page__inner page__inner--wide">
       <header class="page-head">
-        <div class="page-head__text"><h1>Güncelleme</h1><p class="page-head__subtitle">Panelin sürümü ve GitHub'daki son başarılı derleme.</p></div>
+        <div class="page-head__text"><h1>Ayarlar</h1><p class="page-head__subtitle">Panelin sürümü ve GitHub'daki son başarılı derleme.</p></div>
         <div class="page-head__actions"><button type="button" class="btn btn--sm" id="updateCheck">Şimdi kontrol et</button><button type="button" class="btn btn--primary btn--sm" id="updateApply" hidden>Şimdi güncelle</button></div>
       </header>
       <section class="panel">
@@ -279,7 +276,7 @@
     -->
     <section class="page" id="s-database" hidden><div class="page__inner page__inner--wide">
       <header class="page-head">
-        <div class="page-head__text"><h1>Veritabanı</h1><p class="page-head__subtitle">Panelin veritabanı: nerede duruyor, uzak bir sunucuya taşınması ya da mevcut bir veritabanına bağlanması.</p></div>
+        <div class="page-head__text"><h1>Ayarlar</h1><p class="page-head__subtitle">Panelin veritabanı: nerede duruyor, uzak bir sunucuya taşınması ya da mevcut bir veritabanına bağlanması.</p></div>
       </header>
       <section class="panel">
         <header class="panel__head"><h2 class="panel__title">Şu anki veritabanı</h2></header>
@@ -323,7 +320,12 @@
     </div></section>
 
     <!-- CIHAZ -->
-    <section class="columns" id="s-devices" hidden>
+    <!-- CIHAZ (Ayarlar): ustte ayarlar seridi (betik ekler), altinda iki sutunlu duzen -->
+    <section class="settings-split" id="s-devices" hidden>
+      <div class="settings-split__head">
+        <header class="page-head"><div class="page-head__text"><h1>Ayarlar</h1><p class="page-head__subtitle">Kayıtlı NVR, DVR ve IP kameralar: bağlantı bilgileri, kanallar ve cihaz saati.</p></div></header>
+      </div>
+      <div class="columns" id="deviceColumns">
       <div class="column">
         <div class="column__head">
           <span class="eyebrow">Cihazlar</span>
@@ -379,11 +381,12 @@
         </div>
         <div class="detail__foot" id="deviceDetailActions"></div>
       </aside>
+      </div>
     </section>
     <!-- YETKI -->
     <section class="page" id="s-access" hidden><div class="page__inner page__inner--wide">
       <header class="page-head">
-        <div class="page-head__text"><h1>Üyeler</h1><p class="page-head__subtitle">Roller ve API anahtarları. Tüm kameralara ve yönetime API’den tam erişim için Rol: Yönetici ile anahtar oluşturun. Kimse sahip olmadığı izni ya da kapsamı dışındaki kamerayı başkasına veremez. API belgesi: <a href="/dokuman/api-v1.tr.md" target="_blank" rel="noopener">Türkçe</a> · <a href="/dokuman/api-v1.en.md" target="_blank" rel="noopener">English</a> · <a href="/dokuman/openapi.json" target="_blank" rel="noopener">OpenAPI</a></p></div>
+        <div class="page-head__text"><h1>Ayarlar</h1><p class="page-head__subtitle">Roller ve API anahtarları. Tüm kameralara ve yönetime API’den tam erişim için Rol: Yönetici ile anahtar oluşturun. Kimse sahip olmadığı izni ya da kapsamı dışındaki kamerayı başkasına veremez. API belgesi: <a href="/dokuman/api-v1.tr.md" target="_blank" rel="noopener">Türkçe</a> · <a href="/dokuman/api-v1.en.md" target="_blank" rel="noopener">English</a> · <a href="/dokuman/openapi.json" target="_blank" rel="noopener">OpenAPI</a></p></div>
         <div class="page-head__actions"><button type="button" class="btn btn--sm" id="roleAdd" hidden>Yeni rol</button><button type="button" class="btn btn--sm btn--primary" id="keyAdd" hidden>API anahtarı oluştur</button></div>
       </header>
       <nav class="tabs member-tabs" aria-label="Üyeler ve yetki">
@@ -749,18 +752,44 @@ const hasPermission = (i) => !!me?.permissions?.includes(i);
 const TAB_PERMISSION = { live: ['live.view'], recordings: ['recording.list', 'recording.play', 'recording.download'], devices: ['device.read'], members: ['member.manage'], audit: ['audit.read'], updates: ['update.check'], database: ['database.manage'], access: ['permission.manage', 'api.key'] };
 // Ust baslikta konum yolu (kirinti) YOK: bolum menude secili, alt duzey orta bolmenin basliginda.
 const allowed = (s) => TABS.includes(s) && s !== 'downloads' && (TAB_PERMISSION[s] ?? []).some(hasPermission);
+/*
+ * AYARLAR: Cihaz, Üyeler (Roller ve API anahtarlari dahil), Günlük, Güncelleme, Veritabani. Ust menude tek giris; her bolumun
+ * ustunde ayni alt sekme seridi (DC panellerindeki Ayarlar -> sekmeler). Adresler degismedi (#devices, #audit...).
+ */
+const SETTINGS = [['devices', 'Cihaz'], ['members', 'Üyeler'], ['audit', 'Günlük'], ['updates', 'Güncelleme'], ['database', 'Veritabanı']];
+const SETTINGS_OF = { access: 'members' };   // Yetki (roller, anahtarlar) Uyeler sekmesinin icinde
+const settingsAllowed = (s) => (s === 'members' ? allowed('members') || allowed('access') : allowed(s));
+const settingsTarget = (s) => (s === 'members' && !allowed('members') && allowed('access') ? 'access' : s);
+const firstSettings = () => settingsTarget(SETTINGS.map(([s]) => s).find(settingsAllowed) ?? 'live');
+const isSettings = (name) => SETTINGS.some(([s]) => s === (SETTINGS_OF[name] ?? name));
+function setupSettingsTabs() {
+  for (const id of ['s-devices', 's-members', 's-access', 's-audit', 's-updates', 's-database']) {
+    const sec = document.getElementById(id);
+    if (!sec || sec.querySelector('.settings-tabs')) continue;
+    const nav = el('nav', { class: 'tabs settings-tabs', 'aria-label': 'Ayarlar' }, ...SETTINGS.map(([s, label]) => el('a', { href: `#${s}`, class: 'tabs__link', 'data-tab': s }, label)));
+    sec.querySelector('.page-head')?.after(nav);
+  }
+}
+function markSettingsTabs(name) {
+  const current = SETTINGS_OF[name] ?? name;
+  for (const a of document.querySelectorAll('.settings-tabs [data-tab]')) {
+    a.hidden = !settingsAllowed(a.dataset.tab);
+    if (a.dataset.tab === current) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  }
+}
 
 // ---------- sekmeler (sayfa yenilenmez: yalniz bolum degisir) ----------
 function openTab(name) {
   status.tab = name;
-  const inMenu = name === 'access' ? 'members' : name;   // Yetki, Uyeler'in icinde
+  const inMenu = isSettings(name) ? 'settings' : name;   // Ayarlar'in alt sekmeleri ust menude "Ayarlar"i isaretler
+  markSettingsTabs(name);
   for (const b of document.querySelectorAll('#tabs a')) { if (b.dataset.tab === inMenu) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); }
   for (const s of document.querySelectorAll('.shell > section')) s.hidden = s.id !== `s-${name}`;
   updateLive();
   if (name === 'live') toSplitIn($('#s-live'), 1);   // canli: izgara (ya da odak) acilir; kamera listesi solda
   if (name === 'recordings') recordTab();
   if (name === 'downloads') reloadDownloaded();
-  if (name === 'devices') { writeDevice(); reloadDeviceList(); toSplitIn($('#s-devices'), status.deviceSelected ? 1 : 0); }
+  if (name === 'devices') { writeDevice(); reloadDeviceList(); toSplitIn($('#deviceColumns'), status.deviceSelected ? 1 : 0); }
   if (name === 'access') { reloadPermission(); openPermissionTab(permissionTab); }
   if (name === 'members' || name === 'access') markMemberTab();
   if (name === 'members') reloadMembers();
@@ -770,10 +799,11 @@ function openTab(name) {
   if (name !== 'recordings') pauseTl();
 }
 document.addEventListener('click', (e) => {
-  const a = e.target.closest('#tabs a, .topbar__mark, #updateWarning a');
+  const a = e.target.closest('#tabs a, .topbar__mark, #updateWarning a, .settings-tabs a');
   if (!a) return;
   // Uyeler baglantisi: uye yonetimi izni yoksa ayni bolumun Yetki sekmesine acilir.
-  const name = a.dataset.tab === 'members' && !allowed('members') && allowed('access') ? 'access' : (a.dataset.tab ?? 'live');
+  // Ayarlar: ilk izinli alt sekme. Uyeler: uye yonetimi izni yoksa ayni bolumun Yetki sekmesi.
+  const name = a.dataset.tab === 'settings' ? firstSettings() : settingsTarget(a.dataset.tab ?? 'live');
   if (a.dataset.tab && !allowed(name)) return;
   e.preventDefault();
   history.replaceState(null, '', `#${name}`);
@@ -2174,7 +2204,7 @@ function drawDeviceList() {
   const by = new Map((info?.devices ?? []).map((c) => [c.id, c])), selected = selectedDevice();
   k.replaceChildren(...deviceSettingList.map((c) => {
     const b = by.get(c.id), error = c.error ?? b?.error;
-    return el('a', { href: '#devices', class: 'row-item', ...(c.id === selected?.id ? { 'aria-selected': 'true' } : {}), title: error ?? '', onclick: (e) => { e.preventDefault(); status.device = c.id; status.deviceSelected = true; writeDevice(); toSplitIn($('#s-devices'), 1); } },
+    return el('a', { href: '#devices', class: 'row-item', ...(c.id === selected?.id ? { 'aria-selected': 'true' } : {}), title: error ?? '', onclick: (e) => { e.preventDefault(); status.device = c.id; status.deviceSelected = true; writeDevice(); toSplitIn($('#deviceColumns'), 1); } },
       el('span', { class: `dot dot--${error ? 'red' : b ? 'green' : 'gray'}`, 'aria-hidden': 'true' }), el('span', { class: 'row-item__label' }, c.name || c.host), el('span', { class: 'row-item__meta' }, String(c.channelCount)));
   }));
 }
@@ -2471,8 +2501,8 @@ function applyRole() {
   $('#identity').textContent = me.name; $('#identity').title = roleName(me.role);
   $('#identityInitial').textContent = fromLetters(me.name);
   $('[data-tab=downloads]').hidden = true;                                       // indirme kuyruğu/önbellek yok: doğrudan akar
-  for (const s of ['devices', 'audit', 'updates', 'database']) $(`#tabs [data-tab=${s}]`).hidden = !allowed(s);
-  $('[data-tab=members]').hidden = !allowed('members') && !allowed('access');          // Yetki de bu menunun icinde
+  $('#tabs [data-tab=settings]').hidden = !SETTINGS.some(([s]) => settingsAllowed(s));
+  setupSettingsTabs();
   if (!hasPermission('*') && !hasPermission('device.manage')) document.body.dataset.role = 'user';
   $('#removeAll').closest('.panel').hidden = true;   // NVR'larda kayit silme panelden yapilmaz (bolum yalniz eski XM surumu icin)
   $('#archiveList').closest('.panel').hidden = !hasPermission('device.manage'); $('#archivePage').hidden = !hasPermission('device.manage');
@@ -2609,7 +2639,7 @@ $('#dbGo').addEventListener('click', async () => {
   // Gorunum tercihleri canli izgaradan ONCE: Hepsi sirasi ve sayisi ilk cizimde dogru olsun.
   await Promise.all([getInfo(), me?.type === 'member' && hasPermission('live.view') ? loadPreferences() : null]);
   if (info) setupLive(); else { $('#grid').replaceChildren(writeError('Cihaza ulaşılamadı. Adres/parola: kamera\\ayar.json ya da CAM_* ortam değişkenleri')); drawCameraList(); }
-  const s = location.hash.slice(1); openTab(allowed(s) ? s : 'live');
+  const h = location.hash.slice(1), s = h === 'settings' ? firstSettings() : h; openTab(allowed(s) ? s : 'live');
   watchJob();
   if (allowed('updates')) updateReload();
   // Cihaz baglantisi koptuysa kendiliginden toparlanir (sayfa yenilemek gerekmez).

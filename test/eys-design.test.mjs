@@ -102,7 +102,7 @@ test('HTML/JS sinif adlari CSS ile, camera.css/live.css secicileri HTML/JS ile u
     for (const m of s.matchAll(/class: '([^']+)'/g)) m[1].split(/\s+/).forEach((c) => used.add(c));
   }
   // bilerek stilsiz isaret sinifi / bicim degistirici olan adlar
-  const HOOKS = new Set(['btn--secondary', 'devCamRow', 'devChannelRow', 'devHttpRow', 'devPortRow', 'devRtspRow', 'empty__icon', 'member-tabs', 'scope-device']);
+  const HOOKS = new Set(['btn--secondary', 'devCamRow', 'devChannelRow', 'devHttpRow', 'devPortRow', 'devRtspRow', 'empty__icon', 'member-tabs', 'settings-tabs', 'scope-device']);
   const undefinedClass = [...used].filter((c) => c && !c.includes('<') && !css.has(c) && !HOOKS.has(c));
   assert.deepEqual(undefinedClass, [], `CSS'te karsiligi olmayan sinif (HTML'de eski ad kalmis olabilir): ${undefinedClass.join(', ')}`);
   const pages = textOf([...PAGES, 'live/live.js', 'web/js/lang.js', 'web/js/split.js']);
@@ -135,7 +135,7 @@ test('web/css/eys ve web/js/eys altinda Turkce adli dosya yok', () => {
  */
 const UNSTYLED = new Set([
   'devCamRow', 'devChannelRow', 'devHttpRow', 'devPortRow', 'devRtspRow',   // cihaz penceresi: JS satir secicileri
-  'member-tabs', 'scope-device', 'type',                                 // JS secicileri / veri isareti
+  'member-tabs', 'settings-tabs', 'scope-device', 'type',                // JS secicileri / veri isareti
   'empty__icon', 'btn--secondary',                                       // EYS'de de stilsiz
 ]);
 test('kullanılan her sınıf CSS\'te tanımlı (ad değişikliği stili sessizce koparmaz)', () => {
