@@ -27,13 +27,30 @@ jobs:
   sina:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Testler her dosya için geçici veritabanı açar (test/helpers.mjs); sunucu ortamdan gelir.
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USERNAME: root
+      DB_PASSWORD: test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       # Cihaz hizmeti açılışta ffmpeg'i arıyor; sahte sürücüyle bile kurulu olmalı.
       - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - run: npm ci
       - run: npm test
 
   derle:
