@@ -269,5 +269,5 @@
  */
 .settings-split { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .settings-split[hidden] { display: none; }
-.settings-split__head { padding: var(--space-6) var(--space-5) 0; }
+.settings-split__head { padding: 0 var(--space-5); }
 .settings-split__head .tabs { margin-bottom: 0; }
