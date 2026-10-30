@@ -320,11 +320,9 @@
     </div></section>
 
     <!-- CIHAZ -->
-    <!-- CIHAZ (Ayarlar): ustte ayarlar seridi (betik ekler), altinda iki sutunlu duzen -->
+    <!-- CIHAZ (Ayarlar): ustte yalniz ayarlar seridi (betik ekler; baslik yok), altinda iki sutunlu duzen -->
     <section class="settings-split" id="s-devices" hidden>
-      <div class="settings-split__head">
-        <header class="page-head"><div class="page-head__text"><h1>Ayarlar</h1><p class="page-head__subtitle">Kayıtlı NVR, DVR ve IP kameralar: bağlantı bilgileri, kanallar ve cihaz saati.</p></div></header>
-      </div>
+      <div class="settings-split__head"></div>
       <div class="columns" id="deviceColumns">
       <div class="column">
         <div class="column__head">
@@ -767,7 +765,8 @@ function setupSettingsTabs() {
     const sec = document.getElementById(id);
     if (!sec || sec.querySelector('.settings-tabs')) continue;
     const nav = el('nav', { class: 'tabs settings-tabs', 'aria-label': 'Ayarlar' }, ...SETTINGS.map(([s, label]) => el('a', { href: `#${s}`, class: 'tabs__link', 'data-tab': s }, label)));
-    sec.querySelector('.page-head')?.after(nav);
+    const head = sec.querySelector('.page-head');
+    if (head) head.after(nav); else sec.querySelector('.settings-split__head')?.append(nav);
   }
 }
 function markSettingsTabs(name) {
