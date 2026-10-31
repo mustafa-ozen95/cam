@@ -116,7 +116,7 @@ function drawGrid() {
   // Izgaradan cikan kameranin baglantisi kapanir (sunucuda akis da kapanir)
   for (const [path, o] of players) if (!layout.paths.includes(path)) { o.close(); players.delete(path); }
   for (const v of gridEl.querySelectorAll('video')) v.play?.().catch(() => {});
-  if (!layoutMode) $('#info').textContent = saved.savedBy ? `${layout.paths.filter(camera).length} kamera · düzen: ${saved.savedBy}` : `${layout.paths.filter(camera).length} kamera`;
+  if (!layoutMode) $('#info').textContent = `${layout.paths.filter(camera).length} kamera`;
 }
 
 function drawList() {
