@@ -264,10 +264,10 @@
 }
 
 /*
- * Ayarlar: Cihaz bolumu iki sutunlu (columns) oldugu icin sayfa basligi yok; ustune yalniz sekme seridi icin ince bir bant
- * gelir, sutunlar kalan yuksekligi doldurur.
+ * Ayarlar: Cihaz bolumu iki sutunlu (columns) oldugu icin sayfa basligi yok; ustune DC panellerindeki Ayarlar basligi ve sekme
+ * seridi icin ince bir bant gelir, sutunlar kalan yuksekligi doldurur.
  */
 .settings-split { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .settings-split[hidden] { display: none; }
-.settings-split__head { padding: 0 var(--space-5); }
+.settings-split__head { padding: var(--space-6) var(--space-5) 0; }
 .settings-split__head .tabs { margin-bottom: 0; }
