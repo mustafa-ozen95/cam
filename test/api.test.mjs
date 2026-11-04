@@ -279,3 +279,24 @@ test('oynatma: hızlı atlama 503 vermez, dolu cihaz öbürünü engellemez', as
   try { await bResponse.body?.cancel(); } catch {}
   await new Promise((r) => setTimeout(r, 100));
 });
+
+test('oynatma: ayni hesap iki cihazda ayni kanali izlerse biri digerini kapatmaz', async () => {
+  const channel = (await req('/api/v1/cameras')).json.cameras[0].channel;
+  const first = cookies.get('admin');
+  await new Promise((r) => setTimeout(r, 5));
+  await login('admin', 'adminparola1');   // ikinci cihaz: ayni hesap, ayri oturum
+  const second = cookies.get('admin');
+  assert.notEqual(first, second);
+  const open = (cookie) => { const ctrl = new AbortController(); const p = fetch(`${B}/stream/playback?channel=${channel}&from=2026-10-12%2010:00:00&to=2026-10-12%2010:59:59`, { headers: { Cookie: cookie }, signal: ctrl.signal }); return { ctrl, p }; };
+  const x = open(first); const r1 = await x.p;
+  assert.equal(r1.status, 200);
+  const read = r1.body.getReader(); await read.read();
+  const y = open(second); const r2 = await y.p;
+  assert.equal(r2.status, 200);
+  await new Promise((r) => setTimeout(r, 300));
+  const { done } = await read.read();
+  assert.equal(done, false, 'ilk cihazin oynatmasi acik kalmali');
+  x.ctrl.abort(); y.ctrl.abort();
+  try { await r2.body?.cancel(); } catch {}
+  await new Promise((r) => setTimeout(r, 100));
+});

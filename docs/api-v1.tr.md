@@ -65,7 +65,7 @@ Hiç kimse sahip olmadığı bir izni ya da kapsamı dışındaki bir kamerayı 
 Anahtarın `owner` alanı (üye) silinmişse süresi dolmuşsa, IP listesi dışındaysa ya da KYM'de erişimi kalkmışsa anahtar da çalışmaz; izinleri ve kapsamı sahibinin **güncel** rolünü aşmaz. Üye silinince anahtarları iptal edilir. `owner`i üye olmayan (permission.manage'in verdiği entegrasyon etiketi) anahtar kendi haklarıyla çalışır. Çıkış yapmak ya da parolayı değiştirmek o üyenin tüm oturum çerezlerini geçersiz kılar.
 
 ### Sınırlar
-Her anahtarın **hız limiti** (istek/dk, varsayılan 120) ve **eşzamanlı akış** sınırı (varsayılan 4) vardır; üyeler için 1200 istek/dk ve 16 akış. IP/CIDR listesi verilen anahtar yalnız o adreslerden çalışır. 10 ardışık geçersiz anahtar denemesinde IP 5 dakika kilitlenir.
+Her anahtarın **hız limiti** (istek/dk, varsayılan 120) ve **eşzamanlı akış** sınırı (varsayılan 4) vardır; üyeler için 1200 istek/dk, akış sınırı yok. IP/CIDR listesi verilen anahtar yalnız o adreslerden çalışır. 10 ardışık geçersiz anahtar denemesinde IP 5 dakika kilitlenir.
 
 ## 3. Kanal numaraları
 Panel tüm cihazların kanallarını tek bir listede numaralar: her cihazın kalıcı bir **başlangıç** değeri vardır (`GET /devices` → `startIndex`, `channelCount`). Global kanal = `startIndex + cihazdaki sıra`. Görünen ad `D1 (Kanal 1)` biçimindedir (`code` + ad).

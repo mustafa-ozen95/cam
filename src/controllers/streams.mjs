@@ -7,8 +7,9 @@ export function streamController({ devices, permissions, auditLog }) {
    * AYNI KISI + AYNI KANAL = TEK OYNATMA. Zaman cizelgesinde ileri atlayan oynatici ayni kanal icin yeni istek
    * acar; eskisinin baglantisi sunucuya kapandigi haber gelene kadar cihazdaki yuvayi tutuyordu ve 4 kamerada hizli
    * atlamada yeni istekler 503 aliyordu. Yeni istek gelince eskisi once kapatilir ve yuvasi bosalinca devam edilir.
+   * Anahtar OTURUM basinadir: ayni hesabi baska cihazda kullanan kisinin ayni kanaldaki oynatmasi kapanmaz.
    */
-  const playbacks = new Map();   // `${asal.kimlik}|${kanal}` -> res
+  const playbacks = new Map();   // `${asal.kimlik}|${asal.oturum}|${kanal}` -> res
   const closePrevious = async (key) => {
     const old = playbacks.get(key);
     if (!old || old.destroyed || old.writableEnded) return;
@@ -76,7 +77,7 @@ export function streamController({ devices, permissions, auditLog }) {
       const from = ctx.q.get('from'), to = ctx.q.get('to');
       if (!DATETIME_RE.test(from ?? '') || !DATETIME_RE.test(to ?? '')) return json(ctx.res, 400, { error: 'zaman geçersiz', code: 'INVALID_REQUEST' });
       const channel = getChannel(ctx);
-      const key = `${ctx.principal.identity}|${channel}`;
+      const key = `${ctx.principal.identity}|${ctx.principal.session ?? ''}|${channel}`;
       await closePrevious(key);
       if (!group().canPlay(channel)) { ctx.res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8', 'Retry-After': '10' }); return ctx.res.end(JSON.stringify({ error: 'Cihaz meşgul, birazdan tekrar deneyin', code: 'BUSY' })); }
       const release = permissions.openStream(ctx.principal); ctx.res.on('close', release);

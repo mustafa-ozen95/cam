@@ -63,7 +63,7 @@ Nobody can grant a permission they lack, or a camera outside their own scope, to
 If the key's `owner` (member) is deleted, expired, outside its IP list or revoked in the KYM, the key stops working; its permissions and scope never exceed the owner's **current** role. Deleting a member revokes its keys. A key whose `owner` is not a member (an integration label assigned by permission.manage) works with its own rights. Logging out or changing the password ends all of that member's session cookies.
 
 ### Limits
-Each key has a **rate limit** (requests/min, default 120) and a **concurrent stream** limit (default 4); members get 1200/min and 16 streams. Keys with an IP/CIDR list only work from those addresses. After 10 consecutive invalid key attempts an IP is locked for 5 minutes.
+Each key has a **rate limit** (requests/min, default 120) and a **concurrent stream** limit (default 4); members get 1200/min and no stream limit. Keys with an IP/CIDR list only work from those addresses. After 10 consecutive invalid key attempts an IP is locked for 5 minutes.
 
 ## 3. Channel numbering
 All devices' channels form one global list: each device has a persistent `startIndex` (start) and `channelCount` (`GET /devices`). Global channel = `startIndex + index on device`. Display names look like `D1 (Kanal 1)` (`code` + name).

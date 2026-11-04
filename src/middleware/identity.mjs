@@ -10,7 +10,7 @@ import { readCookie, clientIp, json } from '../core/http.mjs';
 
 export function setupIdentity({ members, permissions, devices, config, links = null }) {
   const CTX = { deviceIdOf: (k) => devices.group.deviceIdOf(k), channelTotal: () => devices.group.channelTotal };
-  const memberPrincipal = (u, method = 'cookie') => new Principal({ type: 'member', method, name: u.name, identity: `member:${u.name.toLowerCase()}`, role: u.role, permissions: permissions.rolePermissions(u.role), scope: u.scope ?? null, expiresAt: u.expiresAt ?? null, ips: u.ips ?? [], rateLimit: config.permissions.memberRateLimit, concurrentStreams: config.permissions.memberStreamLimit }, CTX);
+  const memberPrincipal = (u, method = 'cookie') => new Principal({ type: 'member', method, name: u.name, identity: `member:${u.name.toLowerCase()}`, session: String(u.openedAt ?? ''), role: u.role, permissions: permissions.rolePermissions(u.role), scope: u.scope ?? null, expiresAt: u.expiresAt ?? null, ips: u.ips ?? [], rateLimit: config.permissions.memberRateLimit, concurrentStreams: config.permissions.memberStreamLimit }, CTX);
   const keyPrincipal = (a, method = 'key') => new Principal({ type: 'key', method, name: a.name, owner: a.owner ?? null, identity: `key:${a.id}`, keyId: a.id, role: a.role, permissions: permissions.keyPermissions(a), scope: a.scope ?? null, expiresAt: a.expiresAt ?? null, ips: a.ips ?? [], rateLimit: a.rateLimit, concurrentStreams: a.concurrentStreams }, CTX);
 
   function resolve(ctx) {

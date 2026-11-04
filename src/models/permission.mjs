@@ -223,7 +223,7 @@ export function normalizeIps(l) {
  */
 export class Principal {
   constructor(o, ctx) {
-    Object.assign(this, { type: 'member', method: 'cookie', name: '', owner: null, identity: '', role: null, permissions: [], scope: null, expiresAt: null, ips: [], rateLimit: 600, concurrentStreams: 8, keyId: null }, o);
+    Object.assign(this, { type: 'member', method: 'cookie', name: '', owner: null, identity: '', role: null, permissions: [], scope: null, expiresAt: null, ips: [], rateLimit: 600, concurrentStreams: 8, keyId: null, session: null }, o);
     this.ctx = ctx; this.set = new Set(this.permissions);
   }
   hasPermission(g) { return hasPermission(this.set, g); }

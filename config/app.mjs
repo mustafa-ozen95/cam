@@ -92,7 +92,10 @@ export const config = Object.freeze({
 
   permissions: {
     initialAdminPassword: env.CAM_ADMIN_PASSWORD || '',
-    memberRateLimit: 1200, memberStreamLimit: 16,
+    // Uyede (panel oturumu) eszamanli akis siniri yok: sinir kullanici adina sayiliyordu, ayni hesapla acik 16'lik izgara
+    // ikinci ekrani tamamen 429'a dusuruyordu. Canli akis kanal basina tek baglanti ve herkesce paylasilir; kayit/indirme
+    // cihaz butcesine tabidir (CAM_PLAYBACK_MAX, CAM_DOWNLOAD_MAX, CAM_STREAM_MAX). Sinir yalniz API anahtarlarinda.
+    memberRateLimit: 1200, memberStreamLimit: null,
   },
 
   /**

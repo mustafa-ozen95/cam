@@ -98,3 +98,19 @@ test('/stream/live-mp4?h264=1 ayri yayin; MJPEG web rotasi yok', async () => {
     assert.equal((await fetch(`${u.B}/stream/live?channel=0&raw=1`, { headers: h })).status, 404);
   } finally { await u.close(); }
 });
+
+test('ayni uye hesabiyla baska ekranda 16 akis acikken yeni ekran 429 almaz (uyede akis siniri yok)', async () => {
+  const u = await openApp();
+  try {
+    await u.login('admin', 'adminparola1');
+    // Baska ekran: ayni kullanici adiyla 16 farkli canli akis (sahada 16'lik izgara)
+    const { permissions } = u.services;
+    const other = { identity: 'member:admin', concurrentStreams: null };
+    const held = Array.from({ length: 16 }, (_, i) => permissions.openStream(other, `mp4:${i}/Extra1/h264`));
+    const ctrl = new AbortController();
+    const r = await fetch(`${u.B}/stream/live-mp4?channel=0&type=Extra1`, { headers: { Cookie: u.cookies.get('admin') }, signal: ctrl.signal });
+    ctrl.abort();
+    held.forEach((f) => f());
+    assert.equal(r.status, 200);
+  } finally { await u.close(); }
+});
