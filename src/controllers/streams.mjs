@@ -1,6 +1,16 @@
 /** Canli akis, anlik goruntu, kayit listesi, kayittan oynatma, indirme (izin + kapsam + eszamanli akis siniri). */
 import { DATE_RE, HttpError, DATETIME_RE, json } from '../core/http.mjs';
 
+/** Canli MP4 yaniti; panel (liveMp4) ve /live ayni yolu kullanir. y: surucunun paylasilan yayini (null: cihaz MP4 vermiyor). */
+export async function sendLiveMp4(res, y) {
+  if (!y) return json(res, 501, { error: 'Bu cihaz MP4 akışı vermiyor', code: 'NO_MP4' });
+  await y.ready;
+  if (res.destroyed) return;
+  if (!y.init || y.stopped) return json(res, 502, { error: y.error ?? 'Kameradan görüntü gelmedi', code: 'NO_STREAM' });
+  res.writeHead(200, { 'Content-Type': 'video/mp4', 'X-Codec': y.codec, 'Cache-Control': 'no-store', Connection: 'close' });
+  y.subscriber(res);
+}
+
 export function streamController({ devices, permissions, auditLog }) {
   const group = () => devices.group;
   /**
@@ -44,12 +54,8 @@ export function streamController({ devices, permissions, auditLog }) {
       const convert = ctx.q.get('h264') === '1';
       const release = permissions.openStream(ctx.principal, `mp4:${channel}/${type}${convert ? '/h264' : ''}`); ctx.res.on('close', release);
       const y = group().feedMp4(channel, type, convert);
-      if (!y) { release(); return json(ctx.res, 501, { error: 'Bu cihaz MP4 akışı vermiyor', code: 'NO_MP4' }); }
-      await y.ready;
-      if (ctx.res.destroyed) return;
-      if (!y.init || y.stopped) return json(ctx.res, 502, { error: y.error ?? 'Kameradan görüntü gelmedi', code: 'NO_STREAM' });
-      ctx.res.writeHead(200, { 'Content-Type': 'video/mp4', 'X-Codec': y.codec, 'Cache-Control': 'no-store', Connection: 'close' });
-      y.subscriber(ctx.res);
+      if (!y) release();
+      return sendLiveMp4(ctx.res, y);
     },
     async snapshot(ctx) {
       const y = group().feed(getChannel(ctx), 'Main', 0);   // goruntu al: kameranin tam cozunurlugu (olceksiz)

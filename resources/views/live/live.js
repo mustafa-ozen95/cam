@@ -1,10 +1,12 @@
 /**
- * live: uyeliksiz, gecikmesiz canli izleme. Oynatma: WebRTC, WHEP (mediamtx), istemci teklifini
- * aday beklemeden gonderir. Ek olarak baglanti koparsa kendiliginden yeniden baglanir.
+ * live: uyeliksiz canli izleme. Oynatma PANELIN KENDISIYLE AYNI: ayni oynatici (/js/mp4-player.js) ve ayni sunucu akisi
+ * (alt akis MP4; tarayici H.265 oynatamazsa sunucu H.264'e cevirir). Baglanti koparsa ya da goruntu durursa kendiliginden
+ * yeniden baglanir ("…, yeniden deneniyor").
  * Duzen (hangi kamera nerede, sutun sayisi) SUNUCUDA ortaktir: herkes ayni duzeni gorur, yalniz admin degistirir
- * (Duzenle -> taslak -> Kaydet). Acik sayfa duzeni 30 sn'de bir yeniden okur.
+ * (Duzenle -> taslak -> Kaydet). Acik sayfa kamera listesini ve duzeni 30 sn'de bir yeniden okur.
  */
-'use strict';
+import { LiveMp4Player } from '/js/mp4-player.js';
+
 const $ = (s) => document.querySelector(s);
 const el = (name, o = {}, ...c) => { const e = document.createElement(name); for (const [k, v] of Object.entries(o)) { if (k === 'class') e.className = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v); } e.append(...c); return e; };
 
@@ -13,61 +15,17 @@ const players = new Map();   // yol -> Oynatici (kare yeniden cizilse de baglant
 
 class Player {
   constructor(path) {
-    this.path = path; this.attempts = 0; this.pc = null; this.time = null;
     this.video = el('video', { autoplay: '', muted: '', playsinline: '' });
-    this.video.muted = true;
     this.status = el('div', { class: 'frame__status' }, 'Bağlanıyor…');
-    this.video.addEventListener('playing', () => { this.status.textContent = ''; this.attempts = 0; });
-    this.video.addEventListener('error', () => { if (this.pc) this.retry('Oynatıcı hatası'); });
+    this.m = new LiveMp4Player(this.video, {
+      key: () => `${camera(path)?.device ?? ''}/Extra1`,
+      url: (convert) => `stream/${path}?t=${Date.now()}${convert ? '&h264=1' : ''}`,
+      status: (t) => { this.status.textContent = t; },
+      first: () => { this.status.textContent = ''; },
+    });
   }
-  async start() {
-    this.close(false);
-    const pc = (this.pc = new RTCPeerConnection());
-    // Bekci: baglanti "connected" kalip goruntu durabilir (kaynak dustu, cevirici takildi); baglanti olayi gelmez, sayfa
-    // donuk kalirdi. Cozulen kare sayisi 8 sn artmazsa (ilk kare icin 20 sn) yeniden baglanir.
-    let frame = 0, z = performance.now();
-    this.watcher = setInterval(async () => {
-      let k = 0;
-      try { (await pc.getStats()).forEach((r) => { if (r.type === 'inbound-rtp' && r.kind === 'video') k = r.framesDecoded ?? 0; }); } catch { return; }
-      if (this.pc !== pc) return;
-      if (k > frame) { frame = k; z = performance.now(); }
-      else if (performance.now() - z > (frame ? 8000 : 20_000)) this.retry(frame ? 'Görüntü durdu' : 'Görüntü gelmedi');
-    }, 2000);
-    pc.addTransceiver('video', { direction: 'recvonly' });
-    pc.ontrack = (e) => {
-      // En dusuk gecikme: alici tamponu bekletmesin (desteklenen tarayicida)
-      try { if ('jitterBufferTarget' in e.receiver) e.receiver.jitterBufferTarget = 0; else if ('playoutDelayHint' in e.receiver) e.receiver.playoutDelayHint = 0; } catch {}
-      this.video.srcObject = e.streams[0] ?? new MediaStream([e.track]);
-    };
-    pc.onconnectionstatechange = () => {
-      if (this.pc !== pc) return;
-      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') this.retry('Bağlantı koptu');
-      else if (pc.connectionState === 'disconnected') { clearTimeout(this.stall); this.stall = setTimeout(() => { if (this.pc === pc && pc.connectionState === 'disconnected') this.retry('Bağlantı koptu'); }, 3000); }
-    };
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      // Zaman asimi: cevapsiz kalan istek yeniden denemeyi sonsuza dek bekletiyordu ("yeniden deneniyor (1)" deyip kalirdi)
-      // X-Cam: panelin CSRF kurali (istegi panel karsilar, mediamtx'e o gecirir)
-      const r = await fetch(`rtc/${this.path}/whep`, { method: 'POST', headers: { 'Content-Type': 'application/sdp', 'X-Cam': '1' }, body: offer.sdp, signal: AbortSignal.timeout(10_000) });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const answer = await r.text();
-      if (this.pc !== pc) return;
-      await pc.setRemoteDescription({ type: 'answer', sdp: answer });
-    } catch { if (this.pc === pc) this.retry('Bağlanamadı'); }
-  }
-  retry(reason) {
-    this.close(false);
-    this.attempts++;
-    this.status.textContent = `${reason}, yeniden deneniyor (${this.attempts})…`;
-    this.time = setTimeout(() => this.start(), Math.min(10_000, 1000 * 2 ** Math.min(this.attempts, 3)));
-  }
-  close(fully = true) {
-    clearTimeout(this.time); clearTimeout(this.stall); clearInterval(this.watcher);
-    const pc = this.pc; this.pc = null;
-    try { pc?.close(); } catch {}
-    if (fully) this.video.srcObject = null;
-  }
+  start() { this.m.start(); }
+  close() { this.m.stop(); }
 }
 
 const camera = (path) => cameras.find((k) => k.path === path);
@@ -170,21 +128,34 @@ $('#save').addEventListener('click', async () => {
 $('#reset').addEventListener('click', () => changeLayout([...defaultOrder]));
 $('#full').addEventListener('click', () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()));
 
+/** Kamera listesi; degistiyse true. */
+let lastCameras = null;
+async function getCameras() {
+  const raw = await (await fetch('cameras.json', { cache: 'no-store' })).text();
+  if (raw === lastCameras) return false;
+  lastCameras = raw; const r = JSON.parse(raw);
+  cameras = r.cameras; defaultOrder = r.defaultOrder;
+  return true;
+}
 (async function open() {
-  try {
-    const r = await (await fetch('cameras.json', { cache: 'no-store' })).json();
-    cameras = r.cameras; defaultOrder = r.defaultOrder;
-  } catch { $('#info').textContent = 'Kamera listesi alınamadı, yeniden deneniyor…'; return setTimeout(open, 5000); }
-  if (!cameras.length) { $('#info').textContent = 'Kamera listesi hazırlanıyor…'; return setTimeout(open, 5000); }
+  try { await getCameras(); }
+  catch { $('#info').textContent = 'Kamera listesi alınamadı, yeniden deneniyor…'; return setTimeout(open, 5000); }
+  if (!cameras.length) { lastCameras = null; $('#info').textContent = 'Kamera listesi hazırlanıyor…'; return setTimeout(open, 5000); }
   await getLayout();
   permissionAsk();
-  setInterval(() => { if (!layoutMode && !document.hidden) getLayout(); }, 30_000);
+  // Sonradan gelen kamera (cihaz gec yanit verdi) da cizilsin: liste degisince duzen yeniden suzulur
+  setInterval(async () => {
+    if (layoutMode || document.hidden) return;
+    let changed = false;
+    try { changed = await getCameras(); } catch {}
+    getLayout(changed);
+  }, 30_000);
 })();
 let lastLayout = null;
-async function getLayout() {
+async function getLayout(force = false) {
   try {
     const raw = await (await fetch('layout.json', { cache: 'no-store' })).text();
-    if (raw === lastLayout) return;
+    if (raw === lastLayout && !force) return;
     lastLayout = raw; const d = JSON.parse(raw);
     saved = { ...d, paths: d.paths.filter(camera) };
     if (!layoutMode) { layout = saved; drawGrid(); }

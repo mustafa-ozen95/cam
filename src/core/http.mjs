@@ -17,7 +17,7 @@ export const errorResponse = (res, e, code = 502) => {
   json(res, code, { error: e?.message ? String(e.message).slice(0, 300) : 'Beklenmeyen hata', code: 'SERVER' });
 };
 
-/** Govde metin olarak (JSON degil: ornegin WebRTC SDP'si). Sinir asilinca kalan govde okunup atilir (soket kesilmez: istemci 413 yanitini alabilsin). */
+/** Govde metin olarak (readBody JSON'u bunun ustune cozer). Sinir asilinca kalan govde okunup atilir (soket kesilmez: istemci 413 yanitini alabilsin). */
 export const readRawBody = (req, limit = 1_000_000) => new Promise((resolve, red) => {
   let t = ''; let size = 0; let exceeded = false;
   req.on('data', (b) => { if (exceeded) return; size += b.length; if (size > limit) { exceeded = true; t = ''; req.resume(); red(new HttpError(413, 'Gövde çok büyük', 'BODY_TOO_LARGE')); return; } t += b; });

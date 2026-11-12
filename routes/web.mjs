@@ -20,7 +20,7 @@ export function webRoutes(r, d, middleware) {
   r.get('/live/layout.json', d.live.layout);
   r.get('/live/access', d.live.permissions, [middleware.identityOptional]);
   r.put('/live/layout', d.live.writeLayout, [middleware.identity]);
-  r.post('/live/rtc/:path/whep', d.live.whep);   // izleme baglantisi: panel mediamtx'e gecirir (vekilde kural gerekmez)
+  r.get('/live/stream/:path', d.live.stream);   // canli goruntu: panelin MP4 akisi
   r.get('/live/:file', d.live.serveStatic);
   r.group([middleware.identity], () => {
     r.get('/docs', d.view.docs);
