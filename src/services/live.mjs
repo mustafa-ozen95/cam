@@ -36,6 +36,20 @@ export function livePaths(list, codec) {
   return y;
 }
 
+/**
+ * Donmus kaynaklar (test/live.test.mjs). Bazi kayit cihazlari akisin ortasinda SSRC degistirir; mediamtx yeni paketleri
+ * atar ama yolu "hazir" tutar: goruntu donar, izleyici ve cevirici sonsuza dek bekler, kaynak hic kapanmaz.
+ * received: onceki esitlemedeki { yol -> alinan bayt }; items: /v3/paths/list. Iki esitleme boyunca hazir kalip tek
+ * bayt almayan, panelin yazdigi cihaz kaynagi donmus sayilir. { frozen: [yol], received: yeni olcum } doner.
+ */
+export function frozenPaths(received, items, requested) {
+  const now = new Map();
+  for (const p of items) if (p.ready && p.source?.type === 'rtspSource' && p.name in requested) now.set(p.name, p.bytesReceived);
+  const frozen = [...now.keys()].filter((name) => received.get(name) === now.get(name));
+  for (const name of frozen) now.delete(name);
+  return { frozen, received: now };
+}
+
 function codecMeasure(ffprobe, url) {
   return new Promise((resolve) => {
     const p = spawn(ffprobe, ['-v', 'error', '-rtsp_transport', 'tcp', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', url], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
@@ -50,7 +64,7 @@ export class LiveService {
   /** ayarlar: Ayarlar (veritabani); kayitli duzeni yukle() getirir. */
   constructor({ config, devices, settings }) {
     this.y = config.live; this.devices = devices; this.settings = settings; this.savedLayout = null;
-    this.codec = new Map(); this.written = new Map(); this.cameras = []; this.last = null;
+    this.codec = new Map(); this.written = new Map(); this.received = new Map(); this.cameras = []; this.last = null;
     this.ffprobe = (devices.ffmpeg ?? 'ffmpeg').replace(/ffmpeg(\.exe)?$/, 'ffprobe$1');
   }
   async load() { const d = await this.settings.read('live-layout'); this.savedLayout = d && Array.isArray(d.paths) ? d : null; return this; }
@@ -94,8 +108,20 @@ export class LiveService {
       this.written.set(name, j);
     }
     for (const name of existing) if (!(name in requested)) { await this.#api('DELETE', `/v3/config/paths/delete/${name}`); this.written.delete(name); }
+    await this.#revive(requested);
     this.cameras = ready.map((x) => ({ path: `k${x.k}`, name: x.name, device: x.device, converted: this.codec.get(x.k) !== 'h264' }));
     return { channel: list.length, ready: ready.length };
+  }
+
+  /** Donmus kaynagi (bkz. frozenPaths) silip ayni ayarla yeniden ekler; mediamtx cihaza yeni oturumla baglanir, cevirici de dusup yeniden kalkar. */
+  async #revive(requested) {
+    const r = frozenPaths(this.received, (await this.#api('GET', '/v3/paths/list?itemsPerPage=10000'))?.items ?? [], requested);
+    for (const name of r.frozen) {
+      await this.#api('DELETE', `/v3/config/paths/delete/${name}`);
+      await this.#api('POST', `/v3/config/paths/add/${name}`, requested[name]);
+      console.log(`live: ${name} akisi donmustu, yeniden baglandi`);
+    }
+    this.received = r.received;
   }
 
   /**

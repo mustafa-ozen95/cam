@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { LIVE_TRANSCODE, livePaths } from '../src/services/live.mjs';
+import { LIVE_TRANSCODE, frozenPaths, livePaths } from '../src/services/live.mjs';
 import { openApp } from './helpers.mjs';
 
 test('mediamtx yollari: H.264 dogrudan, H.265 kaynak + izlenince calisan cevirici (olcek/kare hizi suzgeci yok)', () => {
@@ -16,6 +16,23 @@ test('mediamtx yollari: H.264 dogrudan, H.265 kaynak + izlenince calisan ceviric
   assert.equal(y.k0.source, 'publisher');
   assert.ok(y.k0.runOnDemand.includes(LIVE_TRANSCODE) && y.k0.runOnDemand.includes('rtsp://127.0.0.1:8554/k0_source') && !y.k0.runOnDemand.includes('-vf'));
   assert.ok(!y.k0.runOnDemand.includes('rtsp://a/0'), 'cihaz adresi (parola) cevirici komutunda yok');
+});
+
+test('donmus kaynak: iki esitleme boyunca hazir ve bayt almayan cihaz kaynagi', () => {
+  const requested = { k0: {}, k1_source: {}, k2: {}, k3: {} };
+  const items = (b) => [
+    { name: 'k0', ready: true, source: { type: 'rtspSource' }, bytesReceived: b.k0 },
+    { name: 'k1_source', ready: true, source: { type: 'rtspSource' }, bytesReceived: b.k1 },
+    { name: 'k1', ready: true, source: { type: 'rtspSession' }, bytesReceived: 7 },
+    { name: 'k2', ready: false, source: { type: 'rtspSource' }, bytesReceived: 0 },
+    { name: 'k9', ready: true, source: { type: 'rtspSource' }, bytesReceived: 5 },
+  ];
+  const first = frozenPaths(new Map(), items({ k0: 100, k1: 50 }), requested);
+  assert.deepEqual(first.frozen, [], 'ilk olcumde karsilastiracak bir sey yok');
+  const second = frozenPaths(first.received, items({ k0: 900, k1: 50 }), requested);
+  assert.deepEqual(second.frozen, ['k1_source'], 'akan yol, ceviricinin yayini, hazir olmayan ve panelin yazmadigi yol dokunulmaz');
+  assert.ok(!second.received.has('k1_source'), 'yeniden baglanan yol sifirdan olculur');
+  assert.deepEqual(frozenPaths(second.received, items({ k0: 1700, k1: 0 }), requested).frozen, []);
 });
 
 test('/live kapali (CAM_RTC_API bos): 404', async () => {
