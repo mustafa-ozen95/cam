@@ -50,6 +50,10 @@ export class RtspDevice extends DeviceBase {
    */
   feedMp4(channel, type, convert = false) {
     const key = `mp4:${channel}/${type}${convert ? '/h264' : ''}`;
+    // Kanalin H.264'e cevrilmis akisi aciksa kopya istegi de ona baglanir (her tarayicida oynar): hangi ekran hangi
+    // kararla gelirse gelsin kanal basina tek kamera baglantisi.
+    const h264 = !convert && this.feeds.get(`${key}/h264`);
+    if (h264 && !h264.stopped) return h264;
     let y = this.feeds.get(key);
     if (!y) {
       y = new Mp4Feed({ ffmpeg: this.ffmpeg, args: mp4Args(this.rtspUrl(this.livePath(channel, type)), type, convert), onEnd: () => this.feeds.delete(key) });
