@@ -92,12 +92,8 @@ export class RtspDevice extends DeviceBase {
   }
 }
 
-/**
- * Canli MP4 ffmpeg argumanlari (test/mp4.test.mjs): kopya ya da kaynak kalitede H.264.
- * Zaman damgasi karenin GELIS ANI (wallclock): kayit cihazi bazi kanallarda RTP zamanini geri sicratiyor; ffmpeg sonraki
- * her kareye "oncekinden 1 tik sonra" diyor, tarayicida zaman ilerlemiyor ve veri gelse de goruntu donuyordu.
- */
-export const mp4Args = (url, type, convert) => ['-use_wallclock_as_timestamps', '1', '-rtsp_transport', 'tcp', '-i', url, ...(convert ? convertArgs(type) : ['-c:v', 'copy']), ...MP4_OUTPUT];
+/** Canli MP4 ffmpeg argumanlari (test/mp4.test.mjs): kopya ya da kaynak kalitede H.264. */
+export const mp4Args = (url, type, convert) => ['-rtsp_transport', 'tcp', '-i', url, ...(convert ? convertArgs(type) : ['-c:v', 'copy']), ...MP4_OUTPUT];
 
 /** Canli/kayitli MJPEG akisi: aboneler, son, frameCounter, hazir, hata, durdur, firstFrame (sunucu.mjs bu sozlesmeyi kullanir). */
 /**

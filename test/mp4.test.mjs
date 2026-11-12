@@ -75,7 +75,6 @@ test('ffmpeg baslatilamazsa (ENOENT) MP4 yayini hata ile kapanir, surec dusmez',
 test('ffmpeg: kopya ya da kaynak kalitede H.264 (olcek/kare hizi suzgeci YOK)', () => {
   const copy = mp4Args('rtsp://x/a', 'Main', false);
   assert.deepEqual(copy.slice(copy.indexOf('-c:v'), copy.indexOf('-c:v') + 2), ['-c:v', 'copy']);
-  assert.ok(copy.indexOf('-use_wallclock_as_timestamps') >= 0 && copy.indexOf('-use_wallclock_as_timestamps') < copy.indexOf('-i'), 'zaman damgasi gelis ani (girdi secenegi)');
   for (const type of ['Main', 'Extra1']) {
     const a = mp4Args('rtsp://x/a', type, true);
     assert.equal(a[a.indexOf('-c:v') + 1], 'libx264');

@@ -59,8 +59,7 @@ const MSSource = window.ManagedMediaSource ?? window.MediaSource;
 /**
  * Canli MP4: kameranin kendi videosu (yeniden kodlamasiz) MediaSource ile oynar; Mjpeg ile ayni arayuz (baslat, durdur, hiz, calisiyor, frameVar).
  * Tarayici kodegi oynatamazsa ya da cihaz MP4 vermiyorsa (501) desteksiz() cagrilir; LiveMp4Player sunucuda cevirmeye gecer, o da olmazsa yeniden dener.
- * Canli kenarda kalir: 0,5 sn geride kalinca hafif hizlanir (1,1x), 1 sn'yi asinca sona atlar. Tampon 30 sn'yi asinca eski kisim
- * bir anahtar kareye kadar silinir. Bekci: veri 6 sn gelmezse ya da veri geldigi halde goruntu 4 sn ilerlemezse yeniden baglanir.
+ * Canli kenarda kalir: tamponun sonundan 1,5 sn geride kalinca sona atlar. Tampon 30 sn'yi asinca eski kisim bir anahtar kareye kadar silinir.
  */
 export class Mp4Player {
   constructor(video, { url, status, first, unsupported, stall = 6000 }) {
@@ -76,14 +75,10 @@ export class Mp4Player {
     if (!retry) this.attempts = 0;
     this.running = true; this.frameVar = false;
     const ctrl = (this.ctrl = new AbortController());
-    this.lastZ = this.t0 = this.lastTZ = performance.now(); this.lastT = -1;
+    this.lastZ = this.t0 = performance.now();
     this.measurement = { byte: 0, frame: this.#frameCount(), z: performance.now() }; this.rateLast = null;
     this.watcher = setInterval(() => {
-      // Goruntu zamani: arka planda tarayici videoyu kendisi duraklatir, o zaman sayilmaz
-      const t = this.video.currentTime;
-      if (t !== this.lastT || document.hidden || this.video.paused) { this.lastT = t; this.lastTZ = performance.now(); }
       if (performance.now() - this.lastZ > this.stall) this.#drop(ctrl, 'Görüntü durdu');
-      else if (this.frameVar && performance.now() - this.lastTZ > 4000) this.#drop(ctrl, 'Görüntü durdu');   // veri geliyor, goruntu donuk
       else if (!this.frameVar && performance.now() - this.t0 > 20_000) this.#unsupported(ctrl);   // veri geliyor ama kare cizilmiyor
     }, 1500);
     this.#read(ctrl);
@@ -111,9 +106,7 @@ export class Mp4Player {
       const b = sb.buffered, v = this.video;
       if (b.length) {
         const from = b.start(b.length - 1), last = b.end(b.length - 1);
-        const lag = last - v.currentTime;
-        if (v.currentTime < from || lag > 1) { v.currentTime = Math.max(from, last - 0.2); v.playbackRate = 1; }
-        else v.playbackRate = lag > 0.5 ? 1.1 : 1;
+        if (v.currentTime < from || last - v.currentTime > 1.5) v.currentTime = Math.max(from, last - 0.3);
         const cut = time.cutting(v.currentTime - 10);
         if (cut !== null && last - b.start(0) > 30 && cut > b.start(0) + 1) { sb.remove(0, cut); return; }
       }
