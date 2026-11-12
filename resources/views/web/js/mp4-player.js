@@ -162,6 +162,7 @@ export class Mp4Player {
  * MJPEG yedegi yok: canli goruntu her tarayicida MP4.
  */
 const converted = new Set();
+const open = new Set();   // calisan oynaticilar: cihaz cevrilince kopya akistakiler de cevrilmise gecer
 export class LiveMp4Player {
   constructor(video, { url, key, status, first }) {
     this.key = key;
@@ -169,14 +170,18 @@ export class LiveMp4Player {
     // durmak yerine yeniden denenir.
     this.m = new Mp4Player(video, { url: () => url(this.convert), status, first, unsupported: () => {
       if (this.convert) return false;
-      converted.add(this.key()); return true;
+      const key = this.key(); converted.add(key);
+      // Ayni cihazin kopya akista acik kalan kameralari da cevrilmis akisa gecer: cihazdaki her kamera tek turde
+      // (panel ve /live acilis sirasi farkli olsa da sunucuda ayni akisi paylasirlar; kanal basina tek baglanti).
+      for (const o of open) if (o !== this && o.m.running && o.key() === key) o.m.start();
+      return true;
     } });
   }
   /** Bu kamera sunucuda H.264'e cevrilerek mi geliyor. */
   get convert() { return converted.has(this.key()); }
   get running() { return this.m.running; }
   get frameVar() { return this.m.frameVar; }
-  start(retry = false) { this.m.start(retry); }
-  stop(muted = false) { this.m.stop(muted); }
+  start(retry = false) { open.add(this); this.m.start(retry); }
+  stop(muted = false) { open.delete(this); this.m.stop(muted); }
   rate() { const h = this.m.rate(); return h && { ...h, convert: this.convert }; }
 }

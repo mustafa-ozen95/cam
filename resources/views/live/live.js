@@ -21,18 +21,36 @@ class Player {
       key: () => `${camera(path)?.device ?? ''}/Extra1`,
       url: (convert) => `stream/${path}?t=${Date.now()}${convert ? '&h264=1' : ''}`,
       status: (t) => { this.status.textContent = t; },
-      first: () => { this.status.textContent = ''; },
+      first: () => { this.status.textContent = ''; this.ready?.(); },
     });
   }
   start() { this.m.start(); }
-  close() { this.m.stop(); }
+  close() { this.closed = true; this.ready?.(); this.m.stop(); }
 }
 
 const camera = (path) => cameras.find((k) => k.path === path);
 function player(path) {
   let o = players.get(path);
-  if (!o) { o = new Player(path); players.set(path, o); o.start(); }
+  if (!o) { o = new Player(path); players.set(path, o); addOrder(o); }
   return o;
+}
+
+// Panel gibi sirayla acilir (en cok 4 birden, her biri ilk kareyi ya da 1 sn bekler): cihazin H.265 kamerasi tarayicida
+// oynamazsa cihaz cevrilmise gecer ve sonraki kameralar dogrudan ayni (panelle ortak) cevrilmis akisi ister.
+const LIVE_PARALLEL = 4;
+const order = { queue: [], running: 0 };
+function addOrder(o) { order.queue.push(o); while (order.running < LIVE_PARALLEL && order.running < order.queue.length) processOrder(); }
+async function processOrder() {
+  order.running++;
+  try {
+    while (order.queue.length) {
+      const o = order.queue.shift();
+      if (o.closed) continue;
+      o.start();
+      await new Promise((resolve) => { o.ready = resolve; setTimeout(resolve, 1000); });
+      o.ready = null;
+    }
+  } finally { order.running--; }
 }
 
 // ---- surukle-birak: tasinan { tur: 'kare', i } (izgaradan) ya da { tur: 'liste', yol }
