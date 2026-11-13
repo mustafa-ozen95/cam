@@ -67,9 +67,14 @@ export const config = Object.freeze({
     day: 30,
   },
 
-  /** Canli izleme sayfasi (/live): uyeliksiz; goruntu panelin kendi canli MP4 akisi. CAM_LIVE=0 kapatir (404). */
+  /**
+   * Canli izleme sayfasi (/live): uyeliksiz, WebRTC. Goruntuyu mediamtx verir (ayri konteyner, compose: cam-rtc);
+   * rtcApi onun yonetim adresi. Bossa /live kapali (404). rtcWhep izleme (WHEP) adresi: tarayicinin /live/rtc/<yol>/whep
+   * istegini panel oraya gecirir, vekilde ayri bir kural gerekmez. Verilmezse rtcApi'nin konagi, mediamtx'in 8889'u.
+   */
   live: {
-    enabled: (env.CAM_LIVE ?? '1') !== '0',
+    rtcApi: (env.CAM_RTC_API || '').replace(/\/+$/, ''),
+    rtcWhep: (env.CAM_RTC_WHEP || (env.CAM_RTC_API ? env.CAM_RTC_API.replace(/\/+$/, '').replace(/:\d+$/, ':8889') : '')).replace(/\/+$/, ''),
     frame: env.CAM_LIVE_EMBED ?? '*',        // iframe ile gomebilecek kokenler ("*" her yer); bos = yalniz panel
     /** Kayitli duzen yokken gosterilecek kameralar: virgulle kanal no (1'den), sirayla. Bos = ilk 12 kamera. */
     defaultOrder: (env.CAM_LIVE_DEFAULT || '').split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0).map((n) => `k${n - 1}`),

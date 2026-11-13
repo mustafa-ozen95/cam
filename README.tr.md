@@ -24,7 +24,7 @@ src/services/              hizmetler: devices (sürücü kaydı, grup, kanal aya
 src/models/                modeller: member (üyelik, scrypt), permission (izin/rol/anahtar çekirdeği), device (şifreli cihaz deposu)
 src/drivers/               sürücüler: base, rtsp, uniview, hikvision, xiongmai(-dvr, -dvrip), ip-camera, group, mock (test)
 resources/views/web/       arayüz (index.html, login.html, css/, js/) — görünümde iş mantığı yok, API ile konuşur
-resources/views/live/      /live sayfası (panelle aynı canlı MP4 akışı)
+resources/views/live/      /live sayfası (WebRTC)
 docs/                      api-v1.tr.md, api-v1.en.md, openapi.json (scripts/openapi.mjs üretir); /docs adresinden sunulur
 scripts/                   openapi.mjs, eys-sync.mjs
 test/                      *.test.mjs (birim + API/güvenlik entegrasyon), helpers.mjs
@@ -36,13 +36,13 @@ data/                      (git dışı) secret.key (CAM_SECRET_KEY boşsa), ini
 `docker-compose.yml` Compose standardındadır (compose-spec.io). Ayarlar ortamdan gelir (`.env.example`).
 Veri MariaDB'dedir (`db` servisi, adlandırılmış hacim `cam_database`); dışarıdaki bir veritabanı için `DB_HOST` ve kimlik bilgilerini
 verin, `db` servisi kalkmasın diye `DB_REPLICAS=0` yapın.
-HTTP portu dışarı açılmaz; alan adını ve TLS'i önündeki vekil verir (panele 80'den ulaşır). `/live` panelin
-kendi canlı MP4 akışını gösterir (ayrı servis/port yok); `CAM_LIVE=0` kapatır.
+HTTP portu dışarı açılmaz; alan adını ve TLS'i önündeki vekil verir (panele 80'den ulaşır). `/live` görüntüsü
+`cam-rtc` (mediamtx) servisinden, 8189/udp üzerinden akar; tarayıcıya verilecek sunucu adresi `CAM_RTC_HOST`.
 ```
 cp .env.example .env          # isteğe bağlı; chmod 600 .env
 docker compose up -d --build  # ya da: npm start
 cp docker-compose.override.example.yml docker-compose.override.yml   # vekil yoksa: panel doğrudan CAM_EXTERNAL_PORT'tan (1165)
-# aynı kaynaktan ikinci kurulum: ayrı klasör + ayrı .env (CAM_CONTAINER, CAM_DB_CONTAINER, CAM_DATA_VOLUME, CAM_DB_VOLUME, CAM_COOKIE); veri ortak değildir
+# aynı kaynaktan ikinci kurulum: ayrı klasör + ayrı .env (CAM_CONTAINER, CAM_RTC_CONTAINER, CAM_DB_CONTAINER, CAM_DATA_VOLUME, CAM_DB_VOLUME, CAM_RTC_PORT, CAM_COOKIE); veri ortak değildir
 npm test                      # birim + entegrasyon (sahte cihaz; bir MariaDB gerekir, bkz. "Veritabanı ve yedek")
 node scripts/openapi.mjs      # OpenAPI belgesini rotalardan yeniden üret
 ```
@@ -85,7 +85,7 @@ Kimliksiz erişilebilen yalnız giriş sayfasının ihtiyacıdır: giriş formu,
 Parolalar scrypt; cihaz parolaları AES-256-GCM; anahtarlar HMAC özeti; çerez HttpOnly+SameSite (HTTPS'de Secure); CSRF başlığı; CSP/nosniff/frame/referrer başlıkları; gövde 1 MB sınırı; yol geçişi koruması; kaba kuvvet kilidi (giriş ve anahtar); günlükte gizli yok; HMAC zincirli denetim günlüğü. Ters vekil arkasında `CAM_IP_HEADER` (ör. `CF-Connecting-IP`) ayarlanmazsa IP listeleri soket adresine göre çalışır. Düz HTTP'de önüne TLS koyun.
 
 ## Ortam değişkenleri
-`CAM_PORT` (8191; imajda 80), `CAM_HOST`, `CAM_TITLE`, `CAM_COOKIE` (aynı IP'de birden çok panel: farklı ad), `CAM_DATA` (veri klasörü), `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_WAIT_SEC`, `CAM_SECRET_KEY`, `CAM_DEVICES` (ilk tohum, JSON), `CAM_ADMIN_PASSWORD`, `CAM_RATIO` (16:9), `CAM_PLAYBACK_MAX` (4), `CAM_DOWNLOAD_MAX` (2), `CAM_STREAM_MAX` (cihaz başına 24), `CAM_FFMPEG`, `CAM_IP_HEADER`, `CAM_PROXY`, `CAM_TLS_CERT/KEY/PORT`, `CAM_LIVE` (0 = `/live` kapalı), `CAM_LIVE_EMBED` (`/live`'ı gömebilecek kökenler), `CAM_LIVE_DEFAULT` (kayıtlı düzen yokken `/live` kameraları: virgülle kanal no, 1'den, sırayla; boş = ilk 12), `CAM_HUB_*` (yukarıda), `UPDATE_TOKEN` (aşağıda), `CAM_TEST=1` (sahte sürücü, yalnız test).
+`CAM_PORT` (8191; imajda 80), `CAM_HOST`, `CAM_TITLE`, `CAM_COOKIE` (aynı IP'de birden çok panel: farklı ad), `CAM_DATA` (veri klasörü), `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_WAIT_SEC`, `CAM_SECRET_KEY`, `CAM_DEVICES` (ilk tohum, JSON), `CAM_ADMIN_PASSWORD`, `CAM_RATIO` (16:9), `CAM_PLAYBACK_MAX` (4), `CAM_DOWNLOAD_MAX` (2), `CAM_STREAM_MAX` (cihaz başına 24), `CAM_FFMPEG`, `CAM_IP_HEADER`, `CAM_PROXY`, `CAM_TLS_CERT/KEY/PORT`, `CAM_LIVE_EMBED` (`/live`'ı gömebilecek kökenler), `CAM_LIVE_DEFAULT` (kayıtlı düzen yokken `/live` kameraları: virgülle kanal no, 1'den, sırayla; boş = ilk 12), `CAM_HUB_*` (yukarıda), `UPDATE_TOKEN` (aşağıda), `CAM_TEST=1` (sahte sürücü, yalnız test).
 
 ## Güncelleme kontrolü
 Üst menüdeki **Güncelleme** (`update.check` izni; admin'de var) çalışan sürümü GitHub'da main dalının **son başarılı imaj derlemesiyle** karşılaştırır: kaç commit geride, hangi commit'ler yeni. Yön de ölçülür; çalışan sürüm son derlemeden yeniyse "güncelleme" denmez. Kontrol her sabah 06:50'de kendiliğinden yapılır, düğme hemen yapar; yeni sürüm varsa bu izni olanlar sayfanın üstünde uyarı görür. Ekran **yalnızca bakar**; güncelleme sunucudan yapılır. DC panellerindeki Ayarlar → Güncelleme ile aynı kurallar.

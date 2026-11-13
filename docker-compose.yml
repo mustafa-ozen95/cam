@@ -12,11 +12,12 @@
 #  vekil verir, panele konteyner ağından 80'den ulaşır. Vekilsiz, doğrudan
 #  porttan kullanmak için docker-compose.override.example.yml.
 #
-#  /live: üyeliksiz izleme sayfası; görüntü panelin kendi canlı akışıdır
-#  (ayrı servis/port yok). CAM_LIVE=0 kapatır.
+#  /live: görüntüyü cam-rtc (mediamtx) verir. Tarayıcının bağlantı isteği
+#  panele gelir, panel onu mediamtx'e geçirir; vekilde ayrı kural gerekmez.
+#  Görüntünün kendisi tarayıcıyla mediamtx arasında 8189/udp'den akar.
 #
 #  Aynı sunucuda ikinci kurulum: ayrı klasör ve ayrı .env (CAM_CONTAINER,
-#  CAM_DB_CONTAINER, CAM_DATA_VOLUME, CAM_DB_VOLUME, CAM_COOKIE).
+#  CAM_RTC_CONTAINER, CAM_DB_CONTAINER, CAM_DATA_VOLUME, CAM_DB_VOLUME, CAM_RTC_PORT, CAM_COOKIE).
 # =============================================================================
 
 services:
@@ -37,8 +38,8 @@ services:
       CAM_LIVE_EMBED: ${CAM_LIVE_EMBED-*}
       # /live kayıtlı düzen yokken: virgülle kanal no (1'den), sırayla. Boş = ilk 12 kamera.
       CAM_LIVE_DEFAULT: ${CAM_LIVE_DEFAULT:-}
-      # 0 = /live kapalı (404).
-      CAM_LIVE: ${CAM_LIVE:-1}
+      # Boş bırakılırsa /live kapanır; cam-rtc servisi o zaman gereksizdir.
+      CAM_RTC_API: ${CAM_RTC_API-http://cam-rtc:9997}
       CAM_HUB_URL: ${CAM_HUB_URL:-}
       CAM_HUB_CLIENT_ID: ${CAM_HUB_CLIENT_ID:-}
       CAM_HUB_CLIENT_SECRET: ${CAM_HUB_CLIENT_SECRET:-}
@@ -93,6 +94,20 @@ services:
       timeout: 5s
       start_period: 60s
       retries: 6
+
+  cam-rtc:
+    build:
+      context: .
+      dockerfile: docker/rtc.Dockerfile
+    container_name: ${CAM_RTC_CONTAINER:-cam-rtc}
+    restart: unless-stopped
+    environment:
+      # Tarayıcıya verilecek sunucu adresi (IP ya da ad, virgülle birden çok).
+      # Boşsa mediamtx konteynerin kendi adresini verir ve dışarıdan görüntü gelmez.
+      MTX_WEBRTCADDITIONALHOSTS: ${CAM_RTC_HOST:-}
+    ports:
+      # WebRTC medyası; HTTP değil, vekil taşımaz.
+      - "${CAM_RTC_PORT:-8189}:8189/udp"
 
 networks:
   default:

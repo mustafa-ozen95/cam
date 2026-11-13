@@ -242,8 +242,8 @@ test('rota listesi: HER rota kimlik ister; kimliksiz yalnız giriş sayfasının
   const isOpen = new Set(['/api/login', '/api/logout', '/api/identity/refresh', '/api/identity/logout', '/api/v1/health', '/', '/index.html', '/icon.svg', '/css/:a', '/css/:a/:b', '/css/:a/:b/:c', '/fonts/:a', '/js/:a', '/js/:a/:b', '/js/:a/:b/:c', '/login/hub', '/login/hub/callback',
     // /live: UYELIKSIZ izleme. Yalniz okuma: sayfa, kendi betik/stili, kamera adlari (adres yok), ortak duzen,
     // "admin miyim" sorusu. Duzeni yazmak (/live/duzen, PUT) kimlik ister ve bu listede DEGIL.
-    // /live/stream/:yol: panelin canli MP4 akisi; yalniz listelenen kameralar.
-    '/live', '/live/cameras.json', '/live/layout.json', '/live/access', '/live/:file', '/live/stream/:path']);
+    // /live/rtc/:yol/whep: izleme baglantisi (SDP alisverisi); yalniz panelin listeledigi yollar, mediamtx'te okuma izni.
+    '/live', '/live/cameras.json', '/live/layout.json', '/live/access', '/live/:file', '/live/rtc/:path/whep']);
   const routes = app.router.list();
   for (const r of routes) {
     if (isOpen.has(r.pattern)) continue;
