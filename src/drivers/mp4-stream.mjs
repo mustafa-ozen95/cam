@@ -34,6 +34,13 @@ export const CONVERT_BITRATE = { Main: 3000, Extra1: 1000 };
 export const KEYFRAME_EXPR = 'expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+1))';
 const NOW = '(RTCTIME-RTCSTART)/(TB*1000000)';
 export const TIMESTAMP_FILTER = `setpts='if(isnan(PREV_OUTPTS),${NOW},max(${NOW},PREV_OUTPTS+0.001/TB))'`;
+/**
+ * Kopya yayinin zaman damgasi (bitstream suzgeci setts): her kare oncekinden kaynaktaki aralik kadar sonra, en az 1 ms en
+ * cok 1 sn. Kayit cihazi RTP zamanini geri sicratinca ffmpeg kopyada her kareye "oncekinden 1 tik sonra" diyordu; ondan
+ * sonra yayinin medya zamani ilerlemiyordu (olculen: 450 kare 5 ms'ye sikisti), tarayici oynatamiyordu. Virguller ffmpeg
+ * suzgec listesi icin kacislidir.
+ */
+export const COPY_TIMESTAMP_BSF = 'setts=ts=if(N\\,PREV_OUTPTS+clip(PTS-PREV_INPTS\\,0.001/TB\\,1/TB)\\,PTS)';
 export const convertArgs = (type) => {
   const b = CONVERT_BITRATE[type] ?? CONVERT_BITRATE.Extra1;
   return ['-vf', TIMESTAMP_FILTER, '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-b:v', `${b}k`, '-maxrate', `${b}k`, '-bufsize', `${2 * b}k`, '-force_key_frames', KEYFRAME_EXPR, '-bf', '0', '-fps_mode', 'passthrough'];
@@ -50,7 +57,7 @@ export function sharedMp4(feeds, { ffmpeg, channel, type, convert, input, extra 
   const key = `mp4:${channel}/${type}`;
   let copy = feeds.get(key);
   if (!copy) {
-    copy = new Mp4Feed({ ffmpeg, args: [...input(), '-c:v', 'copy', ...extra, ...MP4_OUTPUT], onEnd: () => { if (feeds.get(key) === copy) feeds.delete(key); }, label: label(false) });
+    copy = new Mp4Feed({ ffmpeg, args: [...input(), '-c:v', 'copy', '-bsf:v', COPY_TIMESTAMP_BSF, ...extra, ...MP4_OUTPUT], onEnd: () => { if (feeds.get(key) === copy) feeds.delete(key); }, label: label(false) });
     feeds.set(key, copy); copy.start();
   }
   if (!convert || copy.codec?.startsWith('avc1')) return copy;

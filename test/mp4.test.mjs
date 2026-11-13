@@ -75,6 +75,8 @@ test('ffmpeg: kopya ya da kaynak kalitede H.264 (olcek/kare hizi suzgeci YOK)', 
   const feeds = new Map(), label = (cv) => (cv ? 'h264' : 'kopya');
   const copy = sharedMp4(feeds, { ffmpeg: '/yok/ffmpeg', channel: 0, type: 'Main', convert: false, input: () => ['-rtsp_transport', 'tcp', '-i', 'rtsp://x/a'], label });
   assert.deepEqual(copy.args.slice(copy.args.indexOf('-c:v'), copy.args.indexOf('-c:v') + 2), ['-c:v', 'copy']);
+  // kopyada da zaman damgasi duzeltilir (cihaz RTP zamanini geri sicratinca medya zamani durmasin)
+  assert.match(copy.args[copy.args.indexOf('-bsf:v') + 1], /^setts=ts=.*PREV_OUTPTS.*clip\(PTS-PREV_INPTS/);
   for (const type of ['Main', 'Extra1']) {
     const a = convertArgs(type);
     assert.equal(a[a.indexOf('-c:v') + 1], 'libx264');
