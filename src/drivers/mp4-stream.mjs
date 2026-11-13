@@ -18,11 +18,18 @@ export const MP4_OUTPUT = ['-an', '-f', 'mp4', '-movflags', 'frag_keyframe+empty
  * (goruntu kalitesinden odun verilmez). Bit hizi kaynagin ~1,5-2 kati (H.264 ayni kalite icin daha cok ister).
  * Olcum (Uniview): ana 1080p 25 kare/sn %82 cekirdek 3,09 Mbps; alt 704x576 %18 cekirdek 1,04 Mbps.
  * Anahtar kare saniyede bir: yeni izleyici beklemez, tampon kirpilabilir.
+ *
+ * Kare hizi kaynaktaki gibi GECIRILIR (-fps_mode passthrough): mp4 cikisinda ffmpeg'in varsayilani sabit kare hizidir;
+ * cihazin zaman damgasi ileri sicrayinca (RTP kopmasi, "bad cseq") aradaki boslugu KOPYA KARELERLE doldurur. Olculen:
+ * 25 kare/sn kaynak 150-220 kare/sn kodlandi (cekirdek dolu), yayin gercek zamandan 6-9 kat hizli aktigi icin oynatici
+ * surekli canli uca atladi ve goruntu dondu; akis paylasildigindan sayfayi yenilemek de duzeltmedi.
+ * Anahtar kare de onceki zorlanmis kareye gore sayilir: n_forced'a gore sayilsaydi sicramadan sonra her kare anahtar olurdu.
  */
 export const CONVERT_BITRATE = { Main: 3000, Extra1: 1000 };
+export const KEYFRAME_EXPR = 'expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+1))';
 export const convertArgs = (type) => {
   const b = CONVERT_BITRATE[type] ?? CONVERT_BITRATE.Extra1;
-  return ['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-b:v', `${b}k`, '-maxrate', `${b}k`, '-bufsize', `${2 * b}k`, '-force_key_frames', 'expr:gte(t,n_forced*1)', '-bf', '0'];
+  return ['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-b:v', `${b}k`, '-maxrate', `${b}k`, '-bufsize', `${2 * b}k`, '-force_key_frames', KEYFRAME_EXPR, '-bf', '0', '-fps_mode', 'passthrough'];
 };
 
 const GOP_LIMIT = 16 * 1024 * 1024;   // anahtar karesiz bu kadar birikirse onbellek bosaltilir (sonraki anahtar kare beklenir)
