@@ -100,6 +100,13 @@ export function devicesController({ devices, auditLog }) {
       auditLog.write('clock-sync', ctx.principal.auditActor, ctx.req, { auto: false, device: r.device, before: r.before, after: r.after, server: r.server });
       return json(ctx.res, 200, r);
     },
+    /** Cihazi yeniden baslatir (device.manage, cihaz kapsaminda). Canli akislar cihaz donene kadar kendiliginden yeniden dener. */
+    async reboot(ctx) {
+      needDevice(ctx.principal, ctx.param.id);
+      const r = await devices.group.reboot(String(ctx.param.id));
+      auditLog.write('device-reboot', ctx.principal.auditActor, ctx.req, { device: r.device, name: r.name });
+      return json(ctx.res, 200, { ok: true, ...r });
+    },
     async channelSetting(ctx) {
       const g = await readBody(ctx.req);
       let range = Number.isInteger(g.from) && Number.isInteger(g.last) ? { from: g.from, last: g.last } : null;

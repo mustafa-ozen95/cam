@@ -102,6 +102,7 @@ Akış uçları her anahtar için eşzamanlı akış sınırına tabidir (`429 S
 | DELETE | `/api/v1/devices/{id}` | device.manage | Panelden kaldır (cihazdaki kayıtlar etkilenmez; son cihaz silinemez) |
 | POST | `/api/v1/devices/{id}/cameras` | device.manage | NVR'a kamera kaydet (Hikvision): `{name, ip, username, password, protocol: HIKVISION\|ONVIF, port?}` |
 | POST | `/api/v1/devices/clock` | device.clock | `{device: "<id>"}` cihaz saatini sunucuya eşitle |
+| POST | `/api/v1/devices/{id}/reboot` | device.manage | cihazı yeniden başlat (Uniview, Hikvision, Xiongmai; IP kamerada 500) |
 | PUT | `/api/v1/channels` | channel.manage | Kanal ayarı `{setting: {"<channel>": {name, view: auto\|show\|hide}}, from?, last?}` (aralık verilirse yalnız o cihaz) |
 
 Tür kataloğu: `uniview` (NVR, 32 kanal), `hikvision` (NVR, 16), `xiongmai` (DVR, 4, `port` 34567), `camera` (tek IP kamera, `template`: hikvision/dahua/uniview/custom + `path`).

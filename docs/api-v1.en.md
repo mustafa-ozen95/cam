@@ -100,6 +100,7 @@ Streaming endpoints are subject to the per-key concurrent stream limit (`429 STR
 | DELETE | `/api/v1/devices/{id}` | device.manage | Remove from panel (device recordings untouched; last device cannot be removed) |
 | POST | `/api/v1/devices/{id}/cameras` | device.manage | Register a camera on an NVR (Hikvision): `{name, ip, username, password, protocol: HIKVISION\|ONVIF, port?}` |
 | POST | `/api/v1/devices/clock` | device.clock | `{device: "<id>"}` sync device clock to server |
+| POST | `/api/v1/devices/{id}/reboot` | device.manage | restart the device (Uniview, Hikvision, Xiongmai; 500 for an IP camera) |
 | PUT | `/api/v1/channels` | channel.manage | Channel settings `{setting: {"<channel>": {name, view: auto\|show\|hide}}, from?, last?}` |
 
 Types: `uniview` (NVR, 32 ch), `hikvision` (NVR, 16), `xiongmai` (DVR, 4, `port` 34567), `camera` (single IP camera; `template`: hikvision/dahua/uniview/custom + `path`).

@@ -331,6 +331,12 @@ export class Dvr {
     } catch (e) { lastZ = 0; try { res.end(); } catch {} finish(false); throw e; }
   }
 
+  /** DVR-IP OPMachine Reboot (1450). Cihaz yanit vermeden kapanabilir: zaman asimi da kabul sayilir. */
+  async reboot() {
+    const y = await this.req(1450, 'OPMachine', { Action: 'Reboot' }, 10_000).catch((e) => (/zaman|timeout|kapan|closed|ECONNRESET/i.test(e.message) ? { Ret: 100 } : Promise.reject(e)));
+    if (y.Ret !== 100 && y.Ret !== 515) throw new Error(`Cihaz yeniden başlatmayı reddetti (Ret ${y.Ret})`);
+  }
+
   /** DVR diskindeki TUM kayitlari siler (bicimlendirme). Cihaz tek tek dosya silmeyi desteklemez. */
   async diskClear() {
     return this.req(1450, 'OPStorageManager', { Action: 'Clear', PartNo: 0, PlysicalNo: 0, Type: 'Data' }, 60_000);

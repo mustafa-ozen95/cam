@@ -868,12 +868,18 @@ function writeDevice() {
     ...(hasPermission('device.manage') && deviceTypes[c.type]?.addCamera ? [button('Kamera ekle', '', () => camDialog(c))] : []),
     ...(hasPermission('device.manage') ? [button('Düzenle', '', () => deviceDialog(c))] : []),
     ...(hasPermission('device.clock') && b && !error ? [button('Saati eşitle', '', (e) => syncClock(c.id, e.currentTarget))] : []),
+    ...(hasPermission('device.manage') && b && !error && deviceTypes[c.type]?.reboot ? [button('Yeniden başlat', '', (e) => rebootDevice(c, e.currentTarget))] : []),
     ...(hasPermission('device.manage') ? [button('Kaldır', 'danger', () => removeDevice(c))] : []),
   ];
   $('#deviceActions').replaceChildren(...actions());
   $('#deviceDetailActions').replaceChildren(...actions()); $('#deviceDetailActions').hidden = !$('#deviceDetailActions').children.length;
   if (info && channelDrawn !== c.id) writeChannel(c);
   writeDisk(c);
+}
+async function rebootDevice(c, d) {
+  if (!await askConfirm(`“${c.name || c.host}” yeniden başlatılsın mı? Cihaz 1-3 dakika ulaşılamaz; bu sürede canlı görüntü ve kayıt durur, sonra kendiliğinden döner.`, 'yeniden başlat', { header: 'Cihazı yeniden başlat', danger: true })) return;
+  d.disabled = true;
+  try { await api(`/api/devices/${encodeURIComponent(c.id)}/reboot`, { method: 'POST' }); notify(`${c.name || c.host} yeniden başlatılıyor`, 'success'); } catch (e) { notify(e.message, 'danger'); } finally { d.disabled = false; }
 }
 async function removeDevice(c) {
   if (!await askConfirm(`“${c.name || c.host}” cihazı panelden kaldırılsın mı? (Cihazdaki kayıtlar etkilenmez.)`, 'sil', { header: 'Cihazı kaldır' })) return;
@@ -1965,7 +1971,7 @@ $('#removeAll').addEventListener('click', async () => {
 let roles = [];                                     // /api/yetki/roller
 const roleName = (id) => { const r = roles.find((x) => x.id === id); return r ? (r.name?.[language] ?? r.name?.tr ?? id) : ({ admin: 'Yönetici', network: 'Network', technical: 'Teknik', accounting: 'Muhasebe' }[id] ?? id); };
 const ROLE_NAME = new Proxy({}, { get: (_, k) => roleName(k) });
-const EVENT_NAME = { 'clock-sync': ['yellow', 'Saat ayarı'], login: ['green', 'Giriş'], logout: ['gray', 'Çıkış'], 'login-failed': ['red', 'Hatalı giriş'], playback: ['blue', 'Oynatma'], 'download-request': ['blue', 'İndirme isteği'], 'download-complete': ['purple', 'İndirildi'], 'download-partial': ['yellow', 'İndirme yarım'] };
+const EVENT_NAME = { 'clock-sync': ['yellow', 'Saat ayarı'], 'device-reboot': ['red', 'Cihaz yeniden başlatma'], login: ['green', 'Giriş'], logout: ['gray', 'Çıkış'], 'login-failed': ['red', 'Hatalı giriş'], playback: ['blue', 'Oynatma'], 'download-request': ['blue', 'İndirme isteği'], 'download-complete': ['purple', 'İndirildi'], 'download-partial': ['yellow', 'İndirme yarım'] };
 const auditLog = { page: 1, time: null };
 async function reloadAuditLog() {
   const k = $('#auditList');

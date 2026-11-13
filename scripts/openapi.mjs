@@ -15,7 +15,7 @@ const DESCRIPTION = {
   'GET /api/v1/cameras': 'Kapsamdaki kameralar', 'GET /api/v1/cameras/{channel}/snapshot': 'Anlık görüntü (image/jpeg)', 'GET /api/v1/cameras/{channel}/live': 'Canlı MJPEG akışı (type=Main|Extra1|Mini, raw=1)',
   'GET /api/v1/cameras/{channel}/recordings': 'Kayıt dilimleri (day, dayEnd)', 'GET /api/v1/cameras/{channel}/playback': 'Kayıttan oynatma MJPEG (from, to)', 'GET /api/v1/cameras/{channel}/download': 'Kayıt indirme mp4 (file, from, to)',
   'GET /api/v1/devices': 'Cihaz listesi ve tür kataloğu', 'GET /api/v1/devices/info': 'Birleşik cihaz bilgisi', 'POST /api/v1/devices': 'Cihaz ekle (bağlantı denenir)', 'PATCH /api/v1/devices/{id}': 'Cihaz düzenle', 'DELETE /api/v1/devices/{id}': 'Cihazı panelden kaldır',
-  'POST /api/v1/devices/{id}/cameras': "NVR'a kamera kaydet", 'POST /api/v1/devices/clock': 'Cihaz saatini eşitle', 'PUT /api/v1/channels': 'Kanal adı/görünürlük ayarı',
+  'POST /api/v1/devices/{id}/cameras': "NVR'a kamera kaydet", 'POST /api/v1/devices/clock': 'Cihaz saatini eşitle', 'POST /api/v1/devices/{id}/reboot': 'Cihazı yeniden başlat', 'PUT /api/v1/channels': 'Kanal adı/görünürlük ayarı',
   'GET /api/v1/members': 'Üyeler', 'POST /api/v1/members': 'Üye ekle', 'PATCH /api/v1/members/{name}': 'Üye düzenle', 'DELETE /api/v1/members/{name}': 'Üye sil',
   'GET /api/v1/audit-log': 'Denetim günlüğü', 'GET /api/v1/audit-log/verify': 'Günlük zincirini doğrula',
   'GET /api/v1/roles': 'Roller', 'POST /api/v1/roles': 'Özel rol ekle', 'PATCH /api/v1/roles/{id}': 'Rol düzenle', 'DELETE /api/v1/roles/{id}': 'Rol sil',

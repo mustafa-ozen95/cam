@@ -103,6 +103,14 @@ export class DeviceGroup extends DeviceBase {
     return { ...(await c.syncClock()), device: c.setting.host };
   }
 
+  /** Cihaz id'si ile tek bir cihazi yeniden baslatir (arayuz: cihaz satirindaki Yeniden baslat). */
+  async reboot(id) {
+    const c = this.devices.find((x) => x.id === id);
+    if (!c) throw new Error('Cihaz belirtilmedi');
+    await c.reboot();
+    return { device: c.setting.host, name: c.setting.name ?? '' };
+  }
+
   /**
    * Oynatma yeri: kanal verilirse YALNIZ o kanalin cihazina bakilir. Butun cihazlara bakilsaydi bir
    * NVR dolunca obur NVR'dan da kayit acilamazdi.

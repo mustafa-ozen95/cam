@@ -42,6 +42,7 @@ export function apiV1Routes(r, d, middleware, { devices, config, db }) {
     r.patch('/api/v1/devices/:id', d.devices.update, [permission('device.manage')]);
     r.delete('/api/v1/devices/:id', d.devices.remove, [permission('device.manage')]);
     r.post('/api/v1/devices/:id/cameras', d.devices.addCamera, [permission('device.manage')]);
+    r.post('/api/v1/devices/:id/reboot', d.devices.reboot, [permission('device.manage')]);
     r.post('/api/v1/devices/clock', d.devices.clock, [permission('device.clock')]);
     r.put('/api/v1/channels', d.devices.channelSetting, [permission('channel.manage')]);
 

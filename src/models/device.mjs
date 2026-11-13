@@ -8,10 +8,11 @@ import { devicePasswordKey, seal, unseal } from '../core/crypto-labels.mjs';
 import { Settings, Lock, Collection, writeOrRollback } from '../core/tables.mjs';
 import { DEVICES } from '../database/schema.mjs';
 
+/** reboot: surucu reboot() destekler (arayuzde Yeniden baslat dugmesi). */
 export const TYPES = {
-  uniview: { name: 'Uniview NVR', channel: 32, label: 'D' },
-  hikvision: { name: 'Hikvision NVR', channel: 16, label: 'H', addCamera: true },
-  xiongmai: { name: 'Xiongmai DVR', channel: 4, label: 'C' },
+  uniview: { name: 'Uniview NVR', channel: 32, label: 'D', reboot: true },
+  hikvision: { name: 'Hikvision NVR', channel: 16, label: 'H', addCamera: true, reboot: true },
+  xiongmai: { name: 'Xiongmai DVR', channel: 4, label: 'C', reboot: true },
   camera: { name: 'IP Kamera (tek kamera)', channel: 1, label: 'K' },
 };
 const HOST = /^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/;

@@ -55,6 +55,8 @@ export class Uniview extends RtspDevice {
     return { dvr: localText(local), server, diff: Math.round(local - localSec(server)) };
   }
   /** Cihaz saatini sunucu saatine (Europe/Istanbul) esitler. Saat dilimi ayari degismez; yalniz DeviceTime (cihazin UTC'si) ayarlanir. */
+  /** LAPI: PUT /System/Reboot; cihaz yaniti verdikten sonra kapanir. */
+  async reboot() { await this.lapi('/LAPI/V1.0/System/Reboot', 'PUT'); }
   async syncClock() {
     const before = await this.clockDifference();
     const t = await this.lapi('/LAPI/V1.0/System/Time');

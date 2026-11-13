@@ -54,6 +54,11 @@ export class Hikvision extends RtspDevice {
     this.deviceLocal = { sec: localSec(local), z: Date.now() };
     return { dvr: local, server, diff: Math.round(localSec(local) - localSec(server)) };
   }
+  /** ISAPI: PUT /System/reboot; statusCode 1 (OK) ya da 7 (Reboot Required/yeniden basliyor) kabul. */
+  async reboot() {
+    const y = await this.isapi('/ISAPI/System/reboot', 'PUT');
+    if (!['1', '7'].includes(get(y, 'statusCode'))) throw new Error(`Cihaz yeniden başlatmayı reddetti (${get(y, 'statusString') || 'bilinmeyen hata'})`);
+  }
   /** Cihaz saatini sunucu saatine esitler. Cihaz NTP modundaysa elle (manual) moda gecer: NTP kaynagi sapmaliysa ayar kalici olarak elle olur. */
   async syncClock() {
     const before = await this.clockDifference();

@@ -41,6 +41,8 @@ export class DeviceBase {
 
   async syncClock() { throw new Error('Bu cihazın saati panelden ayarlanmıyor (cihazın kendi arayüzünden yapın)'); }
   async diskClear() { throw new Error('Bu cihazda kayıt silme panelden yapılmıyor'); }
+  /** Cihazi yeniden baslatir (komut kabul edilince doner; cihaz 1-3 dk ulasilamaz). Desteklemeyen surucu hata verir. */
+  async reboot() { throw new Error('Bu cihaz panelden yeniden başlatılamıyor (cihazın kendi arayüzünden yapın)'); }
   close() { for (const y of [...this.feeds.values()]) y.stop(); }
 }
 
