@@ -24,12 +24,19 @@ export const MP4_OUTPUT = ['-an', '-f', 'mp4', '-movflags', 'frag_keyframe+empty
  * 25 kare/sn kaynak 150-220 kare/sn kodlandi (cekirdek dolu), yayin gercek zamandan 6-9 kat hizli aktigi icin oynatici
  * surekli canli uca atladi ve goruntu dondu; akis paylasildigindan sayfayi yenilemek de duzeltmedi.
  * Anahtar kare de onceki zorlanmis kareye gore sayilir: n_forced'a gore sayilsaydi sicramadan sonra her kare anahtar olurdu.
+ *
+ * Zaman damgasi COZUCUDEN CIKIS ANI (setpts RTCTIME), her kare oncekinden en az 1 ms sonra: kayit cihazi alt akista RTP
+ * zamanini geri de sicratiyor; ffmpeg sonraki her kareye "oncekinden 1 tik sonra" diyor, anahtar kare zorlanmiyor ve
+ * goruntu 250 karelik (10 sn) yiginlar halinde gelip donuyordu. Damga giriste (-use_wallclock_as_timestamps) DEGIL
+ * cozucuden sonra verilir: giriste verilince kopya akis ve cozucu de etkilendi, kareler bozuldu (40c651e).
  */
 export const CONVERT_BITRATE = { Main: 3000, Extra1: 1000 };
 export const KEYFRAME_EXPR = 'expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+1))';
+const NOW = '(RTCTIME-RTCSTART)/(TB*1000000)';
+export const TIMESTAMP_FILTER = `setpts='if(isnan(PREV_OUTPTS),${NOW},max(${NOW},PREV_OUTPTS+0.001/TB))'`;
 export const convertArgs = (type) => {
   const b = CONVERT_BITRATE[type] ?? CONVERT_BITRATE.Extra1;
-  return ['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-b:v', `${b}k`, '-maxrate', `${b}k`, '-bufsize', `${2 * b}k`, '-force_key_frames', KEYFRAME_EXPR, '-bf', '0', '-fps_mode', 'passthrough'];
+  return ['-vf', TIMESTAMP_FILTER, '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-b:v', `${b}k`, '-maxrate', `${b}k`, '-bufsize', `${2 * b}k`, '-force_key_frames', KEYFRAME_EXPR, '-bf', '0', '-fps_mode', 'passthrough'];
 };
 
 const GOP_LIMIT = 16 * 1024 * 1024;   // anahtar karesiz bu kadar birikirse onbellek bosaltilir (sonraki anahtar kare beklenir)

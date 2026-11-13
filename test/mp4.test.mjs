@@ -79,7 +79,10 @@ test('ffmpeg: kopya ya da kaynak kalitede H.264 (olcek/kare hizi suzgeci YOK)', 
     const a = mp4Args('rtsp://x/a', type, true);
     assert.equal(a[a.indexOf('-c:v') + 1], 'libx264');
     assert.equal(a[a.indexOf('-b:v') + 1], `${CONVERT_BITRATE[type]}k`);
-    assert.ok(!a.includes('-vf') && !a.includes('-r'), 'cozunurluk ve kare hizi kaynaktaki gibi');
+    assert.ok(!a.includes('-r') && !/scale|fps=/.test(a[a.indexOf('-vf') + 1]), 'cozunurluk ve kare hizi kaynaktaki gibi');
+    // zaman damgasi cozucuden sonra verilir (cihaz RTP zamanini geri sicratiyor); giriste wallclock YOK (40c651e)
+    assert.match(a[a.indexOf('-vf') + 1], /^setpts=.*RTCTIME.*PREV_OUTPTS/);
+    assert.ok(!a.includes('-use_wallclock_as_timestamps'));
     assert.equal(a[a.indexOf('-bf') + 1], '0');
     // zaman damgasi sicrayinca kopya kare uretilmez (yayin gercek zamandan hizli akip donuyordu)
     assert.equal(a[a.indexOf('-fps_mode') + 1], 'passthrough');
