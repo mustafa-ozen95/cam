@@ -8,6 +8,7 @@
  */
 import { spawn } from 'node:child_process';
 import { Fmp4Splitter, makeHvc1, codecName } from './fmp4.mjs';
+import { FeedLog } from './feed-log.mjs';
 
 /** ffmpeg cikis secenekleri (kodlayici haric): parca her anahtar karede ve en gec 200 ms'de kapanir (gecikme), ses yok. */
 export const MP4_OUTPUT = ['-an', '-f', 'mp4', '-movflags', 'frag_keyframe+empty_moov+default_base_moof', '-frag_duration', '200000', 'pipe:1'];
@@ -25,34 +26,44 @@ export const convertArgs = (type) => {
 };
 
 const GOP_LIMIT = 16 * 1024 * 1024;   // anahtar karesiz bu kadar birikirse onbellek bosaltilir (sonraki anahtar kare beklenir)
+const GAP_LOG = 3000;   // ffmpeg'den bu kadar sure veri gelmeyip sonra yeniden gelirse gunluge yazilir (kisa duraksama)
+const sec = (ms) => `${(ms / 1000).toFixed(1)} sn`;
 
 export class Mp4Feed {
-  constructor({ ffmpeg, args, onEnd = () => {}, firstDuration = 15_000, stopDuration = 10_000 }) {
+  /** etiket: gunlukte akisin adi (cihaz, kamera, kanal, tur); gunluk: test icin yazici. */
+  constructor({ ffmpeg, args, onEnd = () => {}, firstDuration = 15_000, stopDuration = 10_000, label = 'akış', log = console.log }) {
     Object.assign(this, { ffmpeg, args, onEnd, firstDuration, stopDuration });
+    this.log = new FeedLog(label, log);
     this.subscribers = new Set(); this.init = null; this.codec = null; this.gop = []; this.gopByte = 0;
     this.error = null; this.stopped = false; this.lastZ = Date.now(); this.splitter = new Fmp4Splitter();
   }
 
   start() {
     this.ready = new Promise((resolve) => { this.resolveReady = resolve; });
-    this.firstTime = setTimeout(() => { if (!this.init) { this.error ??= 'Kameradan görüntü gelmedi'; this.stop(); } }, this.firstDuration);
-    this.watcher = setInterval(() => { if (this.init && Date.now() - this.lastZ > this.stopDuration) this.stop(); }, 2000);
+    this.t0 = Date.now(); this.log.event('başladı');
+    this.firstTime = setTimeout(() => { if (!this.init) { this.error ??= 'Kameradan görüntü gelmedi'; this.stop(`ilk görüntü ${sec(this.firstDuration)} içinde gelmedi (ffmpeg çalışıyor)`); } }, this.firstDuration);
+    // ffmpeg calisiyor ama cihazdan veri gelmiyor: cihaz baglantiyi tutup gondermeyi birakmis
+    this.watcher = setInterval(() => { if (this.init && Date.now() - this.lastZ > this.stopDuration) this.stop(`cihaz veri göndermeyi bıraktı: ${sec(Date.now() - this.lastZ)} veri yok, bağlantı açık (ffmpeg çalışıyordu)`); }, 2000);
     this.ff = spawn(this.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...this.args], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-    this.ff.on('error', (e) => { this.error = `ffmpeg başlatılamadı: ${e.code ?? e.message}`; this.stop(); });   // dinleyicisiz 'error' tum paneli dusurur
-    this.ff.stderr.on('data', () => {});
+    this.ff.on('error', (e) => { this.error = `ffmpeg başlatılamadı: ${e.code ?? e.message}`; this.stop(this.error); });   // dinleyicisiz 'error' tum paneli dusurur
+    this.ff.stderr.on('data', (b) => this.log.stderr(b));
     this.ff.stdout.on('data', (b) => this.#data(b));
-    this.ff.on('close', () => this.stop());
+    // ffmpeg kendiliginden kapandi: cihaz baglantiyi kesti ya da akisi reddetti (nedeni ffmpeg satirlarinda)
+    this.ff.on('close', (code, signal) => this.stop(`ffmpeg kapandı (${signal ? `sinyal ${signal}` : `kod ${code}`}) — cihaz bağlantıyı kesti ya da akışı reddetti`));
     return this;
   }
 
   #data(b) {
     let parts;
-    try { parts = this.splitter.add(b); } catch { this.error = 'Görüntü çözümlenemedi'; return this.stop(); }
+    try { parts = this.splitter.add(b); } catch { this.error = 'Görüntü çözümlenemedi'; return this.stop(this.error); }
     for (const p of parts) {
-      this.lastZ = Date.now();
+      const now = Date.now();
+      if (this.init && now - this.lastZ >= GAP_LOG) this.log.event(`veri ${sec(now - this.lastZ)} gelmedi, sonra sürdü (izleyici ${this.subscribers.size})`);
+      this.lastZ = now;
       if (p.type === 'init') {
         this.init = makeHvc1(p.data); this.codec = codecName(this.init);
-        if (!this.codec) { this.error = 'Kameranın video biçimi desteklenmiyor'; return this.stop(); }
+        if (!this.codec) { this.error = 'Kameranın video biçimi desteklenmiyor'; return this.stop(`${this.error} (${this.init.length} bayt başlangıç)`); }
+        this.log.event(`ilk görüntü ${sec(now - this.t0)} sonra, kodek ${this.codec}`);
         clearTimeout(this.firstTime); this.resolveReady();
       } else this.#part(p.data, p.key);
     }
@@ -76,13 +87,15 @@ export class Mp4Feed {
     if (this.gop.length) res.write(Buffer.concat(this.gop)); else res.waitKey = true;
     res.on('close', () => {
       this.subscribers.delete(res);
-      if (!this.subscribers.size) this.idleTimer = setTimeout(() => this.stop(), 4000);
+      if (!this.subscribers.size) this.idleTimer = setTimeout(() => this.stop('izleyici kalmadı'), 4000);
     });
   }
 
-  stop() {
+  /** neden: gunluge yazilir (kopmanin kaynagi). */
+  stop(reason = 'panel kapattı') {
     if (this.stopped) return;
     this.stopped = true;
+    this.log.end(`${reason}; ${sec(Date.now() - this.t0)} açık kaldı, izleyici ${this.subscribers.size}`);
     clearTimeout(this.idleTimer); clearTimeout(this.firstTime); clearInterval(this.watcher);
     try { this.ff?.kill('SIGKILL'); } catch {}
     for (const r of this.subscribers) { try { r.end(); } catch {} }
