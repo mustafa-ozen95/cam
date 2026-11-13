@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { LIVE_TRANSCODE, frozenPaths, livePaths } from '../src/services/live.mjs';
+import { CONVERTER_FLOOD, LIVE_TRANSCODE, frozenPaths, livePaths, stuckConverters } from '../src/services/live.mjs';
 import { openApp } from './helpers.mjs';
 
 test('mediamtx yollari: H.264 dogrudan, H.265 kaynak + izlenince calisan cevirici (olcek/kare hizi suzgeci yok)', () => {
@@ -34,6 +34,32 @@ test('donmus kaynak: iki esitleme boyunca hazir ve bayt almayan cihaz kaynagi', 
   assert.deepEqual(second.frozen, ['k1_source'], 'akan yol, ceviricinin yayini, hazir olmayan ve panelin yazmadigi yol dokunulmaz');
   assert.ok(!second.received.has('k1_source'), 'yeniden baglanan yol sifirdan olculur');
   assert.deepEqual(frozenPaths(second.received, items({ k0: 1700, k1: 0 }), requested).frozen, []);
+});
+
+test('takilan cevirici: kopya kare yigini ya da kaynagi okumayan cevirici yeniden baslatilir', () => {
+  const requested = { k0: { source: 'publisher' }, k0_source: { source: 'rtsp://a/0' }, k1: { source: 'publisher' }, k1_source: {}, k2: { source: 'rtsp://a/2' } };
+  const items = (o) => [
+    { name: 'k0', ready: true, source: { type: 'rtspSession', id: o.s0 ?? 'a' }, bytesReceived: o.k0 },
+    { name: 'k0_source', ready: true, readers: [{ type: 'rtspSession' }] },
+    { name: 'k1', ready: true, source: { type: 'rtspSession', id: 'b' }, bytesReceived: o.k1 },
+    { name: 'k1_source', ready: o.k1src, readers: o.k1src ? [{ type: 'rtspSession' }] : [] },
+    { name: 'k2', ready: true, source: { type: 'rtspSource' }, bytesReceived: 99 },
+  ];
+  const t0 = 1_000_000;
+  const a = stuckConverters(new Map(), items({ k0: 0, k1: 0, k1src: true }), requested, t0);
+  assert.deepEqual(a.stuck, [], 'ilk olcumde hiz bilinmez');
+  // 60 sn: k0 normal (125 KB/sn), k1 normal
+  const b = stuckConverters(a.state, items({ k0: 125 * 1024 * 60, k1: 125 * 1024 * 60, k1src: true }), requested, t0 + 60_000);
+  assert.deepEqual(b.stuck, []);
+  // k0 kopya kare yigini (1,2 MB/sn); k1 kaynagi okumayi birakti (ilk kez: henuz dokunulmaz)
+  const c = stuckConverters(b.state, items({ k0: 125 * 1024 * 60 + 1200 * 1024 * 60, k1: 2 * 125 * 1024 * 60, k1src: false }), requested, t0 + 120_000);
+  assert.deepEqual(c.stuck.map((x) => [x.name, x.session]), [['k0', 'a']]);
+  assert.ok(1200 * 1024 > CONVERTER_FLOOD && 125 * 1024 * 2 < CONVERTER_FLOOD);
+  assert.ok(!c.state.has('k0'), 'yeniden baslatilan cevirici sifirdan olculur');
+  // k1 ikinci kez kaynagi okumuyor: takili; k0 yeni oturumla geldi, ilk olcum
+  const d = stuckConverters(c.state, items({ s0: 'yeni', k0: 10, k1: 3 * 125 * 1024 * 60, k1src: false }), requested, t0 + 180_000);
+  assert.deepEqual(d.stuck.map((x) => [x.name, x.reason]), [['k1', 'kaynagi okumuyor']]);
+  assert.equal(d.state.get('k0').session, 'yeni');
 });
 
 test('/live kapali (CAM_RTC_API bos): 404', async () => {

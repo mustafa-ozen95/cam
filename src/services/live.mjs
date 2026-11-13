@@ -56,6 +56,34 @@ export function frozenPaths(received, items, requested) {
   return { frozen, received: now };
 }
 
+/** Cevirici cikisi bunun ustundeyse kopya kare yigini sayilir (B/sn). Normal: 1000 kbit ~ 125 KB/sn; kilitlenen ~1,2 MB/sn. */
+export const CONVERTER_FLOOD = 500 * 1024;
+
+/**
+ * Takilan ceviriciler (test/live.test.mjs). Cevirici (runOnDemand ffmpeg) olmeden kilitlenebiliyor: kaynagi okumayi
+ * birakip kopya kare basiyordu (TERAS, GUVENLIK: ~1,2 MB/sn, %95 cekirdek). Tarayiciya kare geldigi, cihaz kaynagina da
+ * bayt geldigi icin ne tarayicinin bekcisi ne frozenPaths bunu goruyordu; elle yeniden baslatildi.
+ * Takili sayilir: ayni yayin oturumunda cikis iki esitleme arasinda ortalama CONVERTER_FLOOD'u asarsa, ya da iki
+ * esitleme ust uste kaynak yolunu okuyan kimse yoksa. prev: onceki { yol -> { session, bytes, time, strikes } }.
+ * { stuck: [{ name, session, reason }], state } doner; takilan yol state'e girmez (yeni oturum sifirdan olculur).
+ */
+export function stuckConverters(prev, items, requested, now = Date.now()) {
+  const by = new Map(items.map((p) => [p.name, p]));
+  const state = new Map(); const stuck = [];
+  for (const [name, setting] of Object.entries(requested)) {
+    if (setting.source !== 'publisher') continue;
+    const p = by.get(name);
+    if (!p?.ready || p.source?.type !== 'rtspSession' || !p.source.id) continue;
+    const o = prev.get(name); const same = o?.session === p.source.id;
+    const rate = same && now > o.time ? (p.bytesReceived - o.bytes) / ((now - o.time) / 1000) : 0;
+    const strikes = by.get(`${name}_source`)?.readers?.length ? 0 : (same ? o.strikes : 0) + 1;
+    if (rate > CONVERTER_FLOOD) stuck.push({ name, session: p.source.id, reason: `cikis ${Math.round(rate / 1024)} KB/sn (kopya kare)` });
+    else if (strikes >= 2) stuck.push({ name, session: p.source.id, reason: 'kaynagi okumuyor' });
+    else state.set(name, { session: p.source.id, bytes: p.bytesReceived, time: now, strikes });
+  }
+  return { stuck, state };
+}
+
 function codecMeasure(ffprobe, url) {
   return new Promise((resolve) => {
     const p = spawn(ffprobe, ['-v', 'error', '-rtsp_transport', 'tcp', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', url], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
@@ -70,7 +98,7 @@ export class LiveService {
   /** ayarlar: Ayarlar (veritabani); kayitli duzeni yukle() getirir. */
   constructor({ config, devices, settings }) {
     this.y = config.live; this.devices = devices; this.settings = settings; this.savedLayout = null;
-    this.codec = new Map(); this.written = new Map(); this.received = new Map(); this.cameras = []; this.last = null;
+    this.codec = new Map(); this.written = new Map(); this.received = new Map(); this.converters = new Map(); this.cameras = []; this.last = null;
     this.ffprobe = (devices.ffmpeg ?? 'ffmpeg').replace(/ffmpeg(\.exe)?$/, 'ffprobe$1');
   }
   async load() { const d = await this.settings.read('live-layout'); this.savedLayout = d && Array.isArray(d.paths) ? d : null; return this; }
@@ -119,15 +147,26 @@ export class LiveService {
     return { channel: list.length, ready: ready.length };
   }
 
-  /** Donmus kaynagi (bkz. frozenPaths) silip ayni ayarla yeniden ekler; mediamtx cihaza yeni oturumla baglanir, cevirici de dusup yeniden kalkar. */
+  /**
+   * Donmus kaynagi (bkz. frozenPaths) silip ayni ayarla yeniden ekler; mediamtx cihaza yeni oturumla baglanir, cevirici de
+   * dusup yeniden kalkar. Takilan ceviricinin (bkz. stuckConverters) yayin oturumu atilir: ffmpeg yazamayinca kapanir,
+   * mediamtx onu yeniden baslatir (runOnDemandRestart); izleyicinin oynaticisi yeniden baglanir.
+   */
   async #revive(requested) {
-    const r = frozenPaths(this.received, (await this.#api('GET', '/v3/paths/list?itemsPerPage=10000'))?.items ?? [], requested);
+    const items = (await this.#api('GET', '/v3/paths/list?itemsPerPage=10000'))?.items ?? [];
+    const r = frozenPaths(this.received, items, requested);
     for (const name of r.frozen) {
       await this.#api('DELETE', `/v3/config/paths/delete/${name}`);
       await this.#api('POST', `/v3/config/paths/add/${name}`, requested[name]);
       console.log(`live: ${name} akisi donmustu, yeniden baglandi`);
     }
     this.received = r.received;
+    const c = stuckConverters(this.converters, items, requested);
+    for (const x of c.stuck) {
+      try { await this.#api('POST', `/v3/rtspsessions/kick/${x.session}`); console.log(`live: ${x.name} cevirici takildi (${x.reason}), yeniden baslatildi`); }
+      catch (e) { console.error(`live: ${x.name} cevirici yeniden baslatilamadi:`, e.message); }
+    }
+    this.converters = c.state;
   }
 
   /**
