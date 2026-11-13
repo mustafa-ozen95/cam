@@ -14,7 +14,8 @@ test('mediamtx yollari: H.264 dogrudan, H.265 kaynak + izlenince calisan ceviric
   assert.deepEqual(y.k32, { source: 'rtsp://b/32', rtspTransport: 'tcp', sourceOnDemand: true });
   assert.equal(y.k0_source.source, 'rtsp://a/0');
   assert.equal(y.k0.source, 'publisher');
-  assert.ok(y.k0.runOnDemand.includes(LIVE_TRANSCODE) && y.k0.runOnDemand.includes('rtsp://127.0.0.1:8554/k0_source') && !y.k0.runOnDemand.includes('-vf'));
+  assert.ok(y.k0.runOnDemand.includes(LIVE_TRANSCODE) && y.k0.runOnDemand.includes('rtsp://127.0.0.1:8554/k0_source') && !/scale|fps=/.test(y.k0.runOnDemand));
+  assert.ok(LIVE_TRANSCODE.includes('-fps_mode passthrough') && LIVE_TRANSCODE.includes('RTCTIME'), 'zaman damgasi sicrayinca kopya kare uretilmez');
   assert.ok(!y.k0.runOnDemand.includes('rtsp://a/0'), 'cihaz adresi (parola) cevirici komutunda yok');
 });
 
