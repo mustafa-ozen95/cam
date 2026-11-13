@@ -17,9 +17,10 @@ import { KEYFRAME_EXPR, TIMESTAMP_FILTER } from '../drivers/mp4-stream.mjs';
  * Zaman damgasi ve kare hizi panelin cevirisiyle ayni (bkz. drivers/mp4-stream.mjs): -fps_mode passthrough olmadan kayit
  * cihazinin zaman damgasi ileri sicrayinca ffmpeg boslugu kopya karelerle doldurdu (olculen: ~1 MB/sn, cekirdek dolu),
  * mediamtx "reader is too slow" deyip kareleri atti ve goruntu dondu. Damga cozucuden cikis ani (setpts RTCTIME); anahtar
- * kare saniyede bir, onceki zorlanmis kareye gore. mediamtx komutu kabuk gibi boler: suzgec cift tirnak icinde.
+ * kare saniyede bir, onceki zorlanmis kareye gore. settb: ffmpeg 8 suzgec zaman tabanini 1/kare hizi yapiyordu; 1 ms adim
+ * yuvarlanip damgalar cakisti ("non monotonically increasing dts"). mediamtx komutu kabuk gibi boler: suzgec cift tirnak icinde.
  */
-export const LIVE_TRANSCODE = `-vf "${TIMESTAMP_FILTER}" -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -b:v 1000k -maxrate 1000k -bufsize 2000k -force_key_frames "${KEYFRAME_EXPR}" -bf 0 -fps_mode passthrough`;
+export const LIVE_TRANSCODE = `-vf "settb=1/90000,${TIMESTAMP_FILTER}" -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -b:v 1000k -maxrate 1000k -bufsize 2000k -force_key_frames "${KEYFRAME_EXPR}" -bf 0 -fps_mode passthrough`;
 
 /** Kayitli duzen ve CAM_LIVE_DEFAULT yokken gosterilecek kamera sayisi (ilk N kamera). */
 export const LIVE_FIRST_COUNT = 12;
