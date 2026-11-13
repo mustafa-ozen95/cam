@@ -2,9 +2,11 @@
 import { DATE_RE, HttpError, DATETIME_RE, json } from '../core/http.mjs';
 
 /** Canli MP4 yaniti; panel (liveMp4) ve /live ayni yolu kullanir. y: surucunun paylasilan yayini (null: cihaz MP4 vermiyor). */
-export async function sendLiveMp4(res, y) {
+export async function sendLiveMp4(res, feed) {
+  let y = feed;
   if (!y) return json(res, 501, { error: 'Bu cihaz MP4 akışı vermiyor', code: 'NO_MP4' });
   await y.ready;
+  if (y.passthrough) y = y.passthrough;   // kamera zaten H.264 gonderiyor: cevrilmeden kopya yayin
   if (res.destroyed) return;
   if (!y.init || y.stopped) return json(res, 502, { error: y.error ?? 'Kameradan görüntü gelmedi', code: 'NO_STREAM' });
   res.writeHead(200, { 'Content-Type': 'video/mp4', 'X-Codec': y.codec, 'Cache-Control': 'no-store', Connection: 'close' });

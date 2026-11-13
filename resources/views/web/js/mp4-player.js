@@ -60,9 +60,11 @@ const MSSource = window.ManagedMediaSource ?? window.MediaSource;
  * Canli MP4: kameranin kendi videosu (yeniden kodlamasiz) MediaSource ile oynar; Mjpeg ile ayni arayuz (baslat, durdur, hiz, calisiyor, frameVar).
  * Tarayici kodegi oynatamazsa ya da cihaz MP4 vermiyorsa (501) desteksiz() cagrilir; LiveMp4Player sunucuda cevirmeye gecer, o da olmazsa yeniden dener.
  * Canli kenarda kalir: tamponun sonundan 1,5 sn geride kalinca sona atlar. Tampon 30 sn'yi asinca eski kisim bir anahtar kareye kadar silinir.
+ * Kisa kesinti (kayit cihazi birkac sn gondermez): baglanti KESILMEZ, son kare ekranda kalir, veri gelince canli uctan
+ * surer (WebRTC gibi). Durma esigi sunucununkinden (10 sn veri yoksa yayini kapatir) uzun: kapatma karari sunucuda.
  */
 export class Mp4Player {
-  constructor(video, { url, status, first, unsupported, stall = 6000 }) {
+  constructor(video, { url, status, first, unsupported, stall = 12_000 }) {
     Object.assign(this, { video, url, status, first, unsupported, stall });
     this.attempts = 0; this.running = false; this.ctrl = null; this.msUrl = null; this.frameVar = false;
     video.muted = true; video.playsInline = true; video.disableRemotePlayback = true; video.disablePictureInPicture = true;

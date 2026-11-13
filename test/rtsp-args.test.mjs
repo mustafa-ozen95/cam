@@ -34,12 +34,12 @@ test('surucu: fps yalniz izinli degerler, Main icin yok sayilir; farkli fps ayri
   assert.ok(old && OPTIONAL_FPS.includes(20) && !OPTIONAL_FPS.includes(99));
 });
 
-test('canli MP4: kanalin cevrilmis akisi aciksa kopya istegi ona baglanir (kanal basina tek baglanti)', () => {
-  const converted = { stopped: false }, copy = { stopped: false };
-  const c = Object.assign(Object.create(RtspDevice.prototype), { feeds: new Map([['mp4:3/Extra1/h264', converted], ['mp4:4/Extra1', copy]]) });
-  assert.equal(c.feedMp4(3, 'Extra1'), converted, 'kopya istegi cevrilmise baglanir');
-  assert.equal(c.feedMp4(3, 'Extra1', true), converted);
-  assert.equal(c.feedMp4(4, 'Extra1'), copy, 'cevrilmis yoksa kendi kopyasi');
-  converted.stopped = true; c.feeds.set('mp4:3/Extra1', copy);
-  assert.equal(c.feedMp4(3, 'Extra1'), copy, 'durmus cevrilmis akisa baglanmaz');
+test('canli MP4: kopya ve cevrilen yayin ayni kamera baglantisini paylasir', () => {
+  const copy = { stopped: false, codec: 'hvc1.1.6.L90', ready: new Promise(() => {}) };
+  const c = Object.assign(Object.create(RtspDevice.prototype), { feeds: new Map([['mp4:3/Extra1', copy]]), setting: { host: 'x' }, rtspUrl: () => assert.fail('kamera ikinci kez acildi'), livePath: () => '' });
+  const h = c.feedMp4(3, 'Extra1', true);
+  assert.equal(h.source, copy, 'cevrilen yayin kopyadan okur');
+  assert.equal(c.feedMp4(3, 'Extra1'), copy, 'kopya istegi kopyaya');
+  assert.equal(c.feedMp4(3, 'Extra1', true), h);
+  h.stop();
 });

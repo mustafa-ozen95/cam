@@ -39,14 +39,42 @@ export const convertArgs = (type) => {
   return ['-vf', TIMESTAMP_FILTER, '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-b:v', `${b}k`, '-maxrate', `${b}k`, '-bufsize', `${2 * b}k`, '-force_key_frames', KEYFRAME_EXPR, '-bf', '0', '-fps_mode', 'passthrough'];
 };
 
+/**
+ * Kanal/tur basina TEK kamera baglantisi (RtspDevice, Xiongmai): kopya yayin kameradan okur; H.264 yayini kamerayi
+ * ikinci kez ACMAZ, kopyanin ciktisini borudan okuyup cevirir (eski mediamtx duzenindeki gibi). Kaynak zaten H.264 ise
+ * cevirme yok, kopyanin kendisi verilir. Kamera kayit cihazinda bir gecikmede kopya da cevrilmis de ayni anda durur ve
+ * birlikte surer; cihaza giden baglanti sayisi yariya iner.
+ * input: kamera girisi (-i dahil); extra: iki yayinda da cikis secenekleri (Xiongmai -aspect); label(cevir): gunluk adi.
+ */
+export function sharedMp4(feeds, { ffmpeg, channel, type, convert, input, extra = [], label }) {
+  const key = `mp4:${channel}/${type}`;
+  let copy = feeds.get(key);
+  if (!copy) {
+    copy = new Mp4Feed({ ffmpeg, args: [...input(), '-c:v', 'copy', ...extra, ...MP4_OUTPUT], onEnd: () => { if (feeds.get(key) === copy) feeds.delete(key); }, label: label(false) });
+    feeds.set(key, copy); copy.start();
+  }
+  if (!convert || copy.codec?.startsWith('avc1')) return copy;
+  const hKey = `${key}/h264`;
+  let y = feeds.get(hKey);
+  if (!y || y.source !== copy) {
+    y?.stop('kaynak yayın yenilendi');
+    const h = new Mp4Feed({ ffmpeg, args: [...convertArgs(type), ...extra, ...MP4_OUTPUT], source: copy, onEnd: () => { if (feeds.get(hKey) === h) feeds.delete(hKey); }, label: label(true) });
+    feeds.set(hKey, h); h.start(); y = h;
+  }
+  return y;
+}
+
 const GOP_LIMIT = 16 * 1024 * 1024;   // anahtar karesiz bu kadar birikirse onbellek bosaltilir (sonraki anahtar kare beklenir)
 const GAP_LOG = 3000;   // ffmpeg'den bu kadar sure veri gelmeyip sonra yeniden gelirse gunluge yazilir (kisa duraksama)
 const sec = (ms) => `${(ms / 1000).toFixed(1)} sn`;
 
 export class Mp4Feed {
-  /** etiket: gunlukte akisin adi (cihaz, kamera, kanal, tur); gunluk: test icin yazici. */
-  constructor({ ffmpeg, args, onEnd = () => {}, firstDuration = 15_000, stopDuration = 10_000, label = 'akış', log = console.log }) {
-    Object.assign(this, { ffmpeg, args, onEnd, firstDuration, stopDuration });
+  /**
+   * etiket: gunlukte akisin adi (cihaz, kamera, kanal, tur); gunluk: test icin yazici.
+   * kaynak: baska bir Mp4Feed (kopya yayin); verilirse kamera ikinci kez acilmaz, args onun ciktisina (stdin) uygulanir.
+   */
+  constructor({ ffmpeg, args, source = null, onEnd = () => {}, firstDuration = 15_000, stopDuration = 10_000, label = 'akış', log = console.log }) {
+    Object.assign(this, { ffmpeg, args, source, onEnd, firstDuration, stopDuration });
     this.log = new FeedLog(label, log);
     this.subscribers = new Set(); this.init = null; this.codec = null; this.gop = []; this.gopByte = 0;
     this.error = null; this.stopped = false; this.lastZ = Date.now(); this.splitter = new Fmp4Splitter();
@@ -54,17 +82,32 @@ export class Mp4Feed {
 
   start() {
     this.ready = new Promise((resolve) => { this.resolveReady = resolve; });
-    this.t0 = Date.now(); this.log.event('başladı');
+    this.t0 = Date.now(); this.log.event(this.source ? 'başladı (kopya yayından çevrilir)' : 'başladı');
+    if (this.source) this.source.ready.then(() => this.#fromSource()); else this.#spawn(this.args, 'ignore');
+    return this;
+  }
+
+  /** Kopya yayin hazir: ciktisi bu ffmpeg'in girisine (stdin) abone olur. Kaynak zaten H.264 ise cevrilmez (passthrough). */
+  #fromSource() {
+    const s = this.source;
+    if (this.stopped) return;
+    if (!s.init || s.stopped) { this.error = s.error ?? 'Kameradan görüntü gelmedi'; return this.stop('kaynak yayın açılamadı'); }
+    if (s.codec?.startsWith('avc1')) { this.passthrough = s; return this.stop(`kaynak zaten H.264 (${s.codec}), çevrilmeden verilir`); }
+    this.#spawn(['-f', 'mp4', '-i', 'pipe:0', ...this.args], 'pipe');
+    this.ff.stdin.on('error', () => {});   // ffmpeg kapanirken yazilan parca (EPIPE) paneli dusurmesin
+    s.subscriber(this.ff.stdin);
+  }
+
+  #spawn(args, stdin) {
     this.firstTime = setTimeout(() => { if (!this.init) { this.error ??= 'Kameradan görüntü gelmedi'; this.stop(`ilk görüntü ${sec(this.firstDuration)} içinde gelmedi (ffmpeg çalışıyor)`); } }, this.firstDuration);
     // ffmpeg calisiyor ama cihazdan veri gelmiyor: cihaz baglantiyi tutup gondermeyi birakmis
     this.watcher = setInterval(() => { if (this.init && Date.now() - this.lastZ > this.stopDuration) this.stop(`cihaz veri göndermeyi bıraktı: ${sec(Date.now() - this.lastZ)} veri yok, bağlantı açık (ffmpeg çalışıyordu)`); }, 2000);
-    this.ff = spawn(this.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...this.args], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    this.ff = spawn(this.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...args], { stdio: [stdin, 'pipe', 'pipe'], windowsHide: true });
     this.ff.on('error', (e) => { this.error = `ffmpeg başlatılamadı: ${e.code ?? e.message}`; this.stop(this.error); });   // dinleyicisiz 'error' tum paneli dusurur
     this.ff.stderr.on('data', (b) => this.log.stderr(b));
     this.ff.stdout.on('data', (b) => this.#data(b));
     // ffmpeg kendiliginden kapandi: cihaz baglantiyi kesti ya da akisi reddetti (nedeni ffmpeg satirlarinda)
-    this.ff.on('close', (code, signal) => this.stop(`ffmpeg kapandı (${signal ? `sinyal ${signal}` : `kod ${code}`}) — cihaz bağlantıyı kesti ya da akışı reddetti`));
-    return this;
+    this.ff.on('close', (code, signal) => this.stop(`ffmpeg kapandı (${signal ? `sinyal ${signal}` : `kod ${code}`}) — ${this.source ? 'kopya yayın bitti' : 'cihaz bağlantıyı kesti ya da akışı reddetti'}`));
   }
 
   #data(b) {

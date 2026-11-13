@@ -6,8 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { Fmp4Splitter, makeHvc1, codecName, findBox, boxes } from '../src/drivers/fmp4.mjs';
-import { CONVERT_BITRATE, MP4_OUTPUT } from '../src/drivers/mp4-stream.mjs';
-import { mp4Args } from '../src/drivers/rtsp.mjs';
+import { CONVERT_BITRATE, MP4_OUTPUT, Mp4Feed, convertArgs, sharedMp4 } from '../src/drivers/mp4-stream.mjs';
 import { openApp } from './helpers.mjs';
 
 const example = (encoder) => {
@@ -73,10 +72,11 @@ test('ffmpeg baslatilamazsa (ENOENT) MP4 yayini hata ile kapanir, surec dusmez',
 });
 
 test('ffmpeg: kopya ya da kaynak kalitede H.264 (olcek/kare hizi suzgeci YOK)', () => {
-  const copy = mp4Args('rtsp://x/a', 'Main', false);
-  assert.deepEqual(copy.slice(copy.indexOf('-c:v'), copy.indexOf('-c:v') + 2), ['-c:v', 'copy']);
+  const feeds = new Map(), label = (cv) => (cv ? 'h264' : 'kopya');
+  const copy = sharedMp4(feeds, { ffmpeg: '/yok/ffmpeg', channel: 0, type: 'Main', convert: false, input: () => ['-rtsp_transport', 'tcp', '-i', 'rtsp://x/a'], label });
+  assert.deepEqual(copy.args.slice(copy.args.indexOf('-c:v'), copy.args.indexOf('-c:v') + 2), ['-c:v', 'copy']);
   for (const type of ['Main', 'Extra1']) {
-    const a = mp4Args('rtsp://x/a', type, true);
+    const a = convertArgs(type);
     assert.equal(a[a.indexOf('-c:v') + 1], 'libx264');
     assert.equal(a[a.indexOf('-b:v') + 1], `${CONVERT_BITRATE[type]}k`);
     assert.ok(!a.includes('-r') && !/scale|fps=/.test(a[a.indexOf('-vf') + 1]), 'cozunurluk ve kare hizi kaynaktaki gibi');
@@ -88,6 +88,50 @@ test('ffmpeg: kopya ya da kaynak kalitede H.264 (olcek/kare hizi suzgeci YOK)', 
     assert.equal(a[a.indexOf('-fps_mode') + 1], 'passthrough');
     assert.match(a[a.indexOf('-force_key_frames') + 1], /prev_forced_t/);
   }
+});
+
+test('kanal basina tek kamera baglantisi: H.264 yayini kopyadan cevrilir, kamera ikinci kez acilmaz', () => {
+  const feeds = new Map(), urls = [];
+  const o = (convert) => ({ ffmpeg: '/yok/ffmpeg', channel: 3, type: 'Extra1', convert, extra: ['-aspect', '16:9'], label: (cv) => (cv ? 'h264' : 'kopya'),
+    input: () => { urls.push('rtsp'); return ['-rtsp_transport', 'tcp', '-i', 'rtsp://x/k3']; } });
+  const copy = new Mp4Feed({ ffmpeg: '/yok/ffmpeg', args: [] });
+  copy.ready = new Promise(() => {});   // kopya hic hazir olmaz: cevrilen yayin ffmpeg baslatmadan bekler
+  feeds.set('mp4:3/Extra1', copy);
+  const h = sharedMp4(feeds, o(true));
+  assert.equal(h.source, copy);
+  assert.equal(urls.length, 0, 'cevrilen yayin kameraya baglanmaz');
+  assert.ok(!h.args.includes('-i') && !h.args.includes('-rtsp_transport'), 'girisi kopyanin ciktisi (stdin)');
+  assert.deepEqual(h.args.slice(h.args.indexOf('-aspect'), h.args.indexOf('-aspect') + 2), ['-aspect', '16:9']);
+  assert.equal(sharedMp4(feeds, o(true)), h, 'ikinci izleyici ayni cevrilen yayin');
+  assert.equal(sharedMp4(feeds, o(false)), copy, 'kopya istegi kopya yayina');
+  copy.codec = 'avc1.4d401f';
+  assert.equal(sharedMp4(feeds, o(true)), copy, 'kamera zaten H.264: cevirme yok');
+  h.stop();
+});
+
+test('kaynak zaten H.264 ise cevrilen yayin ffmpeg acmadan kopyaya yonlendirir', async () => {
+  const source = { ready: Promise.resolve(), init: Buffer.alloc(8), codec: 'avc1.4d401f', stopped: false };
+  const y = new Mp4Feed({ ffmpeg: '/yok/ffmpeg', args: [], source, log: () => {} }).start();
+  await y.ready;
+  assert.equal(y.passthrough, source);
+  assert.ok(y.stopped && !y.ff, 'ffmpeg baslatilmadi');
+});
+
+test('H.265 kopya yayin borudan H.264e cevrilir (kaynak kapaninca cevrilen de kapanir)', async () => {
+  // sahte kamera: H.265 kopya yayin (feeds'e onceden konur; sharedMp4 onu kaynak alir)
+  const feeds = new Map(), log = () => {};
+  const copy = new Mp4Feed({ ffmpeg: 'ffmpeg', log, args: ['-re', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=10', '-t', '20', '-c:v', 'libx265', '-x265-params', 'log-level=none', '-g', '10', '-pix_fmt', 'yuv420p', ...MP4_OUTPUT] });
+  feeds.set('mp4:0/Extra1', copy); copy.start();
+  await copy.ready;
+  assert.match(copy.codec, /^hvc1/);
+  const h = sharedMp4(feeds, { ffmpeg: 'ffmpeg', channel: 0, type: 'Extra1', convert: true, input: () => assert.fail('kamera ikinci kez acildi'), label: () => 'h264' });
+  h.log.write = log;
+  await h.ready;
+  assert.match(h.codec, /^avc1/);
+  assert.equal(copy.subscribers.size, 1, 'cevirici kopyanin abonesi');
+  copy.stop();
+  for (let t = 0; !h.stopped && t < 50; t++) await new Promise((r) => setTimeout(r, 100));
+  assert.ok(h.stopped, 'kopya bitince cevrilen de kapanir');
 });
 
 test('/stream/live-mp4?h264=1 ayri yayin; MJPEG web rotasi yok', async () => {

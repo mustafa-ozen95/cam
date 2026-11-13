@@ -50,7 +50,7 @@ export class Dvr {
   }
 
   /** Cihaz TCP baglanti butcesi (10): denetim 1 + canli yayin basina 1 + oynatma/indirme basina 2 (ayri oturum + veri soketi). */
-  budgetVar() { return 1 + this.feeds.size + 2 * (this.playCounter + this.downloadCounter) + 2 <= 10; }
+  budgetVar() { return 1 + [...this.feeds.values()].filter((y) => !y.source).length + 2 * (this.playCounter + this.downloadCounter) + 2 <= 10; }
   canPlay() { return this.playCounter < this.playMax && this.budgetVar(); }
   canDownload() { return this.downloadCounter < this.downloadMax && this.budgetVar(); }
 

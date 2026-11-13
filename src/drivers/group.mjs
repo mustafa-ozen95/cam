@@ -84,7 +84,7 @@ export class DeviceGroup extends DeviceBase {
   // ---------- kanal bazli islemler: ilgili cihaza yonlendirilir ----------
   feed(channel, type, width, fps) { const { c, local } = this.#find(channel); return c.feed(local, type === 'Mini' && !c.miniSupport ? 'Extra1' : type, width, fps); }
   /** Canli MP4; surucusu desteklemeyen cihazda (Xiongmai DVR) null (501). */
-  feedMp4(channel, type, convert) { const { c, local } = this.#find(channel); return c.feedMp4 ? c.feedMp4(local, type, convert, this.feedLabel(c, channel, type, convert)) : null; }
+  feedMp4(channel, type, convert) { const { c, local } = this.#find(channel); return c.feedMp4 ? c.feedMp4(local, type, convert, (cv) => this.feedLabel(c, channel, type, cv)) : null; }
   /** Gunlukte akisin adi: "Cihaz · Kamera adi · kanal 3 · Extra1 h264" (adres/parola yok). */
   feedLabel(c, channel, type, convert) {
     const camera = this.nameOverrides?.[channel] || this.channelNames?.[channel] || `K${channel + 1}`;

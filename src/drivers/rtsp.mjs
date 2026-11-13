@@ -5,7 +5,7 @@
  */
 import { spawn } from 'node:child_process';
 import { DeviceBase, localText, localSec } from './base.mjs';
-import { MP4_OUTPUT, Mp4Feed, convertArgs } from './mp4-stream.mjs';
+import { sharedMp4 } from './mp4-stream.mjs';
 
 const JPEG_START = Buffer.from([0xff, 0xd8]);
 const JPEG_END = Buffer.from([0xff, 0xd9]);
@@ -45,22 +45,16 @@ export class RtspDevice extends DeviceBase {
   }
 
   /**
-   * Canli MP4: tur 'Main' ya da 'Extra1' (alt akis); kanal/tur basina tek baglanti, izleyiciler paylasir.
-   * cevir=false: kameranin videosu oldugu gibi (yeniden kodlamasiz). cevir=true: kaynak kalitede H.264 (tarayici H.265 oynatmiyorsa).
-   * etiket: gunlukte akisin adi (grup verir: cihaz, kamera adi, kanal, tur).
+   * Canli MP4: tur 'Main' ya da 'Extra1' (alt akis); kanal/tur basina TEK kamera baglantisi, izleyiciler paylasir (sharedMp4).
+   * cevir=false: kameranin videosu oldugu gibi (yeniden kodlamasiz). cevir=true: kaynak kalitede H.264 (tarayici H.265 oynatmiyorsa),
+   * kopya yayindan cevrilir. etiket(cevir): gunlukte akisin adi (grup verir: cihaz, kamera adi, kanal, tur).
    */
   feedMp4(channel, type, convert = false, label = null) {
-    const key = `mp4:${channel}/${type}${convert ? '/h264' : ''}`;
-    // Kanalin H.264'e cevrilmis akisi aciksa kopya istegi de ona baglanir (her tarayicida oynar): hangi ekran hangi
-    // kararla gelirse gelsin kanal basina tek kamera baglantisi.
-    const h264 = !convert && this.feeds.get(`${key}/h264`);
-    if (h264 && !h264.stopped) return h264;
-    let y = this.feeds.get(key);
-    if (!y) {
-      y = new Mp4Feed({ ffmpeg: this.ffmpeg, args: mp4Args(this.rtspUrl(this.livePath(channel, type)), type, convert), onEnd: () => this.feeds.delete(key), label: label ?? `${this.setting.host} ${key}` });
-      this.feeds.set(key, y); y.start();
-    }
-    return y;
+    return sharedMp4(this.feeds, {
+      ffmpeg: this.ffmpeg, channel, type, convert,
+      input: () => ['-rtsp_transport', 'tcp', '-i', this.rtspUrl(this.livePath(channel, type))],
+      label: label ?? ((cv) => `${this.setting.host} mp4:${channel}/${type}${cv ? '/h264' : ''}`),
+    });
   }
 
   playMjpeg(res, channel, from, to, width) {
@@ -96,9 +90,6 @@ export class RtspDevice extends DeviceBase {
     ff.on('close', (code) => finish(code === 0 || byte > 0));
   }
 }
-
-/** Canli MP4 ffmpeg argumanlari (test/mp4.test.mjs): kopya ya da kaynak kalitede H.264. */
-export const mp4Args = (url, type, convert) => ['-rtsp_transport', 'tcp', '-i', url, ...(convert ? convertArgs(type) : ['-c:v', 'copy']), ...MP4_OUTPUT];
 
 /** Canli/kayitli MJPEG akisi: aboneler, son, frameCounter, hazir, hata, durdur, firstFrame (sunucu.mjs bu sozlesmeyi kullanir). */
 /**

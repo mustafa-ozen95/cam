@@ -4,7 +4,7 @@
  * Canli MP4 ve /live cihazin RTSP'sinden (554; kimlik adreste: user=..&password=..): H.264, yeniden kodlanmaz.
  */
 import { Dvr } from './xiongmai-dvr.mjs';
-import { MP4_OUTPUT, Mp4Feed, convertArgs } from './mp4-stream.mjs';
+import { sharedMp4 } from './mp4-stream.mjs';
 
 export class Xiongmai extends Dvr {
   constructor(o) {
@@ -27,18 +27,15 @@ export class Xiongmai extends Dvr {
   livePath(channel, type) { return `channel=${channel + 1}&stream=${type === 'Main' ? 0 : 1}.sdp?real_stream`; }
 
   /**
-   * Canli MP4 (RtspDevice.feedMp4 ile ayni sozlesme). Goruntu anamorfik (944x1080, 352x288): -aspect kapta en-boy
-   * oranini verir, tarayici kareyi CAM_RATIO'ya (varsayilan 16:9) acar; yeniden kodlama yok.
+   * Canli MP4 (RtspDevice.feedMp4 ile ayni sozlesme, kanal/tur basina tek baglanti). Goruntu anamorfik (944x1080, 352x288): -aspect kapta en-boy
+   * oranini verir, tarayici kareyi CAM_RATIO'ya (varsayilan 16:9) acar; kopya yayinda yeniden kodlama yok.
    */
   feedMp4(channel, type, convert = false, label = null) {
-    const key = `mp4:${channel}/${type}${convert ? '/h264' : ''}`;
-    let y = this.feeds.get(key);
-    if (!y) {
-      const aspect = this.ratio ? ['-aspect', this.ratio.join(':')] : [];
-      const args = ['-rtsp_transport', 'tcp', '-i', this.rtspUrl(this.livePath(channel, type)), ...(convert ? convertArgs(type) : ['-c:v', 'copy']), ...aspect, ...MP4_OUTPUT];
-      y = new Mp4Feed({ ffmpeg: this.ffmpeg, args, onEnd: () => this.feeds.delete(key), label: label ?? `${this.setting.host} ${key}` });
-      this.feeds.set(key, y); y.start();
-    }
-    return y;
+    return sharedMp4(this.feeds, {
+      ffmpeg: this.ffmpeg, channel, type, convert,
+      input: () => ['-rtsp_transport', 'tcp', '-i', this.rtspUrl(this.livePath(channel, type))],
+      extra: this.ratio ? ['-aspect', this.ratio.join(':')] : [],
+      label: label ?? ((cv) => `${this.setting.host} mp4:${channel}/${type}${cv ? '/h264' : ''}`),
+    });
   }
 }
