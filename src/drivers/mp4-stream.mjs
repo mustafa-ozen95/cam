@@ -25,15 +25,22 @@ export const MP4_OUTPUT = ['-an', '-f', 'mp4', '-movflags', 'frag_keyframe+empty
  * surekli canli uca atladi ve goruntu dondu; akis paylasildigindan sayfayi yenilemek de duzeltmedi.
  * Anahtar kare de onceki zorlanmis kareye gore sayilir: n_forced'a gore sayilsaydi sicramadan sonra her kare anahtar olurdu.
  *
- * Zaman damgasi COZUCUDEN CIKIS ANI (setpts RTCTIME), her kare oncekinden en az 1 ms sonra: kayit cihazi alt akista RTP
- * zamanini geri de sicratiyor; ffmpeg sonraki her kareye "oncekinden 1 tik sonra" diyor, anahtar kare zorlanmiyor ve
- * goruntu 250 karelik (10 sn) yiginlar halinde gelip donuyordu. Damga giriste (-use_wallclock_as_timestamps) DEGIL
- * cozucuden sonra verilir: giriste verilince kopya akis ve cozucu de etkilendi, kareler bozuldu (40c651e).
+ * Zaman damgasi: kaynaktaki kareler arasi sure KORUNUR (en az 1 ms, en cok 1 sn), ama damga gercek saatten (setpts RTCTIME)
+ * en cok 0,5 sn uzaklasabilir. Iki eski yol da bozuktu:
+ *  - Kaynak damgasi oldugu gibi: kayit cihazi RTP zamanini geri sicratinca ffmpeg her kareye "oncekinden 1 tik sonra"
+ *    diyordu; goruntu 250 karelik (10 sn) yiginlar halinde gelip donuyordu.
+ *  - Yalniz cozucuden cikis ani (cef0213): panel ceviricisi kopya yayini 200 ms'lik parcalar halinde okur, parcadaki ~5
+ *    kare ayni anda cozulur ve 1 ms arayla damgalanir; tarayici ayni ana dusen kareleri atiyordu (olculen: 25 kare/sn'nin
+ *    ~18'i atildi, goruntu kasiyordu). 359 karenin 283'u 5 ms'den sik.
+ * Pencere (+-0,5 sn) bozuk oturumda (kaynak damgasi ilerlemiyor ya da sicriyor) gercek saate tutunur: goruntu durmaz.
+ * Damga giriste (-use_wallclock_as_timestamps) DEGIL cozucuden sonra verilir: giriste verilince kopya akis ve cozucu de
+ * etkilendi, kareler bozuldu (40c651e).
  */
 export const CONVERT_BITRATE = { Main: 3000, Extra1: 1000 };
 export const KEYFRAME_EXPR = 'expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+1))';
 const NOW = '(RTCTIME-RTCSTART)/(TB*1000000)';
-export const TIMESTAMP_FILTER = `setpts='if(isnan(PREV_OUTPTS),${NOW},max(${NOW},PREV_OUTPTS+0.001/TB))'`;
+const STEP = 'if(isnan(PTS-PREV_INPTS),0.001/TB,clip(PTS-PREV_INPTS,0.001/TB,1/TB))';
+export const TIMESTAMP_FILTER = `setpts='if(isnan(PREV_OUTPTS),${NOW},max(PREV_OUTPTS+0.001/TB,clip(PREV_OUTPTS+${STEP},${NOW}-0.5/TB,${NOW}+0.5/TB)))'`;
 /**
  * Kopya yayinin zaman damgasi (bitstream suzgeci setts): her kare oncekinden kaynaktaki aralik kadar sonra, en az 1 ms en
  * cok 1 sn. Kayit cihazi RTP zamanini geri sicratinca ffmpeg kopyada her kareye "oncekinden 1 tik sonra" diyordu; ondan

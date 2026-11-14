@@ -16,7 +16,7 @@ import { KEYFRAME_EXPR, TIMESTAMP_FILTER } from '../drivers/mp4-stream.mjs';
  * Olcum: alt akis 704x576 25 kare/sn -> %18 cekirdek, 1,04 Mbps. -bf 0: WebRTC.
  * Zaman damgasi ve kare hizi panelin cevirisiyle ayni (bkz. drivers/mp4-stream.mjs): -fps_mode passthrough olmadan kayit
  * cihazinin zaman damgasi ileri sicrayinca ffmpeg boslugu kopya karelerle doldurdu (olculen: ~1 MB/sn, cekirdek dolu),
- * mediamtx "reader is too slow" deyip kareleri atti ve goruntu dondu. Damga cozucuden cikis ani (setpts RTCTIME); anahtar
+ * mediamtx "reader is too slow" deyip kareleri atti ve goruntu dondu. Damga kaynaktaki kare araligini korur, gercek saatten en cok 0,5 sn uzaklasir; anahtar
  * kare saniyede bir, onceki zorlanmis kareye gore. settb: ffmpeg 8 suzgec zaman tabanini 1/kare hizi yapiyordu; 1 ms adim
  * yuvarlanip damgalar cakisti ("non monotonically increasing dts"). mediamtx komutu kabuk gibi boler: suzgec cift tirnak icinde.
  */

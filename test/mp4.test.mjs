@@ -83,7 +83,7 @@ test('ffmpeg: kopya ya da kaynak kalitede H.264 (olcek/kare hizi suzgeci YOK)', 
     assert.equal(a[a.indexOf('-b:v') + 1], `${CONVERT_BITRATE[type]}k`);
     assert.ok(!a.includes('-r') && !/scale|fps=/.test(a[a.indexOf('-vf') + 1]), 'cozunurluk ve kare hizi kaynaktaki gibi');
     // zaman damgasi cozucuden sonra verilir (cihaz RTP zamanini geri sicratiyor); giriste wallclock YOK (40c651e)
-    assert.match(a[a.indexOf('-vf') + 1], /^setpts=.*RTCTIME.*PREV_OUTPTS/);
+    assert.match(a[a.indexOf('-vf') + 1], /^setpts=.*PREV_OUTPTS\+if\(isnan\(PTS-PREV_INPTS\).*RTCTIME/, 'kare araligi korunur, gercek saate tutunur');
     assert.ok(!a.includes('-use_wallclock_as_timestamps'));
     assert.equal(a[a.indexOf('-bf') + 1], '0');
     // zaman damgasi sicrayinca kopya kare uretilmez (yayin gercek zamandan hizli akip donuyordu)
