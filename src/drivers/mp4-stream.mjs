@@ -46,8 +46,13 @@ export const TIMESTAMP_FILTER = `setpts='if(isnan(PREV_OUTPTS),${NOW},max(PREV_O
  * cok 1 sn. Kayit cihazi RTP zamanini geri sicratinca ffmpeg kopyada her kareye "oncekinden 1 tik sonra" diyordu; ondan
  * sonra yayinin medya zamani ilerlemiyordu (olculen: 450 kare 5 ms'ye sikisti), tarayici oynatamiyordu. Virguller ffmpeg
  * suzgec listesi icin kacislidir.
+ * Damgasiz paket (NOPTS): baglanti zaman damgasiz bir paketle acilinca (HEVC, "PPS id out of range") eski ifade ilk paketi
+ * NOPTS gecirip sonrakileri NOPTS ustune topluyordu; damgalar dev negatif cikiyor, mp4 yazici her kareyi "onceki+1 tik"
+ * yapiyordu. Sonuc: 200 ms'lik parca hic dolmaz, cikis yalniz anahtar karede (4 sn'de bir) gelir; cevirici de bu akisi
+ * saniyede binlerce kare sanip Level 6.2 secer, kareye bit kalmaz, goruntu gri olur (olculen k7: 4 denemenin 2'si).
+ * Simdi: onceki cikis damgasizsa kaynak damga alinir; kaynak ya da onceki girdi damgasizsa 1 ms ilerlenir.
  */
-export const COPY_TIMESTAMP_BSF = 'setts=ts=if(N\\,PREV_OUTPTS+clip(PTS-PREV_INPTS\\,0.001/TB\\,1/TB)\\,PTS)';
+export const COPY_TIMESTAMP_BSF = 'setts=ts=if(eq(PREV_OUTPTS\\,NOPTS)\\,PTS\\,PREV_OUTPTS+if(eq(PTS\\,NOPTS)+eq(PREV_INPTS\\,NOPTS)\\,0.001/TB\\,clip(PTS-PREV_INPTS\\,0.001/TB\\,1/TB)))';
 export const convertArgs = (type) => {
   const b = CONVERT_BITRATE[type] ?? CONVERT_BITRATE.Extra1;
   return ['-vf', TIMESTAMP_FILTER, '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-b:v', `${b}k`, '-maxrate', `${b}k`, '-bufsize', `${2 * b}k`, '-force_key_frames', KEYFRAME_EXPR, '-bf', '0', '-fps_mode', 'passthrough'];

@@ -77,6 +77,7 @@ test('ffmpeg: kopya ya da kaynak kalitede H.264 (olcek/kare hizi suzgeci YOK)', 
   assert.deepEqual(copy.args.slice(copy.args.indexOf('-c:v'), copy.args.indexOf('-c:v') + 2), ['-c:v', 'copy']);
   // kopyada da zaman damgasi duzeltilir (cihaz RTP zamanini geri sicratinca medya zamani durmasin)
   assert.match(copy.args[copy.args.indexOf('-bsf:v') + 1], /^setts=ts=.*PREV_OUTPTS.*clip\(PTS-PREV_INPTS/);
+  assert.match(copy.args[copy.args.indexOf('-bsf:v') + 1], /^setts=ts=if\(eq\(PREV_OUTPTS\\,NOPTS\)\\,PTS.*eq\(PTS\\,NOPTS\)\+eq\(PREV_INPTS\\,NOPTS\)/, 'damgasiz ilk paket sonraki damgalari bozmaz');
   for (const type of ['Main', 'Extra1']) {
     const a = convertArgs(type);
     assert.equal(a[a.indexOf('-c:v') + 1], 'libx264');
