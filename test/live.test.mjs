@@ -5,7 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { CONVERTER_FLOOD, LIVE_TRANSCODE, frozenPaths, livePaths, stuckConverters } from '../src/services/live.mjs';
+import { readFileSync } from 'node:fs';
+import { CONVERTER_FLOOD, LIVE_TRANSCODE, WHEP_TIMEOUT, frozenPaths, livePaths, stuckConverters } from '../src/services/live.mjs';
 import { openApp } from './helpers.mjs';
 
 test('mediamtx yollari: H.264 dogrudan, H.265 kaynak + izlenince calisan cevirici (olcek/kare hizi suzgeci yok)', () => {
@@ -167,4 +168,13 @@ test('/live varsayilan duzen: CAM_LIVE_DEFAULT sirasi (1\'den kanal no), bossa i
   const h = (defaultOrder) => Object.assign(Object.create(LiveService.prototype), { y: { defaultOrder: defaultOrder }, cameras, savedLayout: null });
   assert.deepEqual(h(['k2', 'k9', 'k0']).layout(), { column: 4, paths: ['k2', 'k0'], isDefault: true }, 'listede olmayan atlanir');
   assert.deepEqual(h([]).layout().paths, ['k0', 'k1', 'k2'], 'bos: ilk kameralar');
+});
+
+test('WHEP beklemesi mediamtx acilis suresinden uzun, tarayicininki panelinkinden uzun (kanal dusunce cevirici durdurulmaz)', () => {
+  const yml = readFileSync(new URL('../docker/mediamtx.yml', import.meta.url), 'utf8');
+  const sec = (k) => Number(yml.match(new RegExp(`${k}:\\s*(\\d+)s`))[1]) * 1000;
+  assert.ok(WHEP_TIMEOUT > Math.max(sec('runOnDemandStartTimeout'), sec('sourceOnDemandStartTimeout')), 'panel mediamtx acilisini bekler');
+  const js = readFileSync(new URL('../resources/views/live/live.js', import.meta.url), 'utf8');
+  const browser = Number(js.match(/whep`[^\n]*AbortSignal\.timeout\((\d+)_?(\d*)\)/).slice(1).join(''));
+  assert.ok(browser > WHEP_TIMEOUT, 'tarayici panelden once vazgecmez');
 });

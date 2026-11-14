@@ -49,7 +49,7 @@ class Player {
       await pc.setLocalDescription(offer);
       // Zaman asimi: cevapsiz kalan istek yeniden denemeyi sonsuza dek bekletiyordu ("yeniden deneniyor (1)" deyip kalirdi)
       // X-Cam: panelin CSRF kurali (istegi panel karsilar, mediamtx'e o gecirir)
-      const r = await fetch(`rtc/${this.path}/whep`, { method: 'POST', headers: { 'Content-Type': 'application/sdp', 'X-Cam': '1' }, body: offer.sdp, signal: AbortSignal.timeout(10_000) });
+      const r = await fetch(`rtc/${this.path}/whep`, { method: 'POST', headers: { 'Content-Type': 'application/sdp', 'X-Cam': '1' }, body: offer.sdp, signal: AbortSignal.timeout(30_000) });   // panelin WHEP_TIMEOUT'undan (25 sn) uzun: kanal yeniden ayaga kalkarken beklenir
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const answer = await r.text();
       if (this.pc !== pc) return;

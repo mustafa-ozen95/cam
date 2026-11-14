@@ -58,6 +58,14 @@ export function frozenPaths(received, items, requested) {
 
 /** Cevirici cikisi bunun ustundeyse kopya kare yigini sayilir (B/sn). Normal: 1000 kbit ~ 125 KB/sn; kilitlenen ~1,2 MB/sn. */
 export const CONVERTER_FLOOD = 500 * 1024;
+/**
+ * WHEP bekleme suresi (panel -> mediamtx). Kayit cihazi bir kanali dusurunce (olculen: k22/k17/k27, 34 dk'da 18 kez) yol
+ * hazir degilken gelen izleme istegi, mediamtx cevirici yeniden ayaga kalkana dek bekler. Eskiden 10 sn'de kesiliyordu:
+ * izleyici "zaman asimi" goruyor, bekleyen kalmayinca mediamtx ceviriciyi "not needed by anyone" diye durdurup sonraki
+ * denemede bastan baslatiyordu (kesinti 8 sn yerine ~24 sn). mediamtx'in acilis suresinden (runOnDemandStartTimeout
+ * 20 sn, sourceOnDemandStartTimeout 15 sn; docker/mediamtx.yml) uzun olmali; tarayicinin beklemesi bundan da uzundur.
+ */
+export const WHEP_TIMEOUT = 25_000;
 
 /**
  * Takilan ceviriciler (test/live.test.mjs). Cevirici (runOnDemand ffmpeg) olmeden kilitlenebiliyor: kaynagi okumayi
@@ -175,7 +183,7 @@ export class LiveService {
    */
   async whep(path, offer) {
     if (!this.cameras.some((k) => k.path === path)) return { status: 404, sdp: '' };
-    const r = await fetch(`${this.y.rtcWhep}/${encodeURIComponent(path)}/whep`, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer, signal: AbortSignal.timeout(10_000) });
+    const r = await fetch(`${this.y.rtcWhep}/${encodeURIComponent(path)}/whep`, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer, signal: AbortSignal.timeout(WHEP_TIMEOUT) });
     return { status: r.status, sdp: await r.text() };
   }
 
