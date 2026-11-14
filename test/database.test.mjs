@@ -25,7 +25,7 @@ test('goc: sema kurulur, tekrar kosunca bir sey yapmaz, surum tablosu dolu', asy
     const rows = await v.db.query('SELECT version FROM migrations ORDER BY version');
     assert.deepEqual(rows.map((s) => s.version), MIGRATIONS.map((m) => m.version));
     const tables = (await v.db.query('SHOW TABLES')).map((r) => Object.values(r)[0]).sort();
-    assert.deepEqual(tables, ['api_keys', 'audit_log', 'builtin_role_permissions', 'devices', 'hub_links', 'migrations', 'roles', 'settings', 'users']);
+    assert.deepEqual(tables, ['api_keys', 'audit_log', 'builtin_role_permissions', 'devices', 'hub_links', 'live_pages', 'migrations', 'roles', 'settings', 'users']);
   } finally { await v.remove(); }
 });
 
@@ -274,7 +274,7 @@ test('goc v3: eski etiketli cihaz parolasi, gunluk zinciri ve parmak izi yeni et
   const secret = randomBytes(32), v = await v2Database(secret), logs = [];
   try {
     const oldAudit = await auditRows(v.q);
-    assert.deepEqual(await v.db.runMigrations({ secret, log: (m) => logs.push(m) }), [3]);
+    assert.deepEqual(await v.db.runMigrations({ secret, log: (m) => logs.push(m) }), [3, 4]);   // 4: canli sayfalar (veriye dokunmaz, tablo ekler)
     // cihaz parolalari: yeni anahtarla cozulur, bos olan bos kalir
     const key = devicePasswordKey(secret), dev = Object.fromEntries((await v.q('SELECT id, password FROM devices'))[0].map((d) => [d.id, d.password]));
     assert.equal(unseal(key, JSON.parse(dev.d1)), 'parola-bir'); assert.equal(unseal(key, JSON.parse(dev.d2)), 'parola-iki'); assert.equal(dev.d3, null);
@@ -345,4 +345,27 @@ test('goc v3: uygulamanin yeni etiketleri goc edilmis veriyle uyumlu (cihaz paro
       assert.equal((await t.services.db.query("SELECT COUNT(*) AS n FROM api_keys WHERE revoked IS NULL"))[0].n, 1, 'eski anahtarlar iptal, yalniz yenisi etkin');
     } finally { await t.close(); }
   } finally { remove(k); await v.remove(); }
+});
+
+test('goc v4: tek /live sayfasi kayda doner (kayitli duzenle), tablo doluysa dokunulmaz, silinen ilk sayfa geri gelmez', async () => {
+  const v = await openDb();
+  try {
+    const pages = async () => (await v.db.query('SELECT id, slug, access, roles, layout FROM live_pages ORDER BY seq')).map((r) => ({ ...r }));
+    assert.deepEqual(await pages(), [{ id: 'live', slug: 'live', access: 'public', roles: '[]', layout: null }], 'yeni kurulum: varsayilan duzenli /live');
+    // eski kurulum: kayitli duzen tasinir
+    await v.db.query('DELETE FROM live_pages'); await v.db.query('DELETE FROM migrations WHERE version = 4');
+    const layout = { column: 3, paths: ['k2', 'k0'], savedBy: 'admin', time: 't' };
+    await v.db.query("INSERT INTO settings (name, value) VALUES ('live-layout', ?)", [JSON.stringify(layout)]);
+    assert.deepEqual(await v.db.runMigrations(), [4]);
+    assert.deepEqual(JSON.parse((await pages())[0].layout), layout);
+    assert.ok((await v.db.query("SELECT name FROM settings WHERE name = 'live-layout'")).length, 'eski belge geri donus icin yerinde');
+    // tablo doluysa (yarida kalip yeniden kosan goc) ikinci kayit eklenmez
+    await v.db.query('DELETE FROM migrations WHERE version = 4');
+    assert.deepEqual(await v.db.runMigrations(), [4]);
+    assert.equal((await pages()).length, 1);
+    // silinen ilk sayfa sonraki acilista geri gelmez (goc surum tablosunda kayitli)
+    await v.db.query('DELETE FROM live_pages');
+    assert.deepEqual(await v.db.runMigrations(), []);
+    assert.deepEqual(await pages(), []);
+  } finally { await v.remove(); }
 });

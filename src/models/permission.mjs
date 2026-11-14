@@ -34,6 +34,9 @@ export const PERMISSIONS = {
   'update.check': { group: 'management', tr: 'Güncelleme durumunu görme ve kontrol etme', en: 'View and check for updates' },
   'database.manage': { group: 'management', tr: 'Veritabanını taşıma ya da mevcut veritabanına bağlama', en: 'Move the database or connect to an existing one' },
   'update.apply': { group: 'management', tr: 'Yeni sürümü kurdurma (platformun deploy hook\'u)', en: 'Start an update (platform deploy hook)' },
+  // Ad bilerek "live." onekli DEGIL: "live.*" verilmis bir rol kendiliginden sayfa yoneticisi olmasin.
+  // Dikkat: yonetici bir sayfayi herkese acik yapip duzenine kamera koyabilir (kapsamli yonetici yalniz kendi kanallarini).
+  'livepage.manage': { group: 'management', tr: 'Canlı izleme sayfalarını yönetme (oluşturma, yol, erişim, düzen, silme; herkese açık sayfaya kamera koyabilir)', en: 'Manage live pages (create, path, access, layout, delete; can put cameras on a public page)' },
 };
 export const PERMISSION_GROUPS = {
   viewing: { tr: 'İzleme', en: 'Viewing' },

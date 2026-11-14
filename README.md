@@ -40,6 +40,14 @@ Data lives in MariaDB (`db` service, named volume `cam_database`); to use an ext
 `DB_REPLICAS=0` so the `db` service does not start. The HTTP port is not published; the reverse proxy in front provides the domain and TLS (it reaches the
 panel on 80). The `/live` video comes from the `cam-rtc` (mediamtx) service over 8189/udp; the server address given to the
 browser is `CAM_RTC_HOST`.
+
+**Live pages** (Settings → Live pages, permission `livepage.manage`): each page is a record: name, path (`/<path>/`, a-z 0-9 -),
+access and its own camera layout. A *public* page is watched without signing in and can be embedded (`CAM_LIVE_EMBED`); a
+*sign-in required* page shows the sign-in form at the same address and opens only for members of the selected roles (none selected:
+every member with `live.view`); administrators always see it, scoped members only their channels. A page lists and plays ONLY the
+cameras in its own layout. The former single `/live` page becomes the first record in migration 4 (same address, layout and public
+access) and can be deleted. Limit: when access is removed or a page is deleted new connections are refused and an open screen drops
+the video within 30 s; an open WebRTC session is not cut on the server.
 ```
 cp .env.example .env          # optional; chmod 600 .env
 docker compose up -d --build  # or: npm start
@@ -53,7 +61,7 @@ from the **Cihaz** (device) tab (the connection is tested before saving); `CAM_D
 the `devices` table is empty.
 
 ## Database and backup
-All data (members, devices, roles, API keys, audit log, channel settings, /live layout, update status, KYM links) is in MariaDB/MySQL
+All data (members, devices, roles, API keys, audit log, channel settings, live pages and their layouts, update status, KYM links) is in MariaDB/MySQL
 (driver `mysql2`, utf8mb4). Connection: `DB_HOST` (default `db`), `DB_PORT` (3306), `DB_DATABASE` (`cam`), `DB_USERNAME` (`cam`),
 `DB_PASSWORD` (required). At start the panel waits for the database (`DB_WAIT_SEC`, default 60 s) and then runs its own migrations
 (version table `migrations`, ordered, repeating does nothing). `/api/v1/health` is unhealthy when the database is unreachable.
@@ -89,7 +97,7 @@ Only what the sign-in page needs is reachable without identity: the sign-in form
 Passwords use scrypt; device passwords AES-256-GCM; keys an HMAC digest; cookies HttpOnly+SameSite (Secure over HTTPS); CSRF header; CSP/nosniff/frame/referrer headers; 1 MB body limit; path traversal protection; brute-force lockout (sign-in and keys); no secrets in the log; HMAC-chained audit log. Behind a reverse proxy without `CAM_IP_HEADER` (e.g. `CF-Connecting-IP`), IP lists work on the socket address. Put TLS in front of plain HTTP.
 
 ## Environment variables
-`CAM_PORT` (8191; 80 in the image), `CAM_HOST`, `CAM_TITLE`, `CAM_COOKIE` (several panels on the same IP: different names), `CAM_DATA` (data folder), `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_WAIT_SEC`, `CAM_SECRET_KEY`, `CAM_DEVICES` (initial seed, JSON), `CAM_ADMIN_PASSWORD`, `CAM_RATIO` (16:9), `CAM_PLAYBACK_MAX` (4), `CAM_DOWNLOAD_MAX` (2), `CAM_STREAM_MAX` (24 per device), `CAM_FFMPEG`, `CAM_IP_HEADER`, `CAM_PROXY`, `CAM_TLS_CERT/KEY/PORT`, `CAM_LIVE_EMBED` (origins allowed to embed `/live`), `CAM_LIVE_DEFAULT` (`/live` cameras while no layout is saved: comma-separated channel numbers from 1, in order; empty = first 12), `CAM_HUB_*` (above), `UPDATE_TOKEN`, `UPDATE_HOOK_URL` (below), `CAM_TEST=1` (fake driver, tests only).
+`CAM_PORT` (8191; 80 in the image), `CAM_HOST`, `CAM_TITLE`, `CAM_COOKIE` (several panels on the same IP: different names), `CAM_DATA` (data folder), `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_WAIT_SEC`, `CAM_SECRET_KEY`, `CAM_DEVICES` (initial seed, JSON), `CAM_ADMIN_PASSWORD`, `CAM_RATIO` (16:9), `CAM_PLAYBACK_MAX` (4), `CAM_DOWNLOAD_MAX` (2), `CAM_STREAM_MAX` (24 per device), `CAM_FFMPEG`, `CAM_IP_HEADER`, `CAM_PROXY`, `CAM_TLS_CERT/KEY/PORT`, `CAM_LIVE_EMBED` (origins allowed to embed public live pages), `CAM_LIVE_DEFAULT` (cameras of the migrated `/live` page while it has no saved layout: comma-separated channel numbers from 1, in order; empty = first 12), `CAM_HUB_*` (above), `UPDATE_TOKEN`, `UPDATE_HOOK_URL` (below), `CAM_TEST=1` (fake driver, tests only).
 
 ## Update check
 **Ayarlar → Güncelleme** (update) (`update.check` permission; admin has it) compares the running version with the **last successful image build** of the main branch on GitHub: how many commits behind, which commits are new. The direction is measured as well; if the running version is newer than the last build it is not called an "update". The check runs by itself every morning at 06:50, the button runs it immediately; if a new version exists, those with this permission see a warning at the top of the page. If a new version exists and `UPDATE_HOOK_URL` (the platform's deploy hook, e.g. NineDeploy → Service → Settings → Deploy hook) is set, **Şimdi güncelle** (`update.apply` permission; admin has it) triggers that hook after a confirmation: the platform redeploys the repository's main branch. The panel cannot run anything on the server; the hook URL is a secret and never reaches the browser or the log. Same rules as Settings → Güncelleme in the DC panels.

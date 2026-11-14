@@ -1,11 +1,13 @@
 /**
- * /live: uyeliksiz izleme, yalniz admin duzen kaydeder, gomme yalniz /live'da serbest; mediamtx yollari (H.265 -> kaynak kalitede H.264).
+ * Canli sayfalar (/<yol>/): public sayfada uyeliksiz izleme, private sayfada giris + rol; duzeni yalniz livepage.manage kaydeder;
+ * gomme yalniz public sayfada serbest; sayfa yalniz kendi duzenindeki kameralari verir; mediamtx yollari (H.265 -> kaynak kalitede H.264).
  * mediamtx yerine kucuk bir sahte API (yol listesi bos, yazmalar kabul).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { CONVERTER_FLOOD, LIVE_TRANSCODE, WHEP_TIMEOUT, frozenPaths, livePaths, stuckConverters } from '../src/services/live.mjs';
 import { openApp } from './helpers.mjs';
 
@@ -89,7 +91,8 @@ test('/live acik: izleme kimliksiz, duzen yalniz admin (CSRF), gomme yalniz /liv
     assert.equal((await fetch(`${u.B}/live/..%2Findex.html`)).status, 404);
     const k = await (await fetch(`${u.B}/live/cameras.json`)).json();
     assert.deepEqual(k.cameras.map((x) => x.path), ['k0', 'k1']); assert.ok(!JSON.stringify(k).includes('rtsp'));
-    assert.deepEqual(await (await fetch(`${u.B}/live/access`)).json(), { canEdit: false, name: null });
+    assert.deepEqual(await (await fetch(`${u.B}/live/access`)).json(), { canEdit: false, name: null, title: 'Kameralar', access: 'public' });
+    assert.match(await (await fetch(`${u.B}/live/`)).text(), /<title>Kameralar<\/title>/, 'baslik sayfa adindan');
 
     const body = JSON.stringify({ column: 3, paths: ['k1', 'k0'] });
     assert.equal((await fetch(`${u.B}/live/layout`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Cam': '1' }, body: body })).status, 401);
@@ -165,9 +168,10 @@ test('/live varsayilan duzen: CAM_LIVE_DEFAULT sirasi (1\'den kanal no), bossa i
   } finally { process.env = old; }
   const { LiveService } = await import('../src/services/live.mjs');
   const cameras = [{ path: 'k0' }, { path: 'k1' }, { path: 'k2' }];
-  const h = (defaultOrder) => Object.assign(Object.create(LiveService.prototype), { y: { defaultOrder: defaultOrder }, cameras, savedLayout: null });
-  assert.deepEqual(h(['k2', 'k9', 'k0']).layout(), { column: 4, paths: ['k2', 'k0'], isDefault: true }, 'listede olmayan atlanir');
-  assert.deepEqual(h([]).layout().paths, ['k0', 'k1', 'k2'], 'bos: ilk kameralar');
+  const h = (defaultOrder) => Object.assign(Object.create(LiveService.prototype), { y: { defaultOrder: defaultOrder }, cameras });
+  assert.deepEqual(h(['k2', 'k9', 'k0']).layoutOf({ layout: null }), { column: 4, paths: ['k2', 'k0'], isDefault: true }, 'listede olmayan atlanir');
+  assert.deepEqual(h([]).layoutOf({ layout: null }).paths, ['k0', 'k1', 'k2'], 'bos: ilk kameralar');
+  assert.deepEqual(h([]).layoutOf({ layout: { column: 2, paths: [] } }).paths, [], 'kayitli bos duzen varsayilana dusmez');
 });
 
 test('WHEP beklemesi mediamtx acilis suresinden uzun, tarayicininki panelinkinden uzun (kanal dusunce cevirici durdurulmaz)', () => {
@@ -177,4 +181,132 @@ test('WHEP beklemesi mediamtx acilis suresinden uzun, tarayicininki panelinkinde
   const js = readFileSync(new URL('../resources/views/live/live.js', import.meta.url), 'utf8');
   const browser = Number(js.match(/whep`[^\n]*AbortSignal\.timeout\((\d+)_?(\d*)\)/).slice(1).join(''));
   assert.ok(browser > WHEP_TIMEOUT, 'tarayici panelden once vazgecmez');
+});
+
+/** Sahte mediamtx: /v3 yonetim cagrilari bos, WHEP teklifleri kaydedilir ve 201 doner. */
+async function fakeMediamtx() {
+  const incoming = [];
+  const mtx = createServer((req, res) => {
+    let g = ''; req.on('data', (b) => { g += b; });
+    req.on('end', () => {
+      if (req.url.startsWith('/v3/')) { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(req.url.includes('/list') ? '{"items":[]}' : '{}'); }
+      incoming.push(req.url); res.writeHead(201, { 'Content-Type': 'application/sdp' }); res.end('v=0 cevap');
+    });
+  }).listen(0);
+  await new Promise((r) => mtx.once('listening', r));
+  return { mtx, incoming, address: `http://127.0.0.1:${mtx.address().port}` };
+}
+const CAMERAS = [{ path: 'k0', name: 'Kamera 1', device: 'A', converted: false }, { path: 'k1', name: 'Kamera 2', device: 'A', converted: false }, { path: 'k2', name: 'Kamera 3', device: 'A', converted: false }];
+
+test('coklu canli sayfa: private sayfa giris + rol ister, kameralari baska sayfanin ucundan cekilemez', async () => {
+  const { mtx, incoming, address } = await fakeMediamtx();
+  const u = await openApp({ live: { rtcApi: address, rtcWhep: address, frame: '*' } });
+  const whep = (slug, path, cookie) => fetch(`${u.B}/${slug}/rtc/${path}/whep`, { method: 'POST', headers: { 'Content-Type': 'application/sdp', 'X-Cam': '1', ...(cookie ? { Cookie: cookie } : {}) }, body: 'v=0 teklif' });
+  const get = (path, cookie) => fetch(u.B + path, { headers: cookie ? { Cookie: cookie } : {}, redirect: 'manual' });
+  try {
+    await u.services.live.first;
+    u.services.live.cameras = CAMERAS;
+    await u.login('admin', 'adminparola1');
+    // public /live yalniz k0; private /ofis yalniz k1 (camera rolu)
+    assert.equal((await u.req('/live/layout', { method: 'PUT', body: { column: 2, paths: ['k0'] } })).status, 200);
+    const add = await u.req('/api/live-pages', { method: 'POST', body: { name: 'Ofis', slug: '/Ofis/', access: 'private', roles: ['camera'] } });
+    assert.equal(add.status, 200, add.text); assert.equal(add.json.slug, 'ofis'); assert.equal(add.json.cameraCount, 0, 'yeni sayfa bos dogar');
+    const id = add.json.id;
+    assert.equal((await u.req('/ofis/layout', { method: 'PUT', body: { column: 2, paths: ['k1'] } })).status, 200);
+
+    // kimliksiz: giris formu ayni adreste, veri uclari 401, mediamtx'e istek gitmez
+    const page = await get('/ofis/');
+    assert.equal(page.status, 200); const html = await page.text();
+    assert.match(html, /id="form"/, 'giris formu'); assert.match(html, /href="\/css\/app\.css"/, 'varlik adresleri kokten');
+    assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'self'/, 'private sayfa gomulmez');
+    for (const p of ['/ofis/cameras.json', '/ofis/layout.json', '/ofis/access', '/ofis/live.js']) assert.equal((await get(p)).status, 401, p);
+    incoming.length = 0;
+    assert.equal((await whep('ofis', 'k1')).status, 401);
+    assert.equal((await whep('live', 'k1')).status, 404, 'private sayfanin kamerasi public sayfanin ucundan cekilemez');
+    assert.equal((await whep('live', 'k2')).status, 404, 'public sayfa duzen disi kamerayi vermez');
+    assert.deepEqual(incoming, []);
+    assert.deepEqual((await (await get('/live/cameras.json')).json()).cameras.map((k) => k.path), ['k0'], 'public sayfa yalniz kendi duzenini listeler');
+    assert.equal((await whep('live', 'k0')).status, 201);
+
+    // rol: camera -> gorur; baska rol (live.view'li) -> 403; admin -> gorur (editor: tum kameralar)
+    await u.services.members.add('ayse', 'ayseparola12', 'camera');
+    await u.login('ayse', 'ayseparola12');
+    const ayse = u.cookies.get('ayse');
+    const s = await get('/ofis/', ayse);
+    assert.equal(s.status, 200); assert.match(await s.text(), /<title>Ofis<\/title>/);
+    assert.match(s.headers.get('content-security-policy'), /frame-ancestors 'self'/);
+    assert.deepEqual((await (await get('/ofis/cameras.json', ayse)).json()).cameras.map((k) => k.path), ['k1']);
+    assert.equal((await whep('ofis', 'k1', ayse)).status, 201);
+    assert.equal((await whep('ofis', 'k0', ayse)).status, 404, 'sayfanin duzeninde olmayan kamera');
+    assert.equal((await u.req('/ofis/layout', { method: 'PUT', body: { column: 2, paths: ['k0'] }, who: 'ayse' })).status, 403, 'duzen yalniz yonetici');
+    const role = await u.req('/api/access/roles', { method: 'POST', body: { id: 'izleyici', name: 'İzleyici', permissions: ['live.view'] } });
+    assert.equal(role.status, 200, role.text);
+    await u.services.members.add('ali', 'aliparola1234', 'izleyici');
+    await u.login('ali', 'aliparola1234');
+    const ali = u.cookies.get('ali');
+    assert.equal((await get('/ofis/', ali)).status, 403);
+    assert.equal((await get('/ofis/cameras.json', ali)).status, 403);
+    assert.equal((await whep('ofis', 'k1', ali)).status, 403);
+    // sayfaya bagli rol silinemez
+    const r2 = await u.req('/api/access/roles', { method: 'POST', body: { id: 'gece', name: 'Gece', permissions: ['live.view'] } });
+    assert.equal(r2.status, 200, r2.text);
+    assert.equal((await u.req(`/api/live-pages/${id}`, { method: 'PATCH', body: { roles: ['camera', 'gece'] } })).status, 200);
+    assert.equal((await u.req('/api/access/roles/gece', { method: 'DELETE' })).status, 409, 'sayfaya bagli rol');
+    // rol listesi bosaltilinca live.view olan herkes gorur; live.view'siz rol goremez
+    assert.equal((await u.req(`/api/live-pages/${id}`, { method: 'PATCH', body: { roles: [] } })).status, 200);
+    assert.equal((await u.req('/api/access/roles/gece', { method: 'DELETE' })).status, 200, 'artik bagli degil');
+    assert.equal((await get('/ofis/cameras.json', ali)).status, 200, 'rol listesi bos: live.view yeter');
+    await u.req('/api/access/roles', { method: 'POST', body: { id: 'muhasebe2', name: 'Muhasebe 2', permissions: ['recording.list'] } });
+    await u.services.members.add('veli', 'veliparola1234', 'muhasebe2');
+    await u.login('veli', 'veliparola1234');
+    assert.equal((await get('/ofis/cameras.json', u.cookies.get('veli'))).status, 403, 'live.view yok');
+    const admin = u.cookies.get('admin');
+    assert.equal((await (await get('/ofis/access', admin)).json()).canEdit, true);
+    assert.equal((await (await get('/ofis/cameras.json', admin)).json()).cameras.length, 3, 'editor tum kameralari gorur (taslak)');
+
+    // izleyici listesi: yalniz gorebildikleri, ayrintisiz
+    const list = await u.req('/api/live-pages', { who: 'ayse' });
+    assert.equal(list.status, 200); assert.equal(list.json.manage, false);
+    assert.deepEqual(list.json.pages.map((p) => p.slug).sort(), ['live', 'ofis']);
+    assert.equal((await u.req('/api/live-pages', { method: 'POST', body: { name: 'x', slug: 'x' }, who: 'ayse' })).json.requiredPermission, 'livepage.manage');
+
+    // yol degisince eski adres 404, yeni calisir; ilk sayfa silinebilir
+    assert.equal((await u.req(`/api/live-pages/${id}`, { method: 'PATCH', body: { slug: 'depo' } })).status, 200);
+    assert.equal((await get('/ofis/', admin)).status, 404);
+    assert.equal((await get('/depo/cameras.json', admin)).status, 200);
+    assert.equal((await u.req('/api/live-pages/live', { method: 'DELETE' })).status, 200);
+    for (const p of ['/live/', '/live/cameras.json']) assert.equal((await get(p)).status, 404, p);
+    assert.equal((await whep('live', 'k0')).status, 404);
+    assert.equal((await get('/depo/layout.json', ayse)).status, 200, 'diger sayfa calismaya devam eder');
+    await u.services.auditLog.wait();
+    const events = new Set((await u.req('/api/audit-log?size=200')).json.records.map((k) => k.event));
+    for (const e of ['livepage-add', 'livepage-edit', 'livepage-delete', 'livepage-layout']) assert.ok(events.has(e), e);
+  } finally { await u.close(); mtx.close(); }
+});
+
+test('canli sayfa yolu: dogrulama, cakisma ve panel rotalarini golgelememe; kalicilik', async () => {
+  const { mtx, address } = await fakeMediamtx();
+  const secretKey = randomBytes(32).toString('base64');
+  const u = await openApp({ secretKey, live: { rtcApi: address, rtcWhep: address } });
+  try {
+    await u.login('admin', 'adminparola1');
+    for (const slug of ['api', 'css', 'login', 'docs', 'stream', 'a.b', 'a/b', '', '-a', 'ç', 'x'.repeat(65)]) assert.equal((await u.req('/api/live-pages', { method: 'POST', body: { name: 'X', slug } })).status, 400, slug);
+    assert.equal((await u.req('/api/live-pages', { method: 'POST', body: { name: 'X', slug: 'live' } })).status, 409);
+    assert.equal((await u.req('/api/live-pages', { method: 'POST', body: { name: 'X', slug: 'yeni', access: 'gizli' } })).status, 400);
+    assert.equal((await u.req('/api/live-pages', { method: 'POST', body: { name: 'X', slug: 'yeni', access: 'private', roles: ['yok'] } })).status, 400);
+    assert.equal((await u.req('/api/live-pages', { method: 'POST', body: { name: '', slug: 'yeni' } })).status, 400);
+    const ok = await u.req('/api/live-pages', { method: 'POST', body: { name: 'Yeni', slug: 'yeni-2' } });
+    assert.equal(ok.status, 200, ok.text); assert.equal(ok.json.access, 'public');
+    // genel /:live kaliplari baska yollari golgelemez
+    assert.equal((await u.req('/api/login')).status, 405);
+    assert.equal((await u.req('/api/yok')).status, 404);
+    assert.equal((await u.req('/bilinmeyen/')).status, 404);
+    assert.equal((await u.req('/css/app.css')).status, 200);
+    // kalicilik: yeniden aciliste kayitlar yerinde, silinen ilk sayfa geri gelmez
+    assert.equal((await u.req('/api/live-pages/live', { method: 'DELETE' })).status, 200);
+    await u.close({ permanent: true });
+    const v = await openApp({ database: u.database, secretKey, live: { rtcApi: address, rtcWhep: address } });
+    try { assert.deepEqual(v.services.livePages.list().map((p) => p.slug), ['yeni-2']); }
+    finally { await v.close(); await u.database.remove(); }
+  } finally { mtx.close(); }
 });

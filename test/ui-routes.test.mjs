@@ -17,7 +17,7 @@ const DEAD = new Set(['/api/archive', '/api/archive/:p', '/api/jobs/wipe', '/api
 test('arayuzdeki her /api ve /stream basvurusu rota tablosunda var', async () => {
   const t = await openApp();
   try {
-    const patterns = t.app.router.list().map((r) => r.pattern);
+    const patterns = t.app.router.list().map((r) => r.pattern).filter((p) => !p.startsWith('/:'));   // /:live kaliplari her yolu tutar, sinamayi bosa cikarirdi
     const matcher = (p) => new RegExp(`^${p.replace(/:\w+/g, '[^/]+')}$`);
     const table = patterns.map(matcher);
     const refs = new Map();

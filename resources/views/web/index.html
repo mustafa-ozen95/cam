@@ -25,8 +25,8 @@
 
     <span class="topbar__counts"><span class="status"><span class="dot dot--gray" id="deviceDot" aria-hidden="true"></span><span id="deviceText">bağlanıyor…</span></span></span>
 
-    <!-- Canli izleme sayfasi (/live, uyeliksiz; panelle ayni akis): yalniz admin ve sayfa acikken gorunur -->
-    <a href="/live/" class="btn btn--ghost btn--sm" id="liveLink" title="Canlı izleme sayfasına geç (üyeliksiz)" hidden>Live</a>
+    <!-- Canli izleme sayfalari (/<yol>/; Ayarlar -> Canlı sayfalar): kimligin gorebildikleri, sayfalar acikken -->
+    <span class="row row--tight" id="liveLinks" hidden></span>
     <button type="button" class="btn btn--ghost btn--icon btn--sm" data-theme-toggle aria-label="Temayı değiştir">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
         <circle cx="12" cy="12" r="4" />
@@ -216,6 +216,16 @@
         <input class="filter__input" type="search" id="memberSearch" placeholder="Kullanıcı adı" aria-label="Üye filtrele" autocomplete="off">
       </form>
       <section class="panel"><div class="panel__body panel__body--flush" id="memberList"></div></section>
+    </div></section>
+
+    <!-- CANLI SAYFALAR (livepage.manage): /<yol>/ adresli izleme sayfalari; erisim herkese acik ya da giris + rol -->
+    <section class="page" id="s-livepages" hidden><div class="page__inner page__inner--wide">
+      <header class="page-head">
+        <div class="page-head__text"><h1>Ayarlar</h1><p class="page-head__subtitle">Canlı izleme sayfaları: her sayfanın kendi adresi, erişimi ve kamera düzeni vardır. <b>Herkese açık</b> sayfa üyeliksiz izlenir; <b>Giriş gerekli</b> sayfayı yalnız seçilen rollerdeki (seçilmezse canlı izleme izni olan her) üye görür. Kameralar sayfanın kendi <b>Düzenle</b> kipinden seçilir.</p></div>
+        <div class="page-head__actions"><button type="button" class="btn btn--primary btn--sm" id="livePageAdd">Yeni canlı sayfa</button></div>
+      </header>
+      <div class="alert alert--warning" id="livePageClosed" hidden>Görüntü sunucusu (CAM_RTC_API) yapılandırılmamış: sayfalar şu an 404 verir.</div>
+      <section class="panel"><div class="panel__body panel__body--flush" id="livePageList"></div></section>
     </div></section>
 
     <!-- GUNLUK (yalniz admin) -->
@@ -488,6 +498,29 @@
   </div>
 </div>
 
+<div class="modal" id="livePageDialog" data-modal hidden role="dialog" aria-modal="true" aria-labelledby="livePageHeader">
+  <div class="modal__box">
+    <header class="modal__header">
+      <h2 class="modal__title" id="livePageHeader"></h2>
+      <button type="button" class="modal__close" data-modal-close aria-label="Kapat">&times;</button>
+    </header>
+    <form id="livePageForm" autocomplete="off">
+      <div class="modal__body">
+        <div class="alert alert--danger modal__alert" id="livePageError" hidden></div>
+        <div class="field"><label class="field__label" for="livePageName">Ad</label><input class="input" id="livePageName" maxlength="100" required><span class="field__hint">Sayfa başlığında görünür.</span></div>
+        <div class="field"><label class="field__label" for="livePageSlug">Yol</label><input class="input input--mono" id="livePageSlug" maxlength="64" autocapitalize="none" spellcheck="false" required><span class="field__hint" id="livePageSlugHint">a-z, 0-9, - · adres: /yol/ · yol değişince eski adres çalışmaz</span></div>
+        <div class="field"><label class="field__label" for="livePageAccess">Erişim</label>
+          <select class="select" id="livePageAccess"><option value="public">Herkese açık (üyeliksiz izlenir, gömülebilir)</option><option value="private">Giriş gerekli</option></select></div>
+        <div class="field" id="livePageRoleField"><span class="field__label">Görebilen roller</span><div id="livePageRoles" class="permission-list"></div><span class="field__hint">Hiçbiri seçilmezse canlı izleme izni olan her üye görür. Yönetici her zaman görür.</span></div>
+      </div>
+      <footer class="modal__footer">
+        <button type="button" class="btn" data-modal-close>Vazgeç</button>
+        <button type="submit" class="btn btn--primary" id="livePageSave">Kaydet</button>
+      </footer>
+    </form>
+  </div>
+</div>
+
 <div class="modal" id="roleDialog" data-modal hidden role="dialog" aria-modal="true" aria-labelledby="roleHeader">
   <div class="modal__box modal__box--wide">
     <header class="modal__header">
@@ -747,24 +780,24 @@ function table(headers, rows) {
 let info = null;
 const visible = () => (info ? info.channelNames.map((_, k) => k).filter((k) => !info.channelEmpty?.[k]) : []);
 const status = { tab: 'live', focus: null, device: null, deviceSelected: false };
-const TABS = ['live', 'recordings', 'downloads', 'devices', 'members', 'audit', 'updates', 'database', 'access'];
+const TABS = ['live', 'recordings', 'downloads', 'devices', 'members', 'livepages', 'audit', 'updates', 'database', 'access'];
 // İzin tabanlı görünürlük: sunucunun /api/ben ile verdiği izin listesi (models/permission.mjs kataloğu)
 const hasPermission = (i) => !!me?.permissions?.includes(i);
-const TAB_PERMISSION = { live: ['live.view'], recordings: ['recording.list', 'recording.play', 'recording.download'], devices: ['device.read'], members: ['member.manage'], audit: ['audit.read'], updates: ['update.check'], database: ['database.manage'], access: ['permission.manage', 'api.key'] };
+const TAB_PERMISSION = { live: ['live.view'], recordings: ['recording.list', 'recording.play', 'recording.download'], devices: ['device.read'], members: ['member.manage'], audit: ['audit.read'], updates: ['update.check'], database: ['database.manage'], access: ['permission.manage', 'api.key'], livepages: ['livepage.manage'] };
 // Ust baslikta konum yolu (kirinti) YOK: bolum menude secili, alt duzey orta bolmenin basliginda.
 const allowed = (s) => TABS.includes(s) && s !== 'downloads' && (TAB_PERMISSION[s] ?? []).some(hasPermission);
 /*
  * AYARLAR: Cihaz, Üyeler (Roller ve API anahtarlari dahil), Günlük, Güncelleme, Veritabani. Ust menude tek giris; her bolumun
  * ustunde ayni alt sekme seridi (DC panellerindeki Ayarlar -> sekmeler). Adresler degismedi (#devices, #audit...).
  */
-const SETTINGS = [['devices', 'Cihaz'], ['members', 'Üyeler'], ['audit', 'Günlük'], ['updates', 'Güncelleme'], ['database', 'Veritabanı']];
+const SETTINGS = [['devices', 'Cihaz'], ['members', 'Üyeler'], ['livepages', 'Canlı sayfalar'], ['audit', 'Günlük'], ['updates', 'Güncelleme'], ['database', 'Veritabanı']];
 const SETTINGS_OF = { access: 'members' };   // Yetki (roller, anahtarlar) Uyeler sekmesinin icinde
 const settingsAllowed = (s) => (s === 'members' ? allowed('members') || allowed('access') : allowed(s));
 const settingsTarget = (s) => (s === 'members' && !allowed('members') && allowed('access') ? 'access' : s);
 const firstSettings = () => settingsTarget(SETTINGS.map(([s]) => s).find(settingsAllowed) ?? 'live');
 const isSettings = (name) => SETTINGS.some(([s]) => s === (SETTINGS_OF[name] ?? name));
 function setupSettingsTabs() {
-  for (const id of ['s-devices', 's-members', 's-access', 's-audit', 's-updates', 's-database']) {
+  for (const id of ['s-devices', 's-members', 's-access', 's-livepages', 's-audit', 's-updates', 's-database']) {
     const sec = document.getElementById(id);
     if (!sec || sec.querySelector('.settings-tabs')) continue;
     const nav = el('nav', { class: 'tabs settings-tabs', 'aria-label': 'Ayarlar' }, ...SETTINGS.map(([s, label]) => el('a', { href: `#${s}`, class: 'tabs__link', 'data-tab': s }, label)));
@@ -794,6 +827,7 @@ function openTab(name) {
   if (name === 'access') { reloadPermission(); openPermissionTab(permissionTab); }
   if (name === 'members' || name === 'access') markMemberTab();
   if (name === 'members') reloadMembers();
+  if (name === 'livepages') reloadLivePages();
   if (name === 'audit') reloadAuditLog();
   if (name === 'updates') updateReload();
   if (name === 'database') dbReload();
@@ -1971,7 +2005,7 @@ $('#removeAll').addEventListener('click', async () => {
 let roles = [];                                     // /api/yetki/roller
 const roleName = (id) => { const r = roles.find((x) => x.id === id); return r ? (r.name?.[language] ?? r.name?.tr ?? id) : ({ admin: 'Yönetici', network: 'Network', technical: 'Teknik', accounting: 'Muhasebe' }[id] ?? id); };
 const ROLE_NAME = new Proxy({}, { get: (_, k) => roleName(k) });
-const EVENT_NAME = { 'clock-sync': ['yellow', 'Saat ayarı'], 'device-reboot': ['red', 'Cihaz yeniden başlatma'], login: ['green', 'Giriş'], logout: ['gray', 'Çıkış'], 'login-failed': ['red', 'Hatalı giriş'], playback: ['blue', 'Oynatma'], 'download-request': ['blue', 'İndirme isteği'], 'download-complete': ['purple', 'İndirildi'], 'download-partial': ['yellow', 'İndirme yarım'] };
+const EVENT_NAME = { 'clock-sync': ['yellow', 'Saat ayarı'], 'device-reboot': ['red', 'Cihaz yeniden başlatma'], login: ['green', 'Giriş'], logout: ['gray', 'Çıkış'], 'login-failed': ['red', 'Hatalı giriş'], playback: ['blue', 'Oynatma'], 'download-request': ['blue', 'İndirme isteği'], 'download-complete': ['purple', 'İndirildi'], 'download-partial': ['yellow', 'İndirme yarım'], 'livepage-add': ['green', 'Canlı sayfa eklendi'], 'livepage-edit': ['yellow', 'Canlı sayfa değişti'], 'livepage-delete': ['red', 'Canlı sayfa silindi'], 'livepage-layout': ['blue', 'Canlı sayfa düzeni'] };
 const auditLog = { page: 1, time: null };
 async function reloadAuditLog() {
   const k = $('#auditList');
@@ -2335,11 +2369,65 @@ function applyRole() {
   openPermissionTab(permissionTab);
   showLiveLink();
 }
-/** /live (gecici, ayri site) bağlantısı: yalnız admin; site kaldırılınca (yanıt yok) kendiliğinden gizli kalır. */
+/** Ust seritte canli sayfa baglantilari: kimligin gorebildigi sayfalar (yonetici: hepsi); goruntu sunucusu kapaliysa gizli. */
+let livePages = { pages: [], roles: [] };
 async function showLiveLink() {
-  if (!admin()) return;
-  try { $('#liveLink').hidden = !(await fetch('/live/cameras.json', { method: 'HEAD', cache: 'no-store' })).ok; } catch {}
+  const k = $('#liveLinks');
+  if (!hasPermission('livepage.manage') && !hasPermission('live.view')) { k.hidden = true; return; }
+  try { livePages = await api('/api/live-pages'); } catch { return; }
+  const list = livePages.open ? livePages.pages : [];
+  k.replaceChildren(...list.map((p) => el('a', { href: `/${p.slug}/`, class: 'btn btn--ghost btn--sm', title: `${p.access === 'public' ? 'Herkese açık' : 'Giriş gerekli'} canlı izleme sayfası: /${p.slug}/` }, p.name)));
+  k.hidden = !list.length;
 }
+const liveRoleName = (id) => livePages.roles?.find((r) => r.id === id)?.name ?? id;
+async function reloadLivePages() {
+  try { livePages = await api('/api/live-pages'); } catch (e) { $('#livePageList').replaceChildren(writeError(e.message)); return; }
+  $('#livePageClosed').hidden = !!livePages.open;
+  drawLivePages(); showLiveLink();
+}
+/** EYS yonetim tablosu: ad, yol (yeni sekmede), erisim rozeti + roller, kamera sayisi; Duzenle / Sil. */
+function drawLivePages() {
+  const k = $('#livePageList');
+  if (!livePages.pages.length) { k.replaceChildren(writeEmpty('Canlı sayfa yok', 'Yeni canlı sayfa ile bir adres oluşturun.')); return; }
+  k.replaceChildren(table(['Ad', 'Yol', 'Erişim', ['Kamera', 'right'], ''], livePages.pages.map((p) => el('tr', {},
+    el('td', {}, p.name),
+    el('td', { class: 'mono' }, el('a', { href: `/${p.slug}/`, target: '_blank', rel: 'noopener' }, `/${p.slug}/`)),
+    el('td', {}, el('span', { class: 'row row--wrap row--tight' }, el('span', { class: `badge badge--${p.access === 'public' ? 'green' : 'purple'}` }, p.access === 'public' ? 'Herkese açık' : 'Giriş gerekli'),
+      ...(p.access === 'private' ? (p.roles.length ? p.roles.map((r) => el('span', { class: 'badge badge--gray' }, liveRoleName(r))) : [el('span', { class: 'text-sm text-muted' }, 'canlı izleme izni olan herkes')]) : []))),
+    el('td', { class: 'mono text-right', title: p.isDefault ? 'Varsayılan düzen (kaydedilmiş düzen yok)' : '' }, p.isDefault ? `${p.cameraCount} (varsayılan)` : String(p.cameraCount)),
+    el('td', {}, rowAction(button('Düzeni aç', '', () => window.open(`/${p.slug}/`, '_blank', 'noopener')), button('Düzenle', '', () => livePageDialog(p)),
+      button('Sil', 'danger', async () => {
+        if (!await askConfirm(`“/${p.slug}/” canlı sayfası silinsin mi? Adres 404 verir, açık ekranlar görüntüyü bırakır.`, 'sil', { header: 'Canlı sayfayı sil' })) return;
+        try { await api(`/api/live-pages/${encodeURIComponent(p.id)}`, { method: 'DELETE' }); notify('Canlı sayfa silindi', 'success'); } catch (e) { notify(e.message, 'danger'); }
+        reloadLivePages();
+      })))))));
+}
+function livePageDialog(p = null) {
+  const d = $('#livePageDialog');
+  $('#livePageHeader').textContent = p ? `/${p.slug}/ — düzenle` : 'Yeni canlı sayfa';
+  $('#livePageName').value = p?.name ?? ''; $('#livePageSlug').value = p?.slug ?? ''; $('#livePageAccess').value = p?.access ?? 'private';
+  const selected = p?.roles ?? [];
+  $('#livePageRoles').replaceChildren(...(livePages.roles ?? []).filter((r) => r.id !== 'admin').map((r) => {
+    const box = el('input', { type: 'checkbox', value: r.id }); box.checked = selected.includes(r.id);
+    return el('label', {}, box, el('span', {}, r.name, el('small', {}, r.id)));
+  }));
+  $('#livePageRoleField').hidden = $('#livePageAccess').value !== 'private';
+  $('#livePageError').hidden = true;
+  d.dataset.existing = p?.id ?? ''; openWindow('livePageDialog'); firstField($('#livePageName'));
+}
+$('#livePageAdd').addEventListener('click', () => livePageDialog());
+$('#livePageAccess').addEventListener('change', () => { $('#livePageRoleField').hidden = $('#livePageAccess').value !== 'private'; });
+$('#livePageForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const existing = $('#livePageDialog').dataset.existing;
+  const access = $('#livePageAccess').value;
+  const g = { name: $('#livePageName').value.trim(), slug: $('#livePageSlug').value.trim().toLowerCase(), access, roles: access === 'private' ? readPermission($('#livePageRoles')) : [] };
+  try {
+    if (existing) await api(`/api/live-pages/${encodeURIComponent(existing)}`, { method: 'PATCH', body: JSON.stringify(g) });
+    else await api('/api/live-pages', { method: 'POST', body: JSON.stringify(g) });
+    closeWindow('livePageDialog'); notify(existing ? 'Canlı sayfa güncellendi' : 'Canlı sayfa eklendi', 'success'); reloadLivePages();
+  } catch (err) { $('#livePageError').textContent = err.message; $('#livePageError').hidden = false; }
+});
 
 // ---------- guncelleme (kontrol; yeni surum varsa platformun deploy hook'u) ----------
 const UPDATE_STATUS = {

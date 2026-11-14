@@ -200,4 +200,24 @@ export const MIGRATIONS = [
       log(`goc 3 (kripto etiketleri): ${done.audit} günlük kaydı yeniden imzalandı, ${done.devices} cihaz parolası yeniden şifrelendi, ${done.keys} API anahtarı iptal edildi (karması etiketle taşınamaz; yenileri oluşturulmalı), parmak izi ${done.fingerprint ? 'güncellendi' : 'yok (yeni kurulum)'}`);
     },
   },
+  {
+    // Live pages: the single /live page becomes ordinary records (name, path, access, layout). The existing page is moved as the first record
+    // with the saved layout ('live-layout' document, kept in settings for a rollback but no longer read). DDL commits implicitly in MySQL, so
+    // every step is idempotent: the table is created only if missing and the first record is added only while the table is empty.
+    version: 4, name: 'live pages',
+    run: async (c) => {
+      await c.query(`CREATE TABLE IF NOT EXISTS live_pages (
+        seq BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        id VARCHAR(32) NOT NULL, name VARCHAR(100) NULL, slug VARCHAR(64) NOT NULL, access VARCHAR(16) NOT NULL DEFAULT 'public', roles TEXT NULL,
+        layout TEXT NULL, created_by VARCHAR(255) NULL, created_at VARCHAR(40) NULL, updated_by VARCHAR(255) NULL, updated_at VARCHAR(40) NULL, extra TEXT NULL,
+        UNIQUE KEY live_pages_id (id), UNIQUE KEY live_pages_slug (slug)
+      ) ${ENGINE}`);
+      const [[count]] = await c.query('SELECT COUNT(*) AS n FROM live_pages');
+      if (Number(count.n) > 0) return;
+      const [found] = await c.query("SELECT value FROM settings WHERE name = 'live-layout'");
+      let layout = null;
+      try { const d = found[0] ? JSON.parse(found[0].value) : null; if (d && Array.isArray(d.paths)) layout = JSON.stringify(d); } catch { /* not JSON: default layout */ }
+      await c.query("INSERT INTO live_pages (id, name, slug, access, roles, layout, created_by, created_at) VALUES ('live', 'Kameralar', 'live', 'public', '[]', ?, 'migration 4', ?)", [layout, new Date().toISOString()]);
+    },
+  },
 ];

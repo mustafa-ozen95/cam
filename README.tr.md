@@ -38,6 +38,14 @@ Veri MariaDB'dedir (`db` servisi, adlandırılmış hacim `cam_database`); dış
 verin, `db` servisi kalkmasın diye `DB_REPLICAS=0` yapın.
 HTTP portu dışarı açılmaz; alan adını ve TLS'i önündeki vekil verir (panele 80'den ulaşır). `/live` görüntüsü
 `cam-rtc` (mediamtx) servisinden, 8189/udp üzerinden akar; tarayıcıya verilecek sunucu adresi `CAM_RTC_HOST`.
+
+**Canlı izleme sayfaları** (Ayarlar → Canlı sayfalar, izin `livepage.manage`): her sayfa bir kayıttır: ad, yol (`/<yol>/`,
+a-z 0-9 -), erişim ve kendi kamera düzeni. *Herkese açık* sayfa üyeliksiz izlenir ve gömülebilir (`CAM_LIVE_EMBED`); *giriş gerekli*
+sayfa oturumsuz ziyaretçiye aynı adreste giriş formunu verir, yalnız seçilen rollerdeki (seçilmezse `live.view` izni olan her) üyeye
+açılır; yönetici her zaman görür, kapsamlı üye yalnız kendi kanallarını görür. Bir sayfa YALNIZ kendi düzenindeki kameraları
+listeler ve oynatır. Eski tek `/live` sayfası göç 4 ile ilk kayıt olur (adres, düzen, herkese açık erişim aynı) ve silinebilir.
+Sınır: erişim kalkınca ya da sayfa silinince yeni bağlantı reddedilir, açık ekran 30 sn içinde görüntüyü bırakır; açık WebRTC
+oturumu sunucuda kesilmez.
 ```
 cp .env.example .env          # isteğe bağlı; chmod 600 .env
 docker compose up -d --build  # ya da: npm start
@@ -49,7 +57,7 @@ node scripts/openapi.mjs      # OpenAPI belgesini rotalardan yeniden üret
 İlk açılışta `admin` oluşturulur (`CAM_ADMIN_PASSWORD` yoksa parola `data/initial-admin.txt`). Cihazlar **Cihaz** sekmesinden eklenir (kaydetmeden önce bağlantı denenir); `CAM_DEVICES` yalnız `devices` tablosu boşken ilk tohumdur.
 
 ## Veritabanı ve yedek
-Bütün veri (üyeler, cihazlar, roller, API anahtarları, denetim günlüğü, kanal ayarı, /live düzeni, güncelleme durumu, KYM bağları)
+Bütün veri (üyeler, cihazlar, roller, API anahtarları, denetim günlüğü, kanal ayarı, canlı sayfalar ve düzenleri, güncelleme durumu, KYM bağları)
 MariaDB/MySQL'dedir (sürücü `mysql2`, utf8mb4). Bağlantı: `DB_HOST` (varsayılan `db`), `DB_PORT` (3306), `DB_DATABASE` (`cam`),
 `DB_USERNAME` (`cam`), `DB_PASSWORD` (zorunlu). Açılışta panel veritabanını bekler (`DB_WAIT_SEC`, varsayılan 60 sn), sonra kendi
 göçlerini çalıştırır (sürüm tablosu `migrations`, sıralı, tekrar çalıştırmak bir şey yapmaz). Veritabanına ulaşılamıyorsa `/api/v1/health` sağlıksızdır.
@@ -85,7 +93,7 @@ Kimliksiz erişilebilen yalnız giriş sayfasının ihtiyacıdır: giriş formu,
 Parolalar scrypt; cihaz parolaları AES-256-GCM; anahtarlar HMAC özeti; çerez HttpOnly+SameSite (HTTPS'de Secure); CSRF başlığı; CSP/nosniff/frame/referrer başlıkları; gövde 1 MB sınırı; yol geçişi koruması; kaba kuvvet kilidi (giriş ve anahtar); günlükte gizli yok; HMAC zincirli denetim günlüğü. Ters vekil arkasında `CAM_IP_HEADER` (ör. `CF-Connecting-IP`) ayarlanmazsa IP listeleri soket adresine göre çalışır. Düz HTTP'de önüne TLS koyun.
 
 ## Ortam değişkenleri
-`CAM_PORT` (8191; imajda 80), `CAM_HOST`, `CAM_TITLE`, `CAM_COOKIE` (aynı IP'de birden çok panel: farklı ad), `CAM_DATA` (veri klasörü), `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_WAIT_SEC`, `CAM_SECRET_KEY`, `CAM_DEVICES` (ilk tohum, JSON), `CAM_ADMIN_PASSWORD`, `CAM_RATIO` (16:9), `CAM_PLAYBACK_MAX` (4), `CAM_DOWNLOAD_MAX` (2), `CAM_STREAM_MAX` (cihaz başına 24), `CAM_FFMPEG`, `CAM_IP_HEADER`, `CAM_PROXY`, `CAM_TLS_CERT/KEY/PORT`, `CAM_LIVE_EMBED` (`/live`'ı gömebilecek kökenler), `CAM_LIVE_DEFAULT` (kayıtlı düzen yokken `/live` kameraları: virgülle kanal no, 1'den, sırayla; boş = ilk 12), `CAM_HUB_*` (yukarıda), `UPDATE_TOKEN` (aşağıda), `CAM_TEST=1` (sahte sürücü, yalnız test).
+`CAM_PORT` (8191; imajda 80), `CAM_HOST`, `CAM_TITLE`, `CAM_COOKIE` (aynı IP'de birden çok panel: farklı ad), `CAM_DATA` (veri klasörü), `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_WAIT_SEC`, `CAM_SECRET_KEY`, `CAM_DEVICES` (ilk tohum, JSON), `CAM_ADMIN_PASSWORD`, `CAM_RATIO` (16:9), `CAM_PLAYBACK_MAX` (4), `CAM_DOWNLOAD_MAX` (2), `CAM_STREAM_MAX` (cihaz başına 24), `CAM_FFMPEG`, `CAM_IP_HEADER`, `CAM_PROXY`, `CAM_TLS_CERT/KEY/PORT`, `CAM_LIVE_EMBED` (herkese açık canlı sayfaları gömebilecek kökenler), `CAM_LIVE_DEFAULT` (göçle gelen `/live` sayfasında kayıtlı düzen yokken kameralar: virgülle kanal no, 1'den, sırayla; boş = ilk 12), `CAM_HUB_*` (yukarıda), `UPDATE_TOKEN` (aşağıda), `CAM_TEST=1` (sahte sürücü, yalnız test).
 
 ## Güncelleme kontrolü
 Üst menüdeki **Güncelleme** (`update.check` izni; admin'de var) çalışan sürümü GitHub'da main dalının **son başarılı imaj derlemesiyle** karşılaştırır: kaç commit geride, hangi commit'ler yeni. Yön de ölçülür; çalışan sürüm son derlemeden yeniyse "güncelleme" denmez. Kontrol her sabah 06:50'de kendiliğinden yapılır, düğme hemen yapar; yeni sürüm varsa bu izni olanlar sayfanın üstünde uyarı görür. Ekran **yalnızca bakar**; güncelleme sunucudan yapılır. DC panellerindeki Ayarlar → Güncelleme ile aynı kurallar.

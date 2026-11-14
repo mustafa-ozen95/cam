@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <meta name="theme-domain" content="">
-  <title>Kameralar</title>
+  <title><!--TITLE--></title>
   <!-- Tasarim panelle ayni (EYS): yazi tipleri + bilesenler panelin kendi dosyalari; live.css yalniz yerlesimi ekler -->
   <link rel="stylesheet" href="/css/fonts.css">
   <link rel="stylesheet" href="/css/eys/app.css">
@@ -13,9 +13,9 @@
   <script type="module" src="theme.mjs"></script>
 </head>
 <body>
-  <!-- Ust serit yalniz admin oturumunda; digerleri yalniz kameralari gorur -->
+  <!-- Ust serit yalniz sayfa yoneticisinde (livepage.manage); digerleri yalniz kameralari gorur. Baslik sunucuda sayfa adiyla doldurulur -->
   <header class="top-bar" id="topBar" hidden>
-    <strong class="top-bar__name">Kameralar</strong>
+    <strong class="top-bar__name"><!--TITLE--></strong>
     <span class="top-bar__info" id="info"></span>
     <label class="top-bar__field" id="columnField" hidden><span>Sütun</span>
       <select class="select" id="columns"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select>
@@ -40,6 +40,7 @@
       <div id="listInner"></div>
     </aside>
   </main>
+  <div class="notice" id="notice" role="status" hidden></div>
   <script src="live.js"></script>
 </body>
 </html>

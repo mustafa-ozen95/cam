@@ -23,6 +23,9 @@ body { display: flex; flex-direction: column; background: var(--color-sunken); o
 .layout .frame__remove { display: inline-flex; }
 .frame--target { outline: 2px solid var(--color-accent) !important; outline-offset: -2px; }
 .frame--empty { display: grid; place-items: center; color: var(--color-text-muted); font-size: var(--text-sm); }
+/* Sayfaya erisim kalkinca / sayfa silinince tam ekran bilgi */
+.notice { position: fixed; inset: 0; display: grid; place-items: center; padding: var(--space-4); text-align: center; color: var(--color-text-secondary); font-size: var(--text-sm); background: var(--color-sunken); }
+.notice[hidden] { display: none; }
 
 .list { flex: none; width: 280px; overflow: auto; padding: var(--space-3) 0; background: var(--color-column); border-left: 1px solid var(--color-line); }
 .list[hidden] { display: none; }

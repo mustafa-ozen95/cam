@@ -1,7 +1,7 @@
 /**
- * live: uyeliksiz, gecikmesiz canli izleme. Oynatma: WebRTC, WHEP (mediamtx), istemci teklifini
+ * live: gecikmesiz canli izleme sayfasi (/<yol>/; public ya da giris gerektiren). Tum istekler GORELI: ayni dosya her sayfada calisir. Oynatma: WebRTC, WHEP (mediamtx), istemci teklifini
  * aday beklemeden gonderir. Ek olarak baglanti koparsa kendiliginden yeniden baglanir.
- * Duzen (hangi kamera nerede, sutun sayisi) SUNUCUDA ortaktir: herkes ayni duzeni gorur, yalniz admin degistirir
+ * Duzen (hangi kamera nerede, sutun sayisi) SUNUCUDA ortaktir: herkes ayni duzeni gorur, yalniz sayfa yoneticisi degistirir
  * (Duzenle -> taslak -> Kaydet). Acik sayfa duzeni 30 sn'de bir yeniden okur.
  */
 'use strict';
@@ -141,14 +141,28 @@ function modeSet(isOpen) {
   drawGrid();
 }
 const writeInfo = (...c) => $('#info').replaceChildren(...c);
+/**
+ * Sayfaya erisim yok: 401 (oturum dustu) -> yenile (sunucu giris formunu verir); 403/404 (yetki kalkti, sayfa silindi) ->
+ * acik baglantilar kapanir, bilgi gosterilir. true: istek erisim hatasiydi.
+ */
+function denied(status) {
+  if (status === 401) { location.reload(); return true; }
+  if (status !== 403 && status !== 404) return false;
+  for (const o of players.values()) o.close();
+  players.clear(); $('#grid').replaceChildren();
+  $('#notice').textContent = status === 403 ? 'Bu sayfayı görme yetkiniz yok.' : 'Bu canlı izleme sayfası artık yok.';
+  $('#notice').hidden = false;
+  return true;
+}
 
 $('#columns').addEventListener('change', (e) => { layout.column = Number(e.target.value); drawGrid(); });
-/** Ust serit yalniz admin oturumunda gorunur; ziyaretci yalniz kameralari gorur. */
+/** Ust serit yalniz sayfa yoneticisinde (livepage.manage) gorunur; ziyaretci yalniz kameralari gorur. */
 async function permissionAsk() {
   let y = null;
   try { y = await (await fetch('access', { cache: 'no-store', credentials: 'same-origin' })).json(); } catch {}
+  if (y?.title) { document.title = y.title; $('.top-bar__name').textContent = y.title; }
   $('#topBar').hidden = !y?.canEdit;
-  // Tema yalniz admin icin (theme.mjs); admin degilse hep gece.
+  // Tema yalniz yonetici icin (theme.mjs); degilse hep gece.
   if (y?.canEdit) { document.documentElement.dataset.admin = '1'; document.dispatchEvent(new Event('live-admin')); }
   else { delete document.documentElement.dataset.admin; document.documentElement.dataset.theme = 'dark'; }
   if (!y?.canEdit && layoutMode) modeSet(false);
@@ -172,18 +186,22 @@ $('#full').addEventListener('click', () => (document.fullscreenElement ? documen
 
 (async function open() {
   try {
-    const r = await (await fetch('cameras.json', { cache: 'no-store' })).json();
+    const q = await fetch('cameras.json', { cache: 'no-store', credentials: 'same-origin' });
+    if (denied(q.status)) return;
+    const r = await q.json();
     cameras = r.cameras; defaultOrder = r.defaultOrder;
   } catch { $('#info').textContent = 'Kamera listesi alınamadı, yeniden deneniyor…'; return setTimeout(open, 5000); }
   if (!cameras.length) { $('#info').textContent = 'Kamera listesi hazırlanıyor…'; return setTimeout(open, 5000); }
   await getLayout();
   permissionAsk();
-  setInterval(() => { if (!layoutMode && !document.hidden) getLayout(); }, 30_000);
+  const poll = setInterval(async () => { if (!layoutMode && !document.hidden && await getLayout() === false) clearInterval(poll); }, 30_000);
 })();
 let lastLayout = null;
 async function getLayout() {
   try {
-    const raw = await (await fetch('layout.json', { cache: 'no-store' })).text();
+    const q = await fetch('layout.json', { cache: 'no-store', credentials: 'same-origin' });
+    if (denied(q.status)) return false;
+    const raw = await q.text();
     if (raw === lastLayout) return;
     lastLayout = raw; const d = JSON.parse(raw);
     saved = { ...d, paths: d.paths.filter(camera) };

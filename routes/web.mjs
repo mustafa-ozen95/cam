@@ -13,17 +13,25 @@ export function webRoutes(r, d, middleware) {
   // Kimlik Yonetim Merkezi ile giris (yapilandirilmamissa 404). Donus adresi merkezde kayitli olanla birebir ayni olmali.
   r.get('/login/hub', d.hub.start);
   r.get('/login/hub/callback', d.hub.back);
-  // Canli izleme (/live): IZLEMEK kimliksiz; ust serit ve duzen yalniz admin. Kapaliyken 404.
-  // Ozel yollar genel /live/:dosya'dan ONCE.
-  r.get('/live', d.live.page);
-  r.get('/live/cameras.json', d.live.cameras);
-  r.get('/live/layout.json', d.live.layout);
-  r.get('/live/access', d.live.permissions, [middleware.identityOptional]);
-  r.put('/live/layout', d.live.writeLayout, [middleware.identity]);
-  r.post('/live/rtc/:path/whep', d.live.whep);   // izleme baglantisi: panel mediamtx'e gecirir (vekilde kural gerekmez)
-  r.get('/live/:file', d.live.serveStatic);
   r.group([middleware.identity], () => {
     r.get('/docs', d.view.docs);
     r.get('/docs/:file', d.view.docs);
   });
+}
+
+/**
+ * Canli izleme sayfalari (/<yol>/, kayitlar: live_pages). EN SON kaydedilir ve yalniz KAYITLI yol icin eslesir (when):
+ * genel /:live kaliplari /api, /docs, /css gibi yollari golgelemez. Hepsi identityOptional: ayni rota hem public hem private
+ * sayfaya hizmet eder; erisim karari denetleyicide sayfa kaydina gore verilir (bkz. src/controllers/live.mjs). Kapaliyken 404.
+ * Ozel yollar genel /:live/:file'dan ONCE.
+ */
+export function liveRoutes(r, d, middleware, { livePages }) {
+  const w = (p) => !!livePages.bySlug(p.live);
+  r.get('/:live', d.live.page, [middleware.identityOptional], w);
+  r.get('/:live/cameras.json', d.live.cameras, [middleware.identityOptional], w);
+  r.get('/:live/layout.json', d.live.layout, [middleware.identityOptional], w);
+  r.get('/:live/access', d.live.permissions, [middleware.identityOptional], w);
+  r.put('/:live/layout', d.live.writeLayout, [middleware.identity], w);
+  r.post('/:live/rtc/:path/whep', d.live.whep, [middleware.identityOptional], w);   // izleme baglantisi: panel mediamtx'e gecirir (vekilde kural gerekmez)
+  r.get('/:live/:file', d.live.serveStatic, [middleware.identityOptional], w);
 }

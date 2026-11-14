@@ -35,3 +35,8 @@ export const HUB_LINKS = {
   columns: [s('sub'), s('username', 'name'), s('user_stamp', 'userStamp'), s('email', 'email'), s('role', 'role', null), { s: 'can_login', a: 'canLogin', t: 'b' }, s('checked_at', 'check', null),
     s('last_login', 'lastLogin', null), i('last_logout_ms', 'lastLogout')],
 };
+export const LIVE_PAGES = {
+  table: 'live_pages', key: 'id',
+  columns: [s('id'), s('name', 'name', ''), s('slug', 'slug'), s('access', 'access', 'public'), j('roles', 'roles', []), j('layout', 'layout', null),
+    s('created_by', 'createdBy'), s('created_at', 'createdAt'), s('updated_by', 'updatedBy', null), s('updated_at', 'updatedAt', null)],
+};

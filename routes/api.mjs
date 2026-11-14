@@ -33,6 +33,11 @@ export function apiRoutes(r, d, middleware) {
     r.post('/api/members', d.members.add, [permission('member.manage')]);
     r.patch('/api/members/:name', d.members.update, [permission('member.manage')]);
     r.delete('/api/members/:name', d.members.remove, [permission('member.manage')]);
+    // canli izleme sayfalari (/<yol>/): liste (yonetici: tumu; izleyici: gorebildikleri), yazma livepage.manage
+    r.get('/api/live-pages', d.livePages.list, [any('livepage.manage', 'live.view')]);
+    r.post('/api/live-pages', d.livePages.add, [permission('livepage.manage')]);
+    r.patch('/api/live-pages/:id', d.livePages.update, [permission('livepage.manage')]);
+    r.delete('/api/live-pages/:id', d.livePages.remove, [permission('livepage.manage')]);
     // audit log
     r.get('/api/audit-log', d.auditLog.list, [permission('audit.read')]);
     r.get('/api/audit-log/verify', d.auditLog.verify, [permission('audit.read')]);

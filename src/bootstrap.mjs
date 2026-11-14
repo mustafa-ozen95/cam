@@ -15,6 +15,7 @@ import { Membership } from './models/member.mjs';
 import { PermissionStore } from './models/permission.mjs';
 import { DeviceService } from './services/devices.mjs';
 import { LiveService } from './services/live.mjs';
+import { LivePageStore } from './models/live-page.mjs';
 import { AuditLog } from './services/audit-log.mjs';
 import { UpdateService } from './services/updates.mjs';
 import { ConnectionFile } from './services/database-move.mjs';
@@ -30,7 +31,8 @@ import { updateController } from './controllers/updates.mjs';
 import { databaseController } from './controllers/database.mjs';
 import { viewController } from './controllers/views.mjs';
 import { liveController } from './controllers/live.mjs';
-import { webRoutes } from '../routes/web.mjs';
+import { livePagesController } from './controllers/live-pages.mjs';
+import { webRoutes, liveRoutes } from '../routes/web.mjs';
 import { apiRoutes } from '../routes/api.mjs';
 import { apiV1Routes } from '../routes/api-v1.mjs';
 
@@ -64,7 +66,8 @@ async function createAppWithDb(config, db, extra) {
   if (savedFingerprint === undefined) await settings.write('key-fingerprint', fingerprint);
   // modeller (veritabanindan bellege)
   const members = await new Membership(db, secret).load();
-  const permissions = await new PermissionStore(db, members.secret, { roleInUse: (id) => members.roleInUse(id) }).load();
+  let livePages = null;   // rol silme denetimi icin (asagida yuklenir)
+  const permissions = await new PermissionStore(db, members.secret, { roleInUse: (id) => members.roleInUse(id) || !!livePages?.roleInUse(id) }).load();
   members.roleValid = (r) => permissions.roleVar(r);
   if (members.empty()) {
     const password = config.permissions.initialAdminPassword || randomBytes(9).toString('base64url');
@@ -80,16 +83,18 @@ async function createAppWithDb(config, db, extra) {
   // Kimlik Yonetim Merkezi: istemci (OAuth akisi) ve baglar (merkezdeki kimlik -> buradaki uye). Yapilandirilmamissa akis kapali, baglar bos.
   const hub = new HubClient(config.identity);
   const links = await new HubLinks(db, { hub, members, auditLog, config }).load();
-  const live = await new LiveService({ config, devices, settings }).load();
+  livePages = await new LivePageStore(db, { roleValid: (r) => permissions.roleVar(r) }).load();
+  const live = new LiveService({ config, devices, livePages });
   const updates = await new UpdateService({ settings, setting: config.updates }).load();
   const databaseMove = { file: databaseFile(config, secret), secret, restart: () => process.kill(process.pid, 'SIGTERM'), ...extra.databaseMove };
-  const services = { db, members, permissions, devices, auditLog, config, hub, links, live, updates, databaseMove };
+  const services = { db, members, permissions, devices, auditLog, config, hub, links, live, livePages, updates, databaseMove };
 
   // denetleyiciler + ara katmanlar
+  const view = viewController(services);
   const d = {
     login: loginController(services), members: membersController(services), devices: devicesController(services),
-    stream: streamController(services), permissions: permissionController(services), auditLog: auditLogController(services), view: viewController(services),
-    hub: hubController(services), live: liveController(services), updates: updateController(services),
+    stream: streamController(services), permissions: permissionController(services), auditLog: auditLogController(services), view,
+    hub: hubController(services), live: liveController({ ...services, view }), livePages: livePagesController(services), updates: updateController(services),
     database: databaseController(services),
   };
   const middleware = setupIdentity(services);
@@ -99,6 +104,9 @@ async function createAppWithDb(config, db, extra) {
   webRoutes(app.router, d, middleware);
   apiRoutes(app.router, d, middleware);
   apiV1Routes(app.router, d, middleware, services);
+  // Canli sayfalar EN SON: statik rotalarin ilk segmentleri yol olarak kullanilamaz (ileride eklenen rota da kendiliginden rezerve).
+  for (const r of app.router.list()) { const first = r.pattern.split('/')[1]; if (first && !first.startsWith(':')) livePages.reserved.add(first); }
+  liveRoutes(app.router, d, middleware, services);
   live.start();
   updates.start();
   // Kapanis: bekleyen gunluk yazimlari ve ertelenmis yetki yazimi veritabanina islenir, sonra havuz kapanir.

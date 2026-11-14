@@ -63,6 +63,14 @@
     'Sınırlar': 'Limits', 'Bitiş tarihi': 'Expiry date', 'İzinli IP / CIDR': 'Allowed IP / CIDR', 'virgülle': 'comma-separated', 'Hız limiti (istek/dk)': 'Rate limit (req/min)', 'Eşzamanlı akış': 'Concurrent streams', 'API anahtarı': 'API key', 'Yeni API anahtarı': 'New API key',
     'Bu değer yalnız şimdi gösterilir; kapattıktan sonra bir daha görüntülenemez. Güvenli bir yere kaydedin.': 'This value is shown only now; it cannot be viewed again after closing. Store it somewhere safe.', 'Kaydettim, kapat': 'Saved it, close', 'Rol eklendi': 'Role added', 'Rol güncellendi': 'Role updated', 'Rol silindi': 'Role deleted', 'Anahtar güncellendi': 'Key updated', 'Anahtar iptal edildi': 'Key revoked',
     'hiç kullanılmadı': 'never used', 'İzleme': 'Viewing', 'Yönetim': 'Administration',
+    // canlı sayfalar
+    'Canlı sayfalar': 'Live pages', 'Yeni canlı sayfa': 'New live page', 'Canlı sayfa yok': 'No live pages', 'Yeni canlı sayfa ile bir adres oluşturun.': 'Create an address with New live page.',
+    'Yol': 'Path', 'Kamera': 'Cameras', 'Herkese açık': 'Public', 'Giriş gerekli': 'Sign-in required', 'canlı izleme izni olan herkes': 'everyone with live view permission',
+    'Düzeni aç': 'Open layout', 'Görebilen roller': 'Allowed roles', 'Sayfa başlığında görünür.': 'Shown in the page title.',
+    'a-z, 0-9, - · adres: /yol/ · yol değişince eski adres çalışmaz': 'a-z, 0-9, - · address: /path/ · changing the path breaks the old address',
+    'Herkese açık (üyeliksiz izlenir, gömülebilir)': 'Public (no sign-in, embeddable)', 'Hiçbiri seçilmezse canlı izleme izni olan her üye görür. Yönetici her zaman görür.': 'If none is selected, every member with live view permission sees it. Administrators always do.',
+    'Canlı sayfa eklendi': 'Live page added', 'Canlı sayfa güncellendi': 'Live page updated', 'Canlı sayfa silindi': 'Live page deleted', 'Canlı sayfa değişti': 'Live page changed', 'Canlı sayfa düzeni': 'Live page layout', 'Canlı sayfayı sil': 'Delete live page',
+    'Görüntü sunucusu (CAM_RTC_API) yapılandırılmamış: sayfalar şu an 404 verir.': 'The video server (CAM_RTC_API) is not configured: pages currently return 404.',
     // onay / bildirim
     'Onaylamak için': 'To confirm, type', 'yazın.': '', 'yazın': 'below', 'Onayla': 'Confirm', 'Onay gerekiyor': 'Confirmation required', 'Gerekçe': 'Reason', 'Hesap menüsü': 'Account menu', 'Konum': 'Location',
     'Devam edilsin mi?': 'Continue?',

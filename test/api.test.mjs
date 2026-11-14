@@ -240,10 +240,10 @@ test('rota listesi: HER rota kimlik ister; kimliksiz yalnız giriş sayfasının
   // /api/identity/refresh: merkezden gelen bildirim; kimligi HMAC imzasi (bkz. merkez.test.mjs), cerez/anahtar degil.
   // /api/v1/saglik: yalniz dongu adresinden yanit verir (HEALTHCHECK). Digerleri giris sayfasi: ana sayfa (oturum yoksa giris formu), css/js/font/simge, merkez ile giris akisi.
   const isOpen = new Set(['/api/login', '/api/logout', '/api/identity/refresh', '/api/identity/logout', '/api/v1/health', '/', '/index.html', '/icon.svg', '/css/:a', '/css/:a/:b', '/css/:a/:b/:c', '/fonts/:a', '/js/:a', '/js/:a/:b', '/js/:a/:b/:c', '/login/hub', '/login/hub/callback',
-    // /live: UYELIKSIZ izleme. Yalniz okuma: sayfa, kendi betik/stili, kamera adlari (adres yok), ortak duzen,
-    // "admin miyim" sorusu. Duzeni yazmak (/live/duzen, PUT) kimlik ister ve bu listede DEGIL.
-    // /live/rtc/:yol/whep: izleme baglantisi (SDP alisverisi); yalniz panelin listeledigi yollar, mediamtx'te okuma izni.
-    '/live', '/live/cameras.json', '/live/layout.json', '/live/access', '/live/:file', '/live/rtc/:path/whep']);
+    // /:live: canli izleme sayfalari (identityOptional). Erisim denetleyicide SAYFA KAYDINA gore verilir: public sayfa uyeliksiz,
+    // private sayfa giris + rol (bkz. test/live.test.mjs). Duzeni yazmak (/:live/layout, PUT) kimlik ister ve bu listede DEGIL.
+    // /:live/rtc/:path/whep: izleme baglantisi (SDP alisverisi); yalniz o sayfanin duzenindeki yollar.
+    '/:live', '/:live/cameras.json', '/:live/layout.json', '/:live/access', '/:live/:file', '/:live/rtc/:path/whep']);
   const routes = app.router.list();
   for (const r of routes) {
     if (isOpen.has(r.pattern)) continue;

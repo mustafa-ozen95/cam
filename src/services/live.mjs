@@ -1,14 +1,13 @@
 /**
- * Canli izleme sayfasi (/live) hizmeti: uyeliksiz, gecikmesiz izleme.
+ * Canli izleme sayfalari (/<yol>/, bkz. models/live-page.mjs) hizmeti: gecikmesiz izleme. Kamera havuzu tek, sayfalar onu paylasir.
  * Goruntuyu mediamtx verir (ayri konteyner, WebRTC/WHEP); bu hizmet onu yonetir:
  *  - her kanalin alt akis kodegini bir kez olcer (ffprobe);
  *  - mediamtx'e API ile yol yazar: H.264 kanal dogrudan kaynak, digerleri (H.265) izlenirken KAYNAK KALITEDE H.264'e cevrilir
  *    (Chrome WebRTC'de H.265 oynatmiyor). Cihaz parolasi dosyaya yazilmaz, yalniz bellekte ve mediamtx'in belleginde durur;
- *  - herkesin gordugu ORTAK duzeni tutar (ayarlar tablosu, "live-duzen"; veritabani yedegine girer).
+ *  - her sayfanin ORTAK duzenini sayfa kaydinda tutar (live_pages tablosu; veritabani yedegine girer).
  * mediamtx yeniden baslarsa yollar bir sonraki esitlemede (en gec 1 dk) geri yazilir. CAM_RTC_API bossa kapali.
  */
 import { spawn } from 'node:child_process';
-import { DatabaseError } from '../core/errors.mjs';
 import { KEYFRAME_EXPR, TIMESTAMP_FILTER } from '../drivers/mp4-stream.mjs';
 
 /**
@@ -103,13 +102,12 @@ function codecMeasure(ffprobe, url) {
 }
 
 export class LiveService {
-  /** ayarlar: Ayarlar (veritabani); kayitli duzeni yukle() getirir. */
-  constructor({ config, devices, settings }) {
-    this.y = config.live; this.devices = devices; this.settings = settings; this.savedLayout = null;
+  /** livePages: LivePageStore (sayfa kayitlari ve duzenleri). */
+  constructor({ config, devices, livePages }) {
+    this.y = config.live; this.devices = devices; this.livePages = livePages;
     this.codec = new Map(); this.written = new Map(); this.received = new Map(); this.converters = new Map(); this.cameras = []; this.last = null;
     this.ffprobe = (devices.ffmpeg ?? 'ffmpeg').replace(/ffmpeg(\.exe)?$/, 'ffprobe$1');
   }
-  async load() { const d = await this.settings.read('live-layout'); this.savedLayout = d && Array.isArray(d.paths) ? d : null; return this; }
   get open() { return !!this.y.rtcApi; }
 
   /** ilk: ilk esitlemenin sozu (testler bekler). */
@@ -179,29 +177,29 @@ export class LiveService {
 
   /**
    * Izleme (WHEP): tarayicinin SDP teklifini mediamtx'e iletir, cevabi dondurur. Yalniz panelin listeledigi yollar
-   * (cihaz yolu ya da cevirici kaynagi degil); mediamtx'in geri kalani disariya acilmaz. { durum, sdp } doner.
+   * (cihaz yolu ya da cevirici kaynagi degil) ve allowed'daki yollar (denetleyici: sayfanin duzeni ya da editore tumu);
+   * mediamtx'in geri kalani disariya acilmaz. { durum, sdp } doner.
    */
-  async whep(path, offer) {
-    if (!this.cameras.some((k) => k.path === path)) return { status: 404, sdp: '' };
+  async whep(path, offer, allowed) {
+    if (!allowed?.includes(path) || !this.cameras.some((k) => k.path === path)) return { status: 404, sdp: '' };
     const r = await fetch(`${this.y.rtcWhep}/${encodeURIComponent(path)}/whep`, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer, signal: AbortSignal.timeout(WHEP_TIMEOUT) });
     return { status: r.status, sdp: await r.text() };
   }
 
-  // ---- ortak duzen
-  layout() {
-    if (this.savedLayout) return this.savedLayout;
+  // ---- sayfanin ortak duzeni
+  layoutOf(page) {
+    if (page?.layout && Array.isArray(page.layout.paths)) return page.layout;
     // Kayitli duzen yoksa: CAM_LIVE_DEFAULT sirasi (listede olmayan atlanir), o da bossa ilk LIVE_FIRST_COUNT kamera.
     const order = this.y.defaultOrder ?? [];
     const paths = order.length ? order.filter((y) => !this.cameras.length || this.cameras.some((k) => k.path === y)) : this.cameras.slice(0, LIVE_FIRST_COUNT).map((k) => k.path);
     return { column: 4, paths, isDefault: true };
   }
   /** g: { sutun, yollar }. Gecersizse hata. */
-  async writeLayout(g, savedBy) {
+  async writeLayout(page, g, savedBy) {
     const paths = Array.isArray(g?.paths) ? [...new Set(g.paths)] : null;
     if (!paths || paths.length > 64 || !paths.every((y) => this.cameras.some((k) => k.path === y)) || !LIVE_COLUMNS.includes(g.column)) throw new Error('Geçersiz düzen');
     const d = { column: g.column, paths, savedBy, time: new Date().toISOString() };
-    try { await this.settings.write('live-layout', d); } catch (e) { console.error('live duzeni yazilamadi:', e?.code ?? '', e?.message ?? e); throw new DatabaseError(e); }
-    this.savedLayout = d;
+    await this.livePages.writeLayout(page.id, d);   // yazim hatasi DatabaseError (depo gunluge yazar ve bellegi geri alir)
     return d;
   }
 }
