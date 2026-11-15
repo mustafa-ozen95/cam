@@ -88,8 +88,12 @@ class Plates:
                 continue
             px, py = int((b.x2 - b.x1) * 0.1), int((b.y2 - b.y1) * 0.2)     # %10 pay: dar kirpmada son hane kaciyor (olculdu)
             crop = img[max(0, b.y1 - py):min(h, b.y2 + py), max(0, b.x1 - px):min(w, b.x2 + px)]
-            r = self.ocr.run(crop)[0]
+            r = self.ocr.run(crop, return_confidence=True)[0]
             text = re.sub(r'[^0-9A-Z]', '', str(getattr(r, 'plate', r)).upper())
+            cp = getattr(r, 'char_probs', None)
+            # gece aydinlatmasiz plaka: okuyucu uyduruyor (olculdu: 12AH / 14HY, harf guveni ort. 0.4-0.5) -> guveni dusuk okuma atilir
+            if cp is not None and len(text) and float(np.mean(np.asarray(cp)[:len(text)])) < 0.75:
+                continue
             m = PLATE_RE.match(text)
             if m:
                 res.append({'text': text, 'show': ' '.join(m.groups()), 'box': [b.x1, b.y1, b.x2, b.y2], 'score': sc})
@@ -586,7 +590,7 @@ def run_channel(channel, cfg, counter):
                 img = cv2.imdecode(np.frombuffer(snapshot(channel), np.uint8), cv2.IMREAD_COLOR)
                 h0, w0 = img.shape[:2]
                 regs = [[max(0, b[0] - 0.1 * (b[2] - b[0])) * w0, max(0, b[1] - 0.1 * (b[3] - b[1])) * h0, min(1, b[2] + 0.1 * (b[2] - b[0])) * w0, min(1, b[3] + 0.1 * (b[3] - b[1])) * h0]
-                        for b in sorted(state['veh'], key=lambda b: -(b[2] - b[0]) * (b[3] - b[1]))[:8]]
+                        for b in sorted(state['veh'], key=lambda b: -(b[2] - b[0]) * (b[3] - b[1]))[:6]]
                 found = reader(img, regs) if img is not None else []
             except Exception as ex:  # noqa: BLE001
                 log(f'K{channel + 1} plaka: {ex}'); time.sleep(10); continue
