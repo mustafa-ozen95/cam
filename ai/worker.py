@@ -128,7 +128,11 @@ def detect(model, img, conf):
     out = []
     for x in (0, w - h):
         for p in model(img[:, x:x + h], conf):
-            b = p['box']; p['box'] = [b[0] + x, b[1], b[2] + x, b[3]]; p['kp'][:, 0] += x
+            b = p['box']; p['box'] = [b[0] + x, b[1], b[2] + x, b[3]]
+            if p.get('kp') is not None:
+                p['kp'][:, 0] += x
+            if p.get('poly') is not None:
+                p['poly'] = p['poly'] + np.array([x, 0], p['poly'].dtype)
             out.append(p)
     out.sort(key=lambda p: -p['score'])
     keep = []
@@ -191,7 +195,7 @@ def overlay_items(marks, w, h):
     """Isaretler -> normalize (0..1) katman ogeleri."""
     items = []
     for p in marks:
-        it = {'k': 'car' if p.get('car') else 'person', 'box': [round(p['box'][0] / w, 4), round(p['box'][1] / h, 4), round(p['box'][2] / w, 4), round(p['box'][3] / h, 4)],
+        it = {'k': 'car' if p.get('car') else 'vehicle' if p.get('other') else 'person', 'box': [round(p['box'][0] / w, 4), round(p['box'][1] / h, 4), round(p['box'][2] / w, 4), round(p['box'][3] / h, 4)],
               'label': p.get('label') or '', 'alarm': bool(p.get('alarm'))}
         if p.get('poly') is not None:
             it['poly'] = [[round(float(x) / w, 4), round(float(y) / h, 4)] for x, y in p['poly']]
@@ -323,6 +327,7 @@ def run_channel(channel, cfg, counter):
     model, latest, stop = Pose(), {'jpeg': None, 't': 0}, threading.Event()
     seg = Seg(SEGMENT) if os.path.exists(SEGMENT) else None
     cars, car_check, seg_at = [], 0, 0   # korunan arac [{box, poly, score, at}]
+    others = []                          # korunan disindaki araclar (yalniz katmanda gosterilir)
     threading.Thread(target=frames, args=(channel, latest, stop), daemon=True).start()
     tracks, prev, last_t, last_motion_ev, last_inf = [], None, 0, 0, 0
     local_gap = {}                       # tur -> son gonderim (yerel seyreltme; asil bekleme panelde)
@@ -440,7 +445,7 @@ def run_channel(channel, cfg, counter):
         if not motion and not tracks and not ov['watch'] and now - last_inf < 1:
             counter.value += 1
             calm = [{'box': c['box'], 'poly': c.get('poly'), 'car': True, 'label': 'korunan arac'} for c in cars]
-            show(img, calm, 'sakin (model beklemede)'); overlay(img, calm)
+            show(img, calm, 'sakin (model beklemede)'); overlay(img, others + calm)
             continue
         last_inf = now
         people = [p for p in detect(model, img, 0.3) if p['score'] >= 0.3]
@@ -449,12 +454,16 @@ def run_channel(channel, cfg, counter):
         # --- kontur (seg): izleyen varken saniyede en cok 2, yoksa korunan arac icin 5 sn'de bir
         zone = (cfg.get('guardZones') or {}).get(str(channel))
         segs = None
-        if seg and (now - seg_at >= (0.5 if ov['watch'] else 5)) and (ov['watch'] or zone):
+        # seg (dilimli): kisi bulucu olarak da calisir (pose-nano uzak/koyu giyimli kisiyi kaciriyor, olculdu 0.03 vs seg 0.52)
+        if seg and now - seg_at >= (0.33 if ov['watch'] else 1.0):
             seg_at = now
             try:
-                segs = seg(img, 0.3)
+                segs = detect(seg, img, 0.3)
             except Exception as ex:  # noqa: BLE001
                 log(f'K{channel + 1} seg: {ex}'); segs = []
+        for s in segs or []:                              # pose'un kacirdigi kisiler (eklemsiz: durus kutu oranindan)
+            if s['cls'] == 'person' and s['score'] >= 0.35 and not any(iou(s['box'], p['box']) > 0.3 for p in people):
+                people.append({'box': [float(v) for v in s['box']], 'score': s['score'], 'kp': np.zeros((17, 3), np.float32), 'poly': s['poly']})
         # --- korunan arac: yalniz kamera basina tanimli koruma alani (renk tahmini yok: siyah/diger araclar isaretlenmez)
         if zone and (segs is not None or not cars):
             h, w = img.shape[:2]
@@ -467,6 +476,9 @@ def run_channel(channel, cfg, counter):
             cars = [{'box': zb, 'poly': poly, 'score': 1.0, 'at': now}]   # kural alanla (sabit), cizim konturla
         elif not zone:
             cars = []
+        if segs is not None:
+            others = [{'box': s['box'], 'poly': s['poly'], 'other': True, 'label': 'araç'} for s in segs
+                      if s['cls'] == 'car' and not any(iou(s['box'], c['box']) > 0.3 for c in cars)]
         car_marks = [{'box': c['box'], 'poly': c.get('poly'), 'score': c['score'], 'car': True, 'label': 'korunan arac'} for c in cars]
         # --- izleyici (acgozlu IoU)
         used = set()
@@ -550,7 +562,7 @@ def run_channel(channel, cfg, counter):
                     tr.p['alarm'] = True
                 report('fight', max(t.p['score'] for t in fast), f'{len(live)} kişi, hızlı kol hareketi', img, [t.p for t in live])
         show(img, car_marks + [t.p for t in live], f'{len(live)} kişi' + ('  korunan araç' if cars else '') + (f'  hareket %{moved * 100:.0f}' if motion else ''))
-        overlay(img, car_marks + [t.p for t in live])
+        overlay(img, others + car_marks + [t.p for t in tracks if now - t.seen < 0.6])   # seg ile bulunan kisi seg araliginda da gorunur
         if motion and not live and now - last_motion_ev > 30:
             last_motion_ev = now
             report('motion', None, f'görüntünün %{moved * 100:.0f} değişti', img, [])

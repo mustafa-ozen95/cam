@@ -1497,7 +1497,7 @@ function overlayDraw(k) {
   for (const raw of o.items) {
     const dx = raw.v ? raw.v[0] * lead : 0, dy = raw.v ? raw.v[1] * lead : 0;
     const it = dx || dy ? { ...raw, box: [raw.box[0] + dx, raw.box[1] + dy, raw.box[2] + dx, raw.box[3] + dy], poly: raw.poly?.map(([a, b]) => [a + dx, b + dy]), kp: raw.kp?.map((p) => (p ? [p[0] + dx, p[1] + dy] : p)) } : raw;
-    const col = it.k === 'car' ? '#ff8c00' : it.alarm ? '#ff3b30' : '#34c759';
+    const col = it.k === 'car' ? '#ff8c00' : it.k === 'vehicle' ? '#0a84ff' : it.alarm ? '#ff3b30' : '#34c759';
     c.beginPath();
     if (it.poly?.length >= 3) { it.poly.forEach(([a, b], i) => (i ? c.lineTo(X(a), Y(b)) : c.moveTo(X(a), Y(b)))); c.closePath(); }
     else c.rect(X(it.box[0]), Y(it.box[1]), (it.box[2] - it.box[0]) * w, (it.box[3] - it.box[1]) * h);
