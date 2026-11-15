@@ -15,6 +15,7 @@ export function apiRoutes(r, d, middleware) {
   r.post('/api/ai/heartbeat', d.alerts.heartbeat);
   r.post('/api/ai/report', d.alerts.report);
   r.get('/api/ai/stream', d.alerts.stream);
+  r.get('/api/ai/snapshot', d.alerts.snapshot);
   r.post('/api/ai/preview', d.alerts.framePush);
 
   r.group([middleware.identity], () => {

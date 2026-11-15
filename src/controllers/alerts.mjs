@@ -76,5 +76,19 @@ export function alertsController({ alerts, devices, auditLog, config }) {
       y.subscriber(ctx.res);
       y.ready.then(() => { if (y.error) ctx.res.end(); });
     },
+    /** Ana akistan tek tam cozunurluklu kare (plaka okuma): yalniz tetiklenince istenir, diske inmez. */
+    async snapshot(ctx) {
+      worker(ctx);
+      const k = Number(ctx.q.get('channel'));
+      if (!Number.isInteger(k) || k < 0 || k >= (devices.group.channelTotal ?? 0)) throw new HttpError(400, 'kanal geçersiz', 'INVALID_REQUEST');
+      const y = devices.group.feed(k, 'Main', 0);
+      clearTimeout(y.idleTimer);
+      await y.firstFrame();
+      for (let t = 0; (y.frameCounter ?? 0) < 6 && t < 50 && !y.stopped; t++) await new Promise((r) => setTimeout(r, 100));
+      const frame = y.last;
+      if (!y.subscribers.size) y.idleTimer = setTimeout(() => y.stop(), 15000);   // art arda isteklerde akis acik kalir
+      if (!frame) throw new HttpError(503, y.error ?? 'Kameradan görüntü alınamadı', 'UNAVAILABLE');
+      ctx.res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' }); ctx.res.end(frame);
+    },
   };
 }
