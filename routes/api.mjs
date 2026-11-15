@@ -17,6 +17,7 @@ export function apiRoutes(r, d, middleware) {
   r.get('/api/ai/stream', d.alerts.stream);
   r.get('/api/ai/snapshot', d.alerts.snapshot);
   r.post('/api/ai/preview', d.alerts.framePush);
+  r.post('/api/ai/overlay', d.alerts.overlayPush);
 
   r.group([middleware.identity], () => {
     r.get('/api/me', d.login.me);
@@ -37,6 +38,7 @@ export function apiRoutes(r, d, middleware) {
     // algilama olaylari ve bildirim (Telegram)
     r.get('/api/events', d.alerts.events, [permission('event.read')]);
     r.get('/api/alerts/preview', d.alerts.preview, [permission('event.read')]);
+    r.get('/api/alerts/overlay', d.alerts.overlay, [permission('live.view')]);
     r.get('/api/alerts', d.alerts.settings, [permission('alert.manage')]);
     r.put('/api/alerts', d.alerts.save, [permission('alert.manage')]);
     r.post('/api/alerts/test', d.alerts.test, [permission('alert.manage')]);

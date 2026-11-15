@@ -9,7 +9,8 @@ cam-ai: kamera panelinin goruntu analizi (YOLO11n-pose, CPU, onnxruntime).
      collapse : yatay ve hareketsiz > collapseSec
      fight    : (deneysel) iki kisi ust uste ve bilekler cok hizli
      motion   : kisi yokken hareket
-     approach : beyaz araca (yolo11n arac sinifi + renk) yaklasan kisi; arac 5 sn'de bir aranir
+     approach : korunan araca (kamera basina sabit koruma alani, guardZones) yaklasan kisi; alani olmayan kanalda arac yok
+ - Kontur: yolo11n-seg (kisi + arac maskesi -> cokgen). Canli goruntu ustu katman (POST /api/ai/overlay) yalniz izleyen varken.
      plate    : hareket varken 3 sn'de bir ANA akistan tek kare (GET /api/ai/snapshot) -> plaka bulucu + OCR;
                 yalniz >=45 px plaka, Turk plaka bicimi, 60 sn icinde 2 ayni okuma; ayni plaka 30 dk gorulmeden tekrar bildirilmez
  - Olay -> POST /api/ai/report (isaretli JPEG, base64). Bildirim karari (bekleme, saat) panelde. Diske hicbir sey yazilmaz.
@@ -23,7 +24,7 @@ import onnxruntime as ort
 CAM = os.environ.get('CAM_URL', 'http://cam').rstrip('/')
 SECRET = os.environ.get('CAM_AI_SECRET', '')
 MODEL = os.environ.get('CAM_AI_MODEL', '/models/yolo11n-pose.onnx')
-DETECT = os.environ.get('CAM_AI_DETECT', '/models/yolo11n.onnx')
+SEGMENT = os.environ.get('CAM_AI_SEG', '/models/yolo11n-seg.onnx')
 SIZE = int(os.environ.get('CAM_AI_SIZE', '416'))
 THREADS = int(os.environ.get('CAM_AI_THREADS', '2'))
 HEADERS = {'Authorization': f'Bearer {SECRET}', 'Content-Type': 'application/json'}
@@ -119,21 +120,68 @@ class Pose:
         return res
 
 
-class Detect(Pose):
-    """yolo11n (COCO 80 sinif): yalniz araba(2) ve kamyonet/kamyon(7)."""
-    def __call__(self, img, conf=0.4):
-        out, r, top, left = self.letterbox(img)          # (N, 84): cx cy w h + 80 sinif
-        cls = out[:, 4:].argmax(1); sc = out[np.arange(len(out)), 4 + cls]
-        m = ((cls == 2) | (cls == 7)) & (sc >= conf)
-        out, sc = out[m], sc[m]
+class Seg(Pose):
+    """yolo11n-seg (COCO): kisi(0), araba(2), kamyon(7) -> kutu + kontur cokgeni (goruntu pikseli)."""
+    def __call__(self, img, conf=0.35):
+        h0, w0 = img.shape[:2]
+        r = SIZE / max(h0, w0)
+        nw, nh = int(round(w0 * r)), int(round(h0 * r))
+        pad = np.full((SIZE, SIZE, 3), 114, np.uint8)
+        top, left = (SIZE - nh) // 2, (SIZE - nw) // 2
+        pad[top:top + nh, left:left + nw] = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_LINEAR)
+        x = cv2.cvtColor(pad, cv2.COLOR_BGR2RGB).transpose(2, 0, 1)[None].astype(np.float32) / 255.0
+        o = self.s.run(None, {self.name: x})
+        out, proto = o[0][0].T, o[1][0]                      # (N, 4+80+32), (32, mh, mw)
+        cls = out[:, 4:84].argmax(1); sc = out[np.arange(len(out)), 4 + cls]
+        m = ((cls == 0) | (cls == 2) | (cls == 7)) & (sc >= conf)
+        out, sc, cls = out[m], sc[m], cls[m]
         if not len(out):
             return []
         boxes = np.stack([out[:, 0] - out[:, 2] / 2, out[:, 1] - out[:, 3] / 2, out[:, 2], out[:, 3]], 1)
+        shifted = boxes.copy(); shifted[:, :2] += (cls[:, None] > 0) * 4096      # sinif basina NMS
+        keep = np.array(cv2.dnn.NMSBoxes(shifted.tolist(), sc.tolist(), conf, 0.45)).flatten()
+        if not len(keep):
+            return []
+        mh, mw = proto.shape[1:]
+        masks = 1 / (1 + np.exp(-(out[keep, 84:] @ proto.reshape(32, -1)))).reshape(-1, mh, mw)
         res = []
-        for i in np.array(cv2.dnn.NMSBoxes(boxes.tolist(), sc.tolist(), conf, 0.45)).flatten():
-            x, y, w, h = boxes[i]
-            res.append({'box': [float((x - left) / r), float((y - top) / r), float((x + w - left) / r), float((y + h - top) / r)], 'score': float(sc[i])})
+        for j, i in enumerate(keep):
+            bx, by, bw, bh = boxes[i]
+            box = [float((bx - left) / r), float((by - top) / r), float((bx + bw - left) / r), float((by + bh - top) / r)]
+            mk = cv2.resize(masks[j], (SIZE, SIZE))[top:top + nh, left:left + nw]
+            mk = cv2.resize(mk, (w0, h0)) > 0.5
+            x1, y1, x2, y2 = max(0, int(box[0])), max(0, int(box[1])), min(w0, int(box[2]) + 1), min(h0, int(box[3]) + 1)
+            cut = np.zeros((h0, w0), np.uint8); cut[y1:y2, x1:x2] = mk[y1:y2, x1:x2]
+            cs, _ = cv2.findContours(cut, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            poly = None
+            if cs:
+                c = max(cs, key=cv2.contourArea)
+                if cv2.contourArea(c) > 30:
+                    poly = cv2.approxPolyDP(c, 0.006 * cv2.arcLength(c, True), True).reshape(-1, 2).astype(np.float32)
+            res.append({'cls': 'person' if cls[i] == 0 else 'car', 'box': box, 'score': float(sc[i]), 'poly': poly})
         return res
+
+
+def follow(poly, a, b):
+    """Kutu a'da bulunmus konturu kutu b'ye tasir (seg her karede calismaz)."""
+    sx = (b[2] - b[0]) / max(a[2] - a[0], 1e-3); sy = (b[3] - b[1]) / max(a[3] - a[1], 1e-3)
+    q = poly.copy(); q[:, 0] = b[0] + (q[:, 0] - a[0]) * sx; q[:, 1] = b[1] + (q[:, 1] - a[1]) * sy
+    return q
+
+
+def overlay_items(marks, w, h):
+    """Isaretler -> normalize (0..1) katman ogeleri."""
+    items = []
+    for p in marks:
+        it = {'k': 'car' if p.get('car') else 'person', 'box': [round(p['box'][0] / w, 4), round(p['box'][1] / h, 4), round(p['box'][2] / w, 4), round(p['box'][3] / h, 4)],
+              'label': p.get('label') or '', 'alarm': bool(p.get('alarm'))}
+        if p.get('poly') is not None:
+            it['poly'] = [[round(float(x) / w, 4), round(float(y) / h, 4)] for x, y in p['poly']]
+        k = p.get('kp')
+        if k is not None:
+            it['kp'] = [[round(float(k[i, 0]) / w, 4), round(float(k[i, 1]) / h, 4)] if k[i, 2] > 0.4 else None for i in range(17)]
+        items.append(it)
+    return items
 
 
 def white_ratio(img, box):
@@ -224,7 +272,10 @@ def draw(img, people, title):
     for p in people:
         x1, y1, x2, y2 = map(int, p['box'])
         c = (255, 140, 0) if p.get('car') else (0, 0, 255) if p.get('alarm') else (0, 200, 0)
-        cv2.rectangle(v, (x1, y1), (x2, y2), c, 2)
+        if p.get('poly') is not None and len(p['poly']) >= 3:
+            cv2.polylines(v, [p['poly'].astype(np.int32)], True, c, 2, cv2.LINE_AA)
+        else:
+            cv2.rectangle(v, (x1, y1), (x2, y2), c, 2)
         if p.get('label'):
             t = p['label'].translate(ASCII)
             (tw, th), _ = cv2.getTextSize(t, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
@@ -249,12 +300,13 @@ def annotate(img, people, title):
 def run_channel(channel, cfg, counter):
     signal.signal(signal.SIGTERM, lambda *_: os._exit(0))
     model, latest, stop = Pose(), {'jpeg': None, 't': 0}, threading.Event()
-    detector = Detect(DETECT) if os.path.exists(DETECT) else None
-    cars, car_check = [], 0              # beyaz araclar [{box, score, at}]
+    seg = Seg(SEGMENT) if os.path.exists(SEGMENT) else None
+    cars, car_check, seg_at = [], 0, 0   # korunan arac [{box, poly, score, at}]
     threading.Thread(target=frames, args=(channel, latest, stop), daemon=True).start()
     tracks, prev, last_t, last_motion_ev, last_inf = [], None, 0, 0, 0
     local_gap = {}                       # tur -> son gonderim (yerel seyreltme; asil bekleme panelde)
     view = {'watch': False, 'at': 0}
+    ov = {'watch': False, 'at': 0}       # canli goruntu ustu katman
     state = {'motion_at': 0}
 
     def plates_loop():
@@ -314,6 +366,17 @@ def run_channel(channel, cfg, counter):
         except Exception:  # noqa: BLE001
             view['watch'] = False
 
+    def overlay(img, marks):
+        """Katman: izleyen varken her islenen kare, yoksa 3 sn'de bir (izleyen var mi diye)."""
+        now = time.time()
+        if now - ov['at'] < (0 if ov['watch'] else 3):
+            return
+        ov['at'] = now
+        try:
+            ov['watch'] = bool(post('/api/ai/overlay', {'channel': channel, 'items': overlay_items(marks, img.shape[1], img.shape[0])}, 5).get('watch'))
+        except Exception:  # noqa: BLE001
+            ov['watch'] = False
+
     def report(kind, score, detail, img, people):
         now = time.time()
         if now - local_gap.get(kind, 0) < 10 or not cfg.get('types', {}).get(kind):
@@ -352,30 +415,35 @@ def run_channel(channel, cfg, counter):
         # kisi izi yoksa ve hareket yoksa model calismaz (2 sn'de bir yine bakilir)
         if not motion and not tracks and now - last_inf < 2:
             counter.value += 1
-            show(img, [{'box': c['box'], 'car': True, 'label': 'beyaz arac'} for c in cars], 'sakin (model beklemede)')
+            calm = [{'box': c['box'], 'poly': c.get('poly'), 'car': True, 'label': 'korunan arac'} for c in cars]
+            show(img, calm, 'sakin (model beklemede)'); overlay(img, calm)
             continue
         last_inf = now
         people = [p for p in model(img, 0.35) if p['score'] >= 0.35]
         counter.value += 1
         min_score = float(cfg.get('minScore', 0.5))
-        # --- beyaz arac (5 sn'de bir; kisi araci orterse son bilinen yer 60 sn tutulur)
-        if detector and cfg.get('types', {}).get('approach') and now - car_check >= 5:
-            car_check = now
-            # korunan arac: kameraya en yakin (en buyuk) beyaz arac; arkadaki park etmis araclar sayilmaz
-            area = img.shape[0] * img.shape[1]
-            zone = (cfg.get('guardZones') or {}).get(str(channel))
-            if zone:
-                # sabit koruma alani (kadrajdan tasan/tepeden gorunen arac YOLO'ya yakalanmaz; beton zemin de "beyaz" olcuyor -> hep etkin)
-                h, w = img.shape[:2]
-                white = [{'box': [zone[0] * w, zone[1] * h, zone[2] * w, zone[3] * h], 'score': 1.0}]
-            else:
-                white = [c for c in detector(img, 0.3) if white_ratio(img, c['box']) > 0.25 and (c['box'][2] - c['box'][0]) * (c['box'][3] - c['box'][1]) > 0.04 * area]
-            if white:
-                best = max(white, key=lambda c: (c['box'][2] - c['box'][0]) * (c['box'][3] - c['box'][1]))
-                best['at'] = now; cars = [best]
-            else:
-                cars = [c for c in cars if now - c['at'] < 60]      # kisi araci orterse son yer 60 sn tutulur
-        car_marks = [{'box': c['box'], 'score': c['score'], 'car': True, 'label': 'beyaz arac'} for c in cars]
+        # --- kontur (seg): izleyen varken saniyede en cok 2, yoksa korunan arac icin 5 sn'de bir
+        zone = (cfg.get('guardZones') or {}).get(str(channel))
+        segs = None
+        if seg and (now - seg_at >= (0.5 if ov['watch'] else 5)) and (ov['watch'] or zone):
+            seg_at = now
+            try:
+                segs = seg(img, 0.3)
+            except Exception as ex:  # noqa: BLE001
+                log(f'K{channel + 1} seg: {ex}'); segs = []
+        # --- korunan arac: yalniz kamera basina tanimli koruma alani (renk tahmini yok: siyah/diger araclar isaretlenmez)
+        if zone and (segs is not None or not cars):
+            h, w = img.shape[:2]
+            zb = [zone[0] * w, zone[1] * h, zone[2] * w, zone[3] * h]
+            best, bi = 0.2, None
+            for s in segs or []:
+                if s['cls'] == 'car' and s['poly'] is not None and iou(s['box'], zb) > best:
+                    best, bi = iou(s['box'], zb), s
+            poly = bi['poly'] if bi else (cars[0]['poly'] if cars else np.array([[zb[0], zb[1]], [zb[2], zb[1]], [zb[2], zb[3]], [zb[0], zb[3]]], np.float32))
+            cars = [{'box': zb, 'poly': poly, 'score': 1.0, 'at': now}]   # kural alanla (sabit), cizim konturla
+        elif not zone:
+            cars = []
+        car_marks = [{'box': c['box'], 'poly': c.get('poly'), 'score': c['score'], 'car': True, 'label': 'korunan arac'} for c in cars]
         # --- izleyici (acgozlu IoU)
         used = set()
         for tr in tracks:
@@ -390,6 +458,16 @@ def run_channel(channel, cfg, counter):
                 tracks.append(Track(p, now))
         tracks = [t for t in tracks if now - t.seen < 3]
         live = [t for t in tracks if t.seen == now]
+        for tr in live:                                  # kisi konturu: seg sonucundan esle, arada kutuyla tasi
+            if segs is not None:
+                best, bs = 0.3, None
+                for s in segs:
+                    if s['cls'] == 'person' and s['poly'] is not None and iou(s['box'], tr.p['box']) > best:
+                        best, bs = iou(s['box'], tr.p['box']), s
+                if bs:
+                    tr.poly, tr.poly_box = bs['poly'], bs['box']
+            if getattr(tr, 'poly', None) is not None:
+                tr.p['poly'] = follow(tr.poly, tr.poly_box, tr.p['box'])
         # --- kurallar
         for tr in live:
             p = tr.p
@@ -399,7 +477,7 @@ def run_channel(channel, cfg, counter):
             cx, cy, size = (x1 + x2) / 2, (y1 + y2) / 2, max(x2 - x1, y2 - y1)
             if cars and tr.hits >= 2 and not getattr(tr, 'near_car', False) and any(near(p['box'], c['box']) for c in cars):
                 tr.near_car = True; p['alarm'] = True
-                report('approach', p['score'], 'kişi beyaz aracın yanında', img, car_marks + [t.p for t in live])
+                report('approach', p['score'], 'kişi korunan aracın yanında', img, car_marks + [t.p for t in live])
             elif cars and getattr(tr, 'near_car', False) and not any(near(p['box'], c['box'], 0.5) for c in cars):
                 tr.near_car = False
             if not tr.announced and tr.hits >= 3 and p['score'] >= min_score:
@@ -440,7 +518,8 @@ def run_channel(channel, cfg, counter):
                 for tr in fast:
                     tr.p['alarm'] = True
                 report('fight', max(t.p['score'] for t in fast), f'{len(live)} kişi, hızlı kol hareketi', img, [t.p for t in live])
-        show(img, car_marks + [t.p for t in live], f'{len(live)} kişi' + (f'  {len(cars)} beyaz araç' if cars else '') + (f'  hareket %{moved * 100:.0f}' if motion else ''))
+        show(img, car_marks + [t.p for t in live], f'{len(live)} kişi' + ('  korunan araç' if cars else '') + (f'  hareket %{moved * 100:.0f}' if motion else ''))
+        overlay(img, car_marks + [t.p for t in live])
         if motion and not live and now - last_motion_ev > 30:
             last_motion_ev = now
             report('motion', None, f'görüntünün %{moved * 100:.0f} değişti', img, [])

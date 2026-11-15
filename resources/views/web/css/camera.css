@@ -26,6 +26,7 @@
 .channel:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .channel img, .channel video { display: block; width: 100%; height: 100%; object-fit: contain; }
 .channel video { pointer-events: none; }
+.channel__overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .channel img:not([src]), .channel video:not([src]) { visibility: hidden; }
 .channel__name { position: absolute; left: var(--space-3); bottom: var(--space-3); padding: 1px var(--space-3); background: rgb(0 0 0 / 60%); color: #fff; font: var(--text-sm) var(--font-mono); border-radius: var(--radius-sm); pointer-events: none; }
 .channel__status { position: absolute; inset: 0; display: grid; place-items: center; padding: var(--space-3); color: #8f979c; font-size: var(--text-md); text-align: center; pointer-events: none; }

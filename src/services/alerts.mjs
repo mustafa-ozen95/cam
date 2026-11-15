@@ -17,7 +17,7 @@ export const EVENT_TYPES = {
   collapse: { tr: 'Hareketsiz yatan kişi (bayılma olabilir)', icon: '🚨' },
   fight: { tr: 'Kavga / saldırgan hareket olabilir', icon: '🥊' },
   motion: { tr: 'Hareket algılandı', icon: '👣' },
-  approach: { tr: 'Beyaz araca yaklaşan kişi', icon: '🚗' },
+  approach: { tr: 'Korunan araca yaklaşan kişi', icon: '🚗' },
   plate: { tr: 'Plaka okundu', icon: '🔢' },
 };
 const DEFAULTS = {
@@ -45,6 +45,8 @@ export class AlertService {
     this.worker = null;            // son nabiz { at, stats }
     this.previews = new Map();     // kanal -> { jpeg, at } (yalniz bellekte: isaretli son kare)
     this.viewers = new Map();      // kanal -> Set(res) canli algilama izleyicileri
+    this.overlays = new Map();     // kanal -> son algilama katmani (JSON metni)
+    this.overlayClients = new Set(); // { res, channels:Set } canli goruntu ustu katman (SSE)
   }
 
   async load() {
@@ -58,10 +60,10 @@ export class AlertService {
   token() { try { return this.doc.telegram.token ? unseal(this.key, this.doc.telegram.token) : ''; } catch { return ''; } }
   channelName(k) { const g = this.devices.group; return g.nameOverrides?.[k] || g.channelNames?.[k] || `Kanal ${k + 1}`; }
 
-  /** Cihazlara ait, bos olmayan kanallar (son bilinen bilgiye gore). */
+  /** Cihazlara ait, bos olmadigi BILINEN kanallar (cihaz bilgisi henuz gelmediyse o cihazin kanali yok: acilista bos kanal baslatilmaz). */
   channelList() {
     const g = this.devices.group, out = [];
-    for (const c of g.devices ?? []) { const b = g.lastInfo?.get(c.id); for (let i = 0; i < c.channelCount; i++) if (!b?.channelEmpty?.[i]) out.push(c.startIndex + i); }
+    for (const c of g.devices ?? []) { const b = g.lastInfo?.get(c.id); if (!b?.channelEmpty) continue; for (let i = 0; i < c.channelCount; i++) if (!b.channelEmpty[i]) out.push(c.startIndex + i); }
     return out;
   }
 
@@ -167,6 +169,21 @@ export class AlertService {
     const set = this.viewers.get(k);
     for (const r of set ?? []) if (!r.writableNeedDrain) writePart(r, jpeg);
     return { watch: (set?.size ?? 0) > 0 };
+  }
+  /** cam-ai algilama katmani (normalize konturlar): izleyen istemcilere SSE ile gider. Yanit: bu kanali izleyen var mi. */
+  overlay(k, data) {
+    const line = `data: ${JSON.stringify({ channel: k, ...data })}\n\n`;
+    this.overlays.set(k, line);
+    let watch = false;
+    for (const c of this.overlayClients) if (c.channels.has(k)) { watch = true; if (!c.res.writableNeedDrain) c.res.write(line); }
+    return { watch };
+  }
+  overlayWatch(res, channels) {
+    const c = { res, channels: new Set(channels) };
+    this.overlayClients.add(c);
+    res.write('retry: 3000\n\n');
+    const ping = setInterval(() => res.write(': p\n\n'), 20_000);
+    res.on('close', () => { clearInterval(ping); this.overlayClients.delete(c); });
   }
   watch(k, res) {
     if (!this.viewers.has(k)) this.viewers.set(k, new Set());

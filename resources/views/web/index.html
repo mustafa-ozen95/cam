@@ -80,7 +80,7 @@
         </div>
         <div class="column__body column__body--grid">
           <div class="grid" id="grid"></div>
-          <div class="focus-view" id="focus" hidden><video id="focusVideo"></video><div class="channel__status" id="focusStatus"></div><div class="focus-view__tools" id="focusTools"><button type="button" class="btn btn--sm" id="focusSnapshot" title="Görüntü al" aria-label="Görüntü al"></button><button type="button" class="btn btn--sm" id="focusFullExit" title="Tam ekrandan çık" aria-label="Tam ekrandan çık"></button></div></div>
+          <div class="focus-view" id="focus" hidden><video id="focusVideo"></video><canvas class="channel__overlay" id="focusOverlay" aria-hidden="true"></canvas><div class="channel__status" id="focusStatus"></div><div class="focus-view__tools" id="focusTools"><button type="button" class="btn btn--sm" id="focusSnapshot" title="Görüntü al" aria-label="Görüntü al"></button><button type="button" class="btn btn--sm" id="focusFullExit" title="Tam ekrandan çık" aria-label="Tam ekrandan çık"></button></div></div>
         </div>
       </div>
 
@@ -496,6 +496,7 @@
           <select class="select" id="settingsStream"><option value="sub">Alt akış (varsayılan)</option><option value="main">Ana akış</option></select>
           <span class="field__hint">Ana akış daha net görüntü verir; kayıt cihazı, ağ ve sunucu yükü belirgin artar. Büyütülen kamera her zaman ana akıştır.</span></div>
         <label class="checkbox"><input type="checkbox" id="settingsBackground"><span>Başka sekmeye geçince kameraları durdur</span></label>
+        <label class="checkbox"><input type="checkbox" id="settingsOverlay"><span>Algılamayı kamera görüntüsünde göster</span></label>
         <p class="field__hint">Kapalıysa sekmeye döndüğünüzde görüntü beklemeden sürer; ağ ve cihaz yükü artar.</p>
         <div class="field"><span class="field__label">Yerleşim</span>
           <div><button type="button" class="btn btn--sm" id="settingsOrder">Varsayılan sıraya dön</button></div>
@@ -1305,7 +1306,7 @@ function dragBind(b, k) {
 }
 
 // ---------- gorunum tercihleri (uyenin kendi kaydinda; /api/ben/tercih) ----------
-const preferences = { allCount: STREAM_LIMIT, allOrder: [], pauseInBackground: true, gridStream: 'sub' };
+const preferences = { allCount: STREAM_LIMIT, allOrder: [], pauseInBackground: true, gridStream: 'sub', overlay: true };
 // Izgara akisi (uye tercihi): alt akis (varsayilan; dar ekranda Mini) ya da ana akis (kare boyunda: masaustu 960, dar ekran 640).
 // Canli goruntu MP4: olcek/kare hizi yok (kameranin kendi akisi); alt akis tek (Extra1).
 const gridMp4Type = () => (preferences.gridStream === 'main' ? 'Main' : 'Extra1');
@@ -1331,13 +1332,14 @@ function openSetting() {
   $('#settingsAllCount').value = String(preferences.allCount);
   if (!$('#settingsAllCount').value) $('#settingsAllCount').append(el('option', { value: String(preferences.allCount), selected: '' }, String(preferences.allCount)));
   $('#settingsBackground').checked = preferences.pauseInBackground;
+  $('#settingsOverlay').checked = preferences.overlay;
   $('#settingsStream').value = preferences.gridStream;
   $('#settingsOrder').disabled = !preferences.allOrder.length;
   openWindow('settingsDialog');
 }
 $('#settingsForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const g = { allCount: Number($('#settingsAllCount').value), pauseInBackground: $('#settingsBackground').checked, gridStream: $('#settingsStream').value };
+  const g = { allCount: Number($('#settingsAllCount').value), pauseInBackground: $('#settingsBackground').checked, gridStream: $('#settingsStream').value, overlay: $('#settingsOverlay').checked };
   const legacyStream = preferences.gridStream;
   try {
     Object.assign(preferences, await api('/api/me/preferences', { method: 'PUT', body: JSON.stringify(g) })); closeWindow('settingsDialog'); gridPage.n = 0;
@@ -1360,9 +1362,10 @@ function setupLive() {
   for (const k of visible()) {
     const video = el('video', { 'aria-label': info.channelNames[k] });
     const d = el('div', { class: 'channel__status' }, 'Bağlanıyor…');
-    const b = el('button', { type: 'button', class: 'channel', 'aria-label': `${info.channelNames[k]} büyüt`, onclick: () => focusOpen(k) }, video, el('span', { class: 'channel__name' }, info.channelNames[k]), d);
+    const canvas = el('canvas', { class: 'channel__overlay', 'aria-hidden': 'true' });
+    const b = el('button', { type: 'button', class: 'channel', 'aria-label': `${info.channelNames[k]} büyüt`, onclick: () => focusOpen(k) }, video, canvas, el('span', { class: 'channel__name' }, info.channelNames[k]), d);
     const m = new LiveMp4Player(video, { key: () => `${deviceOf(k)}/${gridMp4Type()}`, url: (convert) => `/stream/live-mp4?channel=${k}&type=${gridMp4Type()}${convert ? '&h264=1' : ''}&t=${Date.now()}`, status: (t) => { d.textContent = t; }, first: () => { d.textContent = ''; frames[k]?.waitReady?.(); } });
-    frames[k] = { video, d, m, container: b };
+    frames[k] = { video, d, m, container: b, canvas };
     dragBind(b, k);
     grid.append(b);
   }
@@ -1465,10 +1468,55 @@ async function processLiveOrder() {
     }
   } finally { liveOrder.running--; }
 }
+// ---------- algilama katmani (cam-ai): kontur/iskelet canli goruntunun ustune; SSE (yoklama yok), yalniz ekrandaki kanallar ----------
+const overlayData = new Map(), OVERLAY_SKELETON = [[5, 6], [5, 7], [7, 9], [6, 8], [8, 10], [5, 11], [6, 12], [11, 12], [11, 13], [13, 15], [12, 14], [14, 16]];
+let overlaySource = null, overlayKey = '';
+function overlaySync(watch) {
+  const want = preferences.overlay && watch ? (status.focus !== null ? [status.focus] : Object.keys(frames).map(Number).filter((k) => isOnPage(k))) : [];
+  const key = want.join(',');
+  if (key === overlayKey) return;
+  overlayKey = key; overlaySource?.close(); overlaySource = null; overlayData.clear(); overlayDrawAll();
+  if (!want.length) return;
+  overlaySource = new EventSource(`/api/alerts/overlay?channels=${key}`);
+  overlaySource.onmessage = (e) => { try { const o = JSON.parse(e.data); overlayData.set(o.channel, { items: o.items, at: performance.now() }); overlayDraw(o.channel); } catch { /* bozuk ileti */ } };
+}
+function overlayDrawAll() { for (const k of Object.keys(frames)) overlayDraw(Number(k)); if (status.focus !== null) overlayDraw(status.focus); }
+function overlayDraw(k) {
+  const focus = status.focus === k, video = focus ? $('#focusVideo') : frames[k]?.video, canvas = focus ? $('#focusOverlay') : frames[k]?.canvas;
+  if (!canvas) return;
+  const r = canvas.getBoundingClientRect(), dpr = devicePixelRatio || 1, W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+  const c = canvas.getContext('2d'); c.clearRect(0, 0, W, H);
+  const o = overlayData.get(k);
+  if (!o || !preferences.overlay || performance.now() - o.at > 2500 || !video?.videoWidth || !W) return;
+  let x0 = 0, y0 = 0, w = W, h = H;   // goruntunun kutu icindeki yeri (object-fit: contain -> siyah bant payi)
+  if (getComputedStyle(video).objectFit !== 'fill') { const s = Math.min(W / video.videoWidth, H / video.videoHeight); w = video.videoWidth * s; h = video.videoHeight * s; x0 = (W - w) / 2; y0 = (H - h) / 2; }
+  const X = (v) => x0 + v * w, Y = (v) => y0 + v * h, lw = Math.max(1.5, Math.min(3, W / 400)) * dpr;
+  c.lineJoin = 'round'; c.font = `600 ${Math.round(11 * dpr)}px system-ui, sans-serif`;
+  for (const it of o.items) {
+    const col = it.k === 'car' ? '#ff8c00' : it.alarm ? '#ff3b30' : '#34c759';
+    c.beginPath();
+    if (it.poly?.length >= 3) { it.poly.forEach(([a, b], i) => (i ? c.lineTo(X(a), Y(b)) : c.moveTo(X(a), Y(b)))); c.closePath(); }
+    else c.rect(X(it.box[0]), Y(it.box[1]), (it.box[2] - it.box[0]) * w, (it.box[3] - it.box[1]) * h);
+    c.fillStyle = `${col}2e`; c.fill(); c.strokeStyle = col; c.lineWidth = lw; c.stroke();
+    if (it.kp) {
+      c.beginPath();
+      for (const [a, b] of OVERLAY_SKELETON) { const p = it.kp[a], q = it.kp[b]; if (p && q) { c.moveTo(X(p[0]), Y(p[1])); c.lineTo(X(q[0]), Y(q[1])); } }
+      c.strokeStyle = '#ffd60a'; c.lineWidth = lw * 0.7; c.stroke();
+    }
+    const label = it.k === 'car' ? 'Korunan araç' : it.label;
+    if (label) {
+      const th = Math.round(16 * dpr), tx = Math.max(0, X(it.box[0])), ty = Math.max(th, Y(it.box[1])), tw = c.measureText(label).width + 8 * dpr;
+      c.fillStyle = col; c.fillRect(tx, ty - th, tw, th); c.fillStyle = '#fff'; c.fillText(label, tx + 4 * dpr, ty - 4 * dpr);
+    }
+  }
+}
+setInterval(() => { if (overlayData.size) overlayDrawAll(); }, 700);   // eskiyen katman silinir, boyut degisimi izlenir
 function stopLive(k) { frames[k]?.m.stop(); }
 function updateLive() {
   if (!info) return;
   const watch = status.tab === 'live' && !inBackground();
+  overlaySync(watch);
   for (const k of Object.keys(frames).map(Number)) {
     if (watch && status.focus === null && isOnPage(k)) { if (!frames[k].m.running) addLiveOrder(k); } else { liveOrder.queue = liveOrder.queue.filter((x) => x !== k); stopLive(k); }
   }

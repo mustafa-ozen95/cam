@@ -55,7 +55,21 @@ export function alertsController({ alerts, devices, auditLog, config }) {
       alerts.watch(k, ctx.res);
     },
 
+    /** Canli goruntu ustu algilama katmani (SSE): ?channels=1,2 (yalniz yetkili kanallar). */
+    async overlay(ctx) {
+      const ks = String(ctx.q.get('channels') ?? '').split(',').map(Number).filter((k) => Number.isInteger(k) && k >= 0 && ctx.principal.channelAllowed(k)).slice(0, 64);
+      ctx.res.raw = true;
+      ctx.res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', Connection: 'keep-alive' });
+      alerts.overlayWatch(ctx.res, ks);
+    },
+
     // ---------- cam-ai ----------
+    async overlayPush(ctx) {
+      worker(ctx);
+      const g = await readBody(ctx.req, 200_000), k = Number(g.channel);
+      if (!Number.isInteger(k) || k < 0 || k >= (devices.group.channelTotal ?? 0)) throw new HttpError(400, 'kanal geçersiz', 'INVALID_REQUEST');
+      return json(ctx.res, 200, alerts.overlay(k, { t: Date.now(), items: Array.isArray(g.items) ? g.items.slice(0, 64) : [] }));
+    },
     async framePush(ctx) {
       worker(ctx);
       const k = Number(ctx.q.get('channel'));
