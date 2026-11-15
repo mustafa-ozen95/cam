@@ -419,7 +419,7 @@ def run_channel(channel, cfg, counter):
     while True:
         fps = max(1.0, float(cfg.get('fps', 4)))
         if ov['watch']:
-            fps = max(fps, 10.0)        # canli katman izlenirken hareketi yakalamak icin daha sik
+            fps = max(fps, 8.0)         # canli katman izlenirken hareketi yakalamak icin daha sik
         wait = last_t + 1.0 / fps - time.time()
         if wait > 0:
             time.sleep(wait)
@@ -449,14 +449,14 @@ def run_channel(channel, cfg, counter):
             show(img, calm, 'sakin (model beklemede)'); overlay(img, others + calm)
             continue
         last_inf = now
-        people = [p for p in detect(model, img, 0.3) if p['score'] >= 0.3]
+        people = [p for p in model(img, 0.3) if p['score'] >= 0.3]   # pose tam kare (eklem); uzaktakini dilimli seg bulur
         counter.value += 1
         min_score = float(cfg.get('minScore', 0.5))
         # --- kontur (seg): izleyen varken saniyede en cok 2, yoksa korunan arac icin 5 sn'de bir
         zone = (cfg.get('guardZones') or {}).get(str(channel))
         segs = None
         # seg (dilimli): kisi bulucu olarak da calisir (pose-nano uzak/koyu giyimli kisiyi kaciriyor, olculdu 0.03 vs seg 0.52)
-        if seg and now - seg_at >= (0.33 if ov['watch'] else 1.0):
+        if seg and now - seg_at >= (0.5 if ov['watch'] else 1.0):
             seg_at = now
             try:
                 segs = detect(seg, img, 0.3)
