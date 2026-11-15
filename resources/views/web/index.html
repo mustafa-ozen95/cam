@@ -2733,7 +2733,7 @@ function alertDraw(g) {
   $('#alertTestChannel').replaceChildren(el('option', { value: '' }, 'Görüntüsüz'), ...g.channels.map((c) => el('option', { value: c.channel }, `${c.name} (K${c.channel + 1})`)));
   $('#alertDetEnabled').checked = d.enabled;
   $('#alertTypes').replaceChildren(...Object.entries(g.types).map(([key, v]) => alertCheck(key, `${v.icon} ${v.tr}`, d.types[key])));
-  $('#alertChannels').replaceChildren(...g.channels.map((c) => alertCheck(c.channel, c.name, d.channels.includes(c.channel))));
+  $('#alertChannels').replaceChildren(...g.channels.map((c) => alertCheck(c.channel, c.name, !d.channels.length || d.channels.includes(c.channel))));
   $('#alertClasses').replaceChildren(...Object.entries(GUARD_CLASSES).map(([key, label]) => alertCheck(key, label, d.classes?.[key] !== false)));
   $('#alertCooldown').value = d.cooldownSec; $('#alertCollapse').value = d.collapseSec; $('#alertScore').value = Math.round(d.minScore * 100); $('#alertFps').value = d.fps;
   $('#alertFrom').value = d.activeFrom; $('#alertTo').value = d.activeTo;
@@ -2827,7 +2827,9 @@ $('#alertTgForm').addEventListener('submit', (e) => { e.preventDefault(); alertP
 $('#alertDetForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const types = Object.fromEntries([...$('#alertTypes').querySelectorAll('input')].map((i) => [i.dataset.k, i.checked]));
-  const channels = [...$('#alertChannels').querySelectorAll('input:checked')].map((i) => Number(i.dataset.k));
+  const boxes = [...$('#alertChannels').querySelectorAll('input')], on = boxes.filter((i) => i.checked);
+  if (!on.length) { notify('En az bir kamera seçin (algılamayı kapatmak için "Algılama açık" işaretini kaldırın).', 'danger'); return; }
+  const channels = on.length === boxes.length ? [] : on.map((i) => Number(i.dataset.k));   // hepsi = bos liste (yeni eklenen kamera da izlenir)
   alertPut({ detection: { enabled: $('#alertDetEnabled').checked, types, channels, cooldownSec: Number($('#alertCooldown').value), collapseSec: Number($('#alertCollapse').value),
     minScore: Number($('#alertScore').value) / 100, fps: Number($('#alertFps').value), classes: Object.fromEntries([...$('#alertClasses').querySelectorAll('input')].map((i) => [i.dataset.k, i.checked])), activeFrom: $('#alertFrom').value, activeTo: $('#alertTo').value } }, $('#alertDetForm button[type=submit]'));
 });
