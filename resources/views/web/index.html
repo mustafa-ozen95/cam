@@ -1549,6 +1549,8 @@ function drawDetections(canvas, mw, mh, media, items) {
   const X = (v) => x0 + v * w, Y = (v) => y0 + v * h, lw = Math.max(1, Math.min(1.5, W / 900)) * dpr;   // ince cizgi (kullanici istegi)
   c.lineJoin = 'round'; c.font = `600 ${Math.round(11 * dpr)}px system-ui, sans-serif`;
   for (const it of items) {
+    // eski kayitlar: dis mekanda anlamsiz nesne etiketleri (tuvalet, yangin muslugu...) cizilmez
+    if (it.k === 'object' && !/^(sırt çantası|şemsiye|el çantası|bavul)/.test(it.label || '')) continue;
     const col = it.k === 'car' ? '#ff8c00' : it.k === 'vehicle' ? '#0a84ff' : it.k === 'animal' ? '#30b0c7' : it.k === 'object' ? '#bf5af2' : it.alarm ? '#ff3b30' : '#34c759';
     c.beginPath();
     if (it.poly?.length >= 3) { it.poly.forEach(([a, b], i) => (i ? c.lineTo(X(a), Y(b)) : c.moveTo(X(a), Y(b)))); c.closePath(); }
