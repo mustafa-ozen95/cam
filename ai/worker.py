@@ -178,6 +178,9 @@ def overlay_items(marks, w, h):
         if p.get('poly') is not None:
             it['poly'] = [[round(float(x) / w, 4), round(float(y) / h, 4)] for x, y in p['poly']]
         k = p.get('kp')
+        v = p.get('v')
+        if v is not None:
+            it['v'] = [round(v[0] / w, 4), round(v[1] / h, 4)]   # hiz (normalize/sn): istemci gecikmeyi ileri tasir
         if k is not None:
             it['kp'] = [[round(float(k[i, 0]) / w, 4), round(float(k[i, 1]) / h, 4)] if k[i, 2] > 0.4 else None for i in range(17)]
         items.append(it)
@@ -373,7 +376,7 @@ def run_channel(channel, cfg, counter):
             return
         ov['at'] = now
         try:
-            ov['watch'] = bool(post('/api/ai/overlay', {'channel': channel, 'items': overlay_items(marks, img.shape[1], img.shape[0])}, 5).get('watch'))
+            ov['watch'] = bool(post('/api/ai/overlay', {'channel': channel, 'age': round(max(0.0, time.time() - ov.get('ft', now)), 3), 'items': overlay_items(marks, img.shape[1], img.shape[0])}, 5).get('watch'))
         except Exception:  # noqa: BLE001
             ov['watch'] = False
 
@@ -391,6 +394,8 @@ def run_channel(channel, cfg, counter):
 
     while True:
         fps = max(1.0, float(cfg.get('fps', 4)))
+        if ov['watch']:
+            fps = max(fps, 10.0)        # canli katman izlenirken hareketi yakalamak icin daha sik
         wait = last_t + 1.0 / fps - time.time()
         if wait > 0:
             time.sleep(wait)
@@ -399,6 +404,7 @@ def run_channel(channel, cfg, counter):
         if jpeg is None or last_t - ft > 5:
             time.sleep(0.5); continue
         latest['jpeg'] = None
+        ov['ft'] = ft
         img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             continue
@@ -452,7 +458,14 @@ def run_channel(channel, cfg, counter):
                 if i not in used and iou(tr.p['box'], p['box']) > best:
                     best, bi = iou(tr.p['box'], p['box']), i
             if bi >= 0:
-                used.add(bi); tr.p, tr.seen, tr.hits = people[bi], now, tr.hits + 1
+                used.add(bi)
+                a, b, dt = tr.p['box'], people[bi]['box'], now - tr.seen
+                if 0 < dt < 1.5:          # merkez hizi (px/sn), yumusatilmis
+                    nv = (((b[0] + b[2]) - (a[0] + a[2])) / 2 / dt, ((b[1] + b[3]) - (a[1] + a[3])) / 2 / dt)
+                    ov_v = getattr(tr, 'v', None)
+                    tr.v = nv if ov_v is None else (0.5 * ov_v[0] + 0.5 * nv[0], 0.5 * ov_v[1] + 0.5 * nv[1])
+                tr.p, tr.seen, tr.hits = people[bi], now, tr.hits + 1
+                tr.p['v'] = getattr(tr, 'v', None)
         for i, p in enumerate(people):
             if i not in used:
                 tracks.append(Track(p, now))

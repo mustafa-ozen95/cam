@@ -1478,7 +1478,7 @@ function overlaySync(watch) {
   overlayKey = key; overlaySource?.close(); overlaySource = null; overlayData.clear(); overlayDrawAll();
   if (!want.length) return;
   overlaySource = new EventSource(`/api/alerts/overlay?channels=${key}`);
-  overlaySource.onmessage = (e) => { try { const o = JSON.parse(e.data); overlayData.set(o.channel, { items: o.items, at: performance.now() }); overlayDraw(o.channel); } catch { /* bozuk ileti */ } };
+  overlaySource.onmessage = (e) => { try { const o = JSON.parse(e.data); overlayData.set(o.channel, { items: o.items, at: performance.now(), age: o.age || 0 }); overlayDraw(o.channel); } catch { /* bozuk ileti */ } };
 }
 function overlayDrawAll() { for (const k of Object.keys(frames)) overlayDraw(Number(k)); if (status.focus !== null) overlayDraw(status.focus); }
 function overlayDraw(k) {
@@ -1491,9 +1491,12 @@ function overlayDraw(k) {
   if (!o || !preferences.overlay || performance.now() - o.at > 2500 || !video?.videoWidth || !W) return;
   let x0 = 0, y0 = 0, w = W, h = H;   // goruntunun kutu icindeki yeri (object-fit: contain -> siyah bant payi)
   if (getComputedStyle(video).objectFit !== 'fill') { const s = Math.min(W / video.videoWidth, H / video.videoHeight); w = video.videoWidth * s; h = video.videoHeight * s; x0 = (W - w) / 2; y0 = (H - h) / 2; }
+  const lead = Math.min(0.6, o.age + (performance.now() - o.at) / 1000);   // analiz gecikmesi: hareketli kisi hiziyla ileri tasinir
   const X = (v) => x0 + v * w, Y = (v) => y0 + v * h, lw = Math.max(1.5, Math.min(3, W / 400)) * dpr;
   c.lineJoin = 'round'; c.font = `600 ${Math.round(11 * dpr)}px system-ui, sans-serif`;
-  for (const it of o.items) {
+  for (const raw of o.items) {
+    const dx = raw.v ? raw.v[0] * lead : 0, dy = raw.v ? raw.v[1] * lead : 0;
+    const it = dx || dy ? { ...raw, box: [raw.box[0] + dx, raw.box[1] + dy, raw.box[2] + dx, raw.box[3] + dy], poly: raw.poly?.map(([a, b]) => [a + dx, b + dy]), kp: raw.kp?.map((p) => (p ? [p[0] + dx, p[1] + dy] : p)) } : raw;
     const col = it.k === 'car' ? '#ff8c00' : it.alarm ? '#ff3b30' : '#34c759';
     c.beginPath();
     if (it.poly?.length >= 3) { it.poly.forEach(([a, b], i) => (i ? c.lineTo(X(a), Y(b)) : c.moveTo(X(a), Y(b)))); c.closePath(); }
@@ -1511,7 +1514,7 @@ function overlayDraw(k) {
     }
   }
 }
-setInterval(() => { if (overlayData.size) overlayDrawAll(); }, 700);
+setInterval(() => { if (overlayData.size) overlayDrawAll(); }, 100);
 $('#alertOverlay').addEventListener('change', (e) => { preferences.overlay = e.target.checked; persistPreferences({ overlay: preferences.overlay }); overlayDrawAll(); updateLive(); notify(preferences.overlay ? 'Algılama canlı görüntüde gösterilecek' : 'Algılama canlı görüntüde gizlendi', 'success'); });   // eskiyen katman silinir, boyut degisimi izlenir
 function stopLive(k) { frames[k]?.m.stop(); }
 function updateLive() {

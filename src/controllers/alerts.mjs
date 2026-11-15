@@ -68,7 +68,7 @@ export function alertsController({ alerts, devices, auditLog, config }) {
       worker(ctx);
       const g = await readBody(ctx.req, 200_000), k = Number(g.channel);
       if (!Number.isInteger(k) || k < 0 || k >= (devices.group.channelTotal ?? 0)) throw new HttpError(400, 'kanal geçersiz', 'INVALID_REQUEST');
-      return json(ctx.res, 200, alerts.overlay(k, { t: Date.now(), items: Array.isArray(g.items) ? g.items.slice(0, 64) : [] }));
+      return json(ctx.res, 200, alerts.overlay(k, { t: Date.now(), age: Math.min(5, Math.max(0, Number(g.age) || 0)), items: Array.isArray(g.items) ? g.items.slice(0, 64) : [] }));
     },
     async framePush(ctx) {
       worker(ctx);
