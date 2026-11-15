@@ -278,10 +278,14 @@ def run_channel(channel, cfg, counter):
         # --- beyaz arac (5 sn'de bir; kisi araci orterse son bilinen yer 60 sn tutulur)
         if detector and cfg.get('types', {}).get('approach') and now - car_check >= 5:
             car_check = now
-            seen = [c for c in detector(img) if white_ratio(img, c['box']) > 0.35]
-            for c in seen:
-                c['at'] = now
-            cars = seen + [c for c in cars if now - c['at'] < 60 and not any(iou(c['box'], s['box']) > 0.3 for s in seen)]
+            # korunan arac: kameraya en yakin (en buyuk) beyaz arac; arkadaki park etmis araclar sayilmaz
+            area = img.shape[0] * img.shape[1]
+            white = [c for c in detector(img, 0.3) if white_ratio(img, c['box']) > 0.25 and (c['box'][2] - c['box'][0]) * (c['box'][3] - c['box'][1]) > 0.04 * area]
+            if white:
+                best = max(white, key=lambda c: (c['box'][2] - c['box'][0]) * (c['box'][3] - c['box'][1]))
+                best['at'] = now; cars = [best]
+            else:
+                cars = [c for c in cars if now - c['at'] < 60]      # kisi araci orterse son yer 60 sn tutulur
         car_marks = [{'box': c['box'], 'score': c['score'], 'car': True, 'label': 'beyaz arac'} for c in cars]
         # --- izleyici (acgozlu IoU)
         used = set()
