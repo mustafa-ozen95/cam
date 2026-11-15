@@ -263,6 +263,12 @@ export class Dvr {
     return y;
   }
 
+  /** Analiz akisinin (Main) karesine gore cihaz zamani. */
+  dvrClock(channel, ms) {
+    for (const y of this.feeds.values()) if (y.channel === channel && y.type === 'Main' && !y.stopped) { const s = y.dvrAt(ms); if (s) return s; }
+    return null;
+  }
+
   // ---------- kayitli oynatma (MJPEG, izleyici basina; tum tarayicilarda calisir) ----------
   playMjpeg(res, channel, from, to, width) {
     if (!this.canPlay()) { try { res.end(); } catch {} return null; }   // cihaz bagli kalmasin: sinir doluysa istemci birazdan yeniden dener
@@ -348,6 +354,7 @@ export class Dvr {
 class LiveFeed {
   constructor(dvr, channel, type, width, onEnd, mod = null) {
     Object.assign(this, { dvr, channel, type, width, onEnd, mod });
+    this.marks = []; this.queue = []; this.gateOpen = false;
     this.subscribers = new Set(); this.lastZ = Date.now(); this.last = null; this.stopped = false; this.jpegBuffer = Buffer.alloc(0); this.error = null;
   }
 
@@ -361,6 +368,9 @@ class LiveFeed {
     const { dvr } = this;
     const splitter = new FrameSplitter((v) => {
       if (this.stopped) return;
+      const s = splitter.dvrSec;                 // karenin cihaz zamani (yerel sn)
+      if (this.mod?.playback) { if (!this.gateOpen) this.queue.push(s); }
+      else if (s) { this.marks.push([Date.now(), s]); if (this.marks.length > 500) this.marks.splice(0, 100); }
       if (!this.ff.stdin.write(v)) { this.stream?.connection.socket.pause(); this.ff.stdin.once('drain', () => this.stream?.connection.socket.resume()); }
     }, null);
     const w = Math.max(160, Math.min(1920, this.width || 640));
@@ -384,7 +394,10 @@ class LiveFeed {
 
   /** Kayitli oynatma: hedef andan baslayarak kanalin dosyalarini sirayla (ByName + dosya ici baslangic zamani) oynatir. */
   async #playSetup() {
-    const { dvr } = this; const { channel, from } = this.mod.playback;
+    const { dvr } = this; const { channel } = this.mod.playback;
+    // cihaz istenen andan sonraki I-kareden baslatir (0-2 sn ileri): 3 sn once iste, istenen ana kadarki kareleri atla
+    this.want = Date.parse(this.mod.playback.from.replace(' ', 'T') + 'Z') / 1000;
+    const from = new Date((this.want - 3) * 1000).toISOString().slice(0, 19).replace('T', ' ');
     const day = from.slice(0, 10);
     const next = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
     this.files = (await dvr.records(channel, `${day} 00:00:00`, `${next} 23:59:59`)).filter((f) => f.to > from);
@@ -425,12 +438,23 @@ class LiveFeed {
       if (last < 0) { this.jpegBuffer = this.jpegBuffer.subarray(from); return; }
       const frame = Buffer.from(this.jpegBuffer.subarray(from, last + 2));
       this.jpegBuffer = this.jpegBuffer.subarray(last + 2);
+      if (this.mod?.playback && !this.gateOpen) {
+        const s = this.queue.shift();
+        if (s && s < this.want - 0.02) continue;
+        this.gateOpen = true; this.queue = [];
+      }
       this.last = frame; this.lastZ = Date.now(); this.frameCounter = (this.frameCounter ?? 0) + 1;
       for (const r of this.subscribers) {
         if (r.writableNeedDrain) continue;
         for (const p of this.#part(frame, r)) r.write(p);
       }
     }
+  }
+
+  /** Sunucu saatinde ms aninda gelmis son karenin cihaz zamani (yerel sn); yoksa null. */
+  dvrAt(ms) {
+    for (let i = this.marks.length - 1; i >= 0; i--) if (this.marks[i][0] <= ms) return ms - this.marks[i][0] < 1000 ? this.marks[i][1] : null;
+    return null;
   }
 
   subscriber(res) {

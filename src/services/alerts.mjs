@@ -301,7 +301,8 @@ export class AlertService {
     }
     const shift = this.clocks.get(k).diff;
     const list = frames.filter((f) => Array.isArray(f) && Number.isFinite(f[0]) && Array.isArray(f[1])).slice(0, 200)
-      .map(([t, items]) => [Math.round((localSec(t) + shift) * 100) / 100, items.slice(0, 64)]);
+      // zaman: karenin cihaz damgasi (kayitla ayni saat; JPEG cozme ~0.2 sn once gelmis kare), yoksa saat farkiyla
+      .map(([t, items]) => [Math.round((this.devices.group.dvrClock?.(k, t * 1000 - 200) ?? localSec(t) + shift) * 100) / 100, items.slice(0, 64)]);
     if (!list.length) return { ok: true };
     await this.db.pool.query('INSERT INTO detections (channel, t, data) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data)', [k, Math.floor(list[0][0]), gzipSync(JSON.stringify(list))]);
     return { ok: true };

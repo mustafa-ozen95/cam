@@ -98,14 +98,20 @@ export class FrameSplitter {
       }
       const type = t[i + 3];
       let header, uz;
-      if (type === 0xfc) { if (t.length - i < 16) break; header = 16; uz = t.readUInt32LE(i + 12); const fps = t[i + 5] & 0x1f; if (fps) this.info.fps = fps; this.info.width = t[i + 6] * 8; this.info.height = t[i + 7] * 8; }
+      if (type === 0xfc) {
+        if (t.length - i < 16) break;
+        header = 16; uz = t.readUInt32LE(i + 12); const fps = t[i + 5] & 0x1f; if (fps) this.info.fps = fps; this.info.width = t[i + 6] * 8; this.info.height = t[i + 7] * 8;
+        // I-kare damgasi (cihaz yerel saati, sn; paketli: yil6 ay4 gun5 saat5 dk6 sn6): kayit ve canli ayni damgayi tasir
+        const v = t.readUInt32LE(i + 8);
+        this.istamp = Date.UTC(2000 + (v >>> 26), ((v >> 22) & 15) - 1, (v >> 17) & 31, (v >> 12) & 31, (v >> 6) & 63, v & 63) / 1000; this.k = 0;
+      }
       else if (type === 0xfd) { header = 8; uz = t.readUInt32LE(i + 4); }
       else if (type === 0xfa || type === 0xf9) { header = 8; uz = t.readUInt16LE(i + 6); }
       else { const j = t.indexOf(Buffer.from([0, 0, 1]), i + 1); if (j < 0) { i = t.length - 2; break; } i = j; continue; }
       if (uz > 4_000_000) { i += 4; continue; }
       if (t.length - i < header + uz) break;
       const payload = t.subarray(i + header, i + header + uz);
-      if (type === 0xfc || type === 0xfd) this.video(payload); else if (type === 0xfa) this.audio?.(payload);
+      if (type === 0xfc || type === 0xfd) { this.dvrSec = this.istamp ? this.istamp + this.k++ / this.info.fps : null; this.video(payload); } else if (type === 0xfa) this.audio?.(payload);
       i += header + uz;
     }
     this.t = this.t.subarray(Math.max(0, i));

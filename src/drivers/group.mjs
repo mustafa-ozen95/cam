@@ -116,6 +116,7 @@ export class DeviceGroup extends DeviceBase {
    * NVR dolunca obur NVR'dan da kayit acilamazdi.
    */
   /** Kanalin cihaz saati farki (cihaz - sunucu, sn); bilinmiyorsa 0. */
+  dvrClock(channel, ms) { const { c, local } = this.#find(channel); return c.dvrClock ? c.dvrClock(local, ms) : null; }
   async clockDiff(channel) { const { c } = this.#find(channel); return c.clockDifference ? Number((await c.clockDifference()).diff) || 0 : 0; }
   canPlay(channel) { return channel === undefined ? this.devices.every((c) => c.canPlay()) : this.#find(channel).c.canPlay(); }
   canDownload() { return this.devices.every((c) => c.canDownload()); }

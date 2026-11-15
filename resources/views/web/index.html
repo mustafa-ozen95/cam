@@ -1559,7 +1559,8 @@ function drawDetections(canvas, mw, mh, media, items) {
       for (const [a, b] of OVERLAY_SKELETON) { const p = it.kp[a], q = it.kp[b]; if (p && q) { c.moveTo(X(p[0]), Y(p[1])); c.lineTo(X(q[0]), Y(q[1])); } }
       c.strokeStyle = '#ffd60a'; c.lineWidth = lw * 0.7; c.stroke();
     }
-    const label = it.k === 'car' ? 'Korunan araç' : it.label;
+    // eski kayitlarda "#3 dik 10°" bicimi: Insan'a cevrilir
+    const label = it.k === 'car' ? it.label || 'Korunan araç' : (it.label || '').replace(/^#\d+ (dik|yatay)( \d+°)?/, (m, a) => (a === 'yatay' ? 'İnsan (yatıyor)' : 'İnsan'));
     if (label) {
       // etiket nesnenin ustune: kontur varsa en ust noktasi (alan kutusu nesneden genis olabilir), yoksa kutu sol ustu
       const th = Math.round(16 * dpr), tw = c.measureText(label).width + 8 * dpr, top = it.poly?.length >= 3 ? it.poly.reduce((m, q) => (q[1] < m[1] ? q : m)) : null;
