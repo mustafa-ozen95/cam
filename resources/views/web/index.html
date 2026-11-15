@@ -1562,7 +1562,8 @@ function drawDetections(canvas, mw, mh, media, items) {
       c.strokeStyle = '#ffd60a'; c.lineWidth = lw * 0.7; c.stroke();
     }
     // eski kayitlarda "#3 dik 10°" bicimi: Insan'a cevrilir
-    const label = it.k === 'car' ? it.label || 'Korunan araç' : (it.label || '').replace(/^#\d+ (dik|yatay)( \d+°)?/, (m, a) => (a === 'yatay' ? 'İnsan (yatıyor)' : 'İnsan'));
+    const label = it.k === 'car' ? it.label || 'Korunan araç' : (it.label || '').replace(/^#\d+ (dik|yatay)( \d+°)?/, (m, a) => (a === 'yatay' ? 'İnsan (yatıyor)' : 'İnsan'))
+      .replace(/ %\d+/, '').replace(/^\S/,(ch) => ch.toLocaleUpperCase('tr'));   // guven yuzdesi kullaniciya anlamsiz: gosterilmez
     if (label) {
       // etiket nesnenin ustune: kontur varsa en ust noktasi (alan kutusu nesneden genis olabilir), yoksa kutu sol ustu
       const th = Math.round(16 * dpr), tw = c.measureText(label).width + 8 * dpr, top = it.poly?.length >= 3 ? it.poly.reduce((m, q) => (q[1] < m[1] ? q : m)) : null;
