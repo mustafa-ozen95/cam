@@ -190,6 +190,28 @@ def small_pass(seg, img, dmask, known):
     return out
 
 
+def pose_near(model, img, boxes):
+    """Izlenen kisilerin cevresinde tam cozunurlukte poz (gece uzak kisi tam karede %10-50, kirpmada %45-80; olculdu).
+    Kutular tek kare kirpmaya sigmazsa tam kare."""
+    h, w = img.shape[:2]
+    if not boxes:
+        return model(img, 0.3)
+    x1, y1 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+    x2, y2 = max(b[2] for b in boxes), max(b[3] for b in boxes)
+    pad = max(x2 - x1, y2 - y1) * 0.4
+    side = max(x2 - x1, y2 - y1) + 2 * pad
+    side = int(max(side, min(480, h)))
+    if side > h:
+        return model(img, 0.3)
+    x0 = int(min(max(0, (x1 + x2 - side) / 2), w - side)); y0 = int(min(max(0, (y1 + y2 - side) / 2), h - side))
+    out = model(img[y0:y0 + side, x0:x0 + side], 0.3)
+    for p in out:
+        b = p['box']; p['box'] = [b[0] + x0, b[1] + y0, b[2] + x0, b[3] + y0]
+        if p.get('kp') is not None:
+            p['kp'][:, 0] += x0; p['kp'][:, 1] += y0
+    return out
+
+
 def box_motion(dmask, box, w):
     """Kutunun icindeki hareketli piksel orani (dmask: 160 px fark maskesi)."""
     s = dmask.shape[1] / w
@@ -503,6 +525,7 @@ def run_channel(channel, cfg, counter):
     threading.Thread(target=frames, args=(channel, latest, stop), daemon=True).start()
     tracks, prev, last_t, last_motion_ev, last_inf = [], None, 0, 0, 0
     fprev, fprev_t = None, 0             # optik akis icin onceki gri kare (640 px) ve zamani
+    veh_boxes = []                       # son seg'deki araclar (sahte kisi suzgeci)
     moving_at = 0                        # son seg'de hareketli arac/hayvan goruldugu an (golge/yagmur suzgeci)
     local_gap = {}                       # tur -> son gonderim (yerel seyreltme; asil bekleme panelde)
     view = {'watch': False, 'at': 0}
@@ -644,7 +667,10 @@ def run_channel(channel, cfg, counter):
             continue
         last_inf = now
         aimg = night_boost(img)
-        people = [p for p in model(aimg, 0.3) if p['score'] >= 0.3]   # pose tam kare (eklem); uzaktakini dilimli seg bulur
+        # pose: izlenen kisi varsa onun cevresinde tam cozunurluk, yoksa tam kare; yeni kisiyi dilimli seg bulur
+        people = [p for p in pose_near(model, aimg, [t.p['box'] for t in tracks if now - t.seen < 1.0]) if p['score'] >= 0.3]
+        # gece park etmis aracin ustunde dusuk puanli sahte "insan": arac kutusuyla ortusen zayif pozlar atilir
+        people = [p for p in people if p['score'] >= 0.5 or not any(iou(p['box'], v) > 0.25 for v in veh_boxes)]
         counter.value += 1
         min_score = float(cfg.get('minScore', 0.5))
         # --- kontur (seg): izleyen varken saniyede en cok 2, yoksa korunan arac icin 5 sn'de bir
@@ -660,6 +686,7 @@ def run_channel(channel, cfg, counter):
                     segs += small_pass(seg, aimg, dmask, segs + people)
             except Exception as ex:  # noqa: BLE001
                 log(f'K{channel + 1} seg: {ex}'); segs = []
+            veh_boxes = [s['box'] for s in segs if s['kind'] == 'vehicle']
         for s in segs or []:                              # pose'un kacirdigi kisiler (eklemsiz: durus kutu oranindan)
             if s['cls'] == 'person' and s['score'] >= 0.35 and not any(iou(s['box'], p['box']) > 0.3 for p in people):
                 people.append({'box': [float(v) for v in s['box']], 'score': s['score'], 'kp': np.zeros((17, 3), np.float32), 'poly': s['poly']})
@@ -850,7 +877,7 @@ def run_channel(channel, cfg, counter):
                     tr.p['alarm'] = True
                 report('fight', max(t.p['score'] for t in fast), f'{len(live)} kişi, hızlı kol hareketi', img, [t.p for t in live])
         show(img, car_marks + [t.p for t in live], f'{len(live)} kişi' + ('  korunan araç' if cars else '') + (f'  hareket %{moved * 100:.0f}' if motion else ''))
-        overlay(img, others + car_marks + ([predict(t, now) for t in tracks if now - t.seen < 0.6] if shown.get('person', True) else []))   # seg ile bulunan kisi seg araliginda da gorunur
+        overlay(img, others + car_marks + ([predict(t, now) for t in tracks if now - t.seen < 0.6 and (t.hits >= 2 or t.p['score'] >= 0.5)] if shown.get('person', True) else []))   # seg ile bulunan kisi seg araliginda da gorunur
         # golge / yagmur / isik degisimi bildirim vermez: hareket, hareket eden bir arac/hayvanla birlikte olmali
         if motion and not live and now - moving_at < 1.5 and now - last_motion_ev > 30:
             last_motion_ev = now
