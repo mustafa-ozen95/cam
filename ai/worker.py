@@ -267,7 +267,7 @@ def white_ratio(img, box):
 
 PERSON_M = 1.7      # olcek: kisi boyu ~1.7 m (piksel -> metre)
 DEPTH_K = 2.0       # goruntude dikey fark derinliktir, egik kamerada ~2 kat kisalir
-NEAR_M, CLEAR_M = 1.0, 2.0   # yaninda / uzaklasti (histerezis)
+NEAR_M, CLEAR_M = 0.6, 1.5   # dibinde / uzaklasti (histerezis)
 
 
 def foot(p):
