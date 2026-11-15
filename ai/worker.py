@@ -783,8 +783,14 @@ def run_channel(channel, cfg, counter):
                     if s['cls'] != 'person' and s['poly'] is not None and iou(s['box'], zb) > best:
                         best, bi = iou(s['box'], zb), s
                 old = known.get(g['name'])
-                poly = bi['poly'] if bi else (old['poly'] if old and segs is None else np.array([[zb[0], zb[1]], [zb[2], zb[1]], [zb[2], zb[3]], [zb[0], zb[3]]], np.float32))
-                cars.append({'box': zb, 'poly': poly, 'score': 1.0, 'at': now, 'name': g['name'], 'nearM': float(g.get('nearM', NEAR_M)), 'seg': bi['box'] if bi else None})
+                # model bir karede nesneyi kacirirsa (IR gecisi, ortme) son kontur korunur; hic bulunmadiysa alan dikdortgeni
+                if bi:
+                    poly, real = bi['poly'], True
+                elif old and old.get('real'):
+                    poly, real = old['poly'], True
+                else:
+                    poly, real = np.array([[zb[0], zb[1]], [zb[2], zb[1]], [zb[2], zb[3]], [zb[0], zb[3]]], np.float32), False
+                cars.append({'box': zb, 'poly': poly, 'real': real, 'score': 1.0, 'at': now, 'name': g['name'], 'nearM': float(g.get('nearM', NEAR_M)), 'seg': bi['box'] if bi else None})
             # carpma / yerinden oynama: kimse/hicbir arac ortmuyorken nesnenin seg kutusu tabandan 3 kez ust uste sapti
             if segs is not None:
                 for c in cars:
@@ -913,7 +919,7 @@ def run_channel(channel, cfg, counter):
                 tr.clear_since = getattr(tr, 'clear_since', None) or now
             if getattr(tr, 'near_car', False) and tr.clear_since and now - tr.clear_since >= 2:
                 tr.near_car = False
-            if (not getattr(tr, 'near_car', False) and tr.hits >= 2 and tr.near_since
+            if (not getattr(tr, 'near_car', False) and tr.hits >= 3 and getattr(tr, 'top', 0) >= min_score and tr.near_since
                     and (now - tr.near_since >= 0.8 or dm <= 0.3)):
                 tr.near_car = True
                 came = max((m for _, m in hist), default=dm) >= max(CLEAR_M, near_m * 2)
@@ -924,7 +930,7 @@ def run_channel(channel, cfg, counter):
                 k = p.get('kp'); gp = gc.get('poly')
                 wr = gp is not None and len(gp) >= 3 and k is not None and any(k[i, 2] > 0.4 and cv2.pointPolygonTest(np.asarray(gp, np.float32).reshape(-1, 1, 2), (float(k[i, 0]), float(k[i, 1])), False) >= 0 for i in (9, 10))
                 touch = dm <= 0.3 or (wr and dm <= 0.6)
-            if touch:
+            if touch and tr.hits >= 3 and getattr(tr, 'top', 0) >= min_score:
                 tr.touch_since = getattr(tr, 'touch_since', None) or now
                 p['alarm'] = True
                 if not getattr(tr, 'touched', False) and now - tr.touch_since >= 0.3:
@@ -973,7 +979,7 @@ def run_channel(channel, cfg, counter):
                     tr.p['alarm'] = True
                 report('fight', max(t.p['score'] for t in fast), f'{len(live)} kişi, hızlı kol hareketi', img, [t.p for t in live])
         show(img, car_marks + [t.p for t in live], f'{len(live)} kişi' + ('  korunan araç' if cars else '') + (f'  hareket %{moved * 100:.0f}' if motion else ''))
-        overlay(img, others + car_marks + ([predict(t, now) for t in tracks if now - t.seen < 0.6 and not getattr(t, 'ghost', False) and (t.hits >= 2 or t.p['score'] >= 0.5)] if shown.get('person', True) else []))   # seg ile bulunan kisi seg araliginda da gorunur
+        overlay(img, others + car_marks + ([predict(t, now) for t in tracks if now - t.seen < 0.6 and not getattr(t, 'ghost', False) and getattr(t, 'top', 0) >= 0.45 and (t.hits >= 3 or t.p['score'] >= 0.6)] if shown.get('person', True) else []))   # seg ile bulunan kisi seg araliginda da gorunur
         # golge / yagmur / isik degisimi bildirim vermez: hareket, hareket eden bir arac/hayvanla birlikte olmali
         if motion and not live and now - moving_at < 1.5 and now - last_motion_ev > 30:
             last_motion_ev = now
