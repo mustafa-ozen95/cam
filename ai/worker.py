@@ -668,7 +668,7 @@ def run_channel(channel, cfg, counter):
         last_inf = now
         aimg = night_boost(img)
         # pose: izlenen kisi varsa onun cevresinde tam cozunurluk, yoksa tam kare; yeni kisiyi dilimli seg bulur
-        people = [p for p in pose_near(model, aimg, [t.p['box'] for t in tracks if now - t.seen < 1.0]) if p['score'] >= 0.3]
+        people = [p for p in pose_near(model, aimg, [t.p['box'] for t in tracks if now - t.seen < 1.0 and not getattr(t, 'ghost', False)]) if p['score'] >= 0.3]
         # gece park etmis aracin ustunde dusuk puanli sahte "insan": arac kutusuyla ortusen zayif pozlar atilir
         people = [p for p in people if p['score'] >= 0.5 or not any(iou(p['box'], v) > 0.25 for v in veh_boxes)]
         counter.value += 1
@@ -776,7 +776,15 @@ def run_channel(channel, cfg, counter):
                     nb = flow_box(fa, fg, tr.p, s)
                     if nb is not None:
                         tr.p, tr.fseen = shift_item(tr.p, nb), now
-        live = [t for t in tracks if t.seen == now]
+        # sabit sahte kisi (gece duvar/direk): dusuk puanli ve 15 sn hic kipirdamayan iz gizlenir, kurallara girmez
+        for tr in tracks:
+            b = tr.p['box']; c = ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2); hh = max(b[3] - b[1], 1.0)
+            a = getattr(tr, 'anchor', None)
+            if a is None or math.hypot(c[0] - a[0], c[1] - a[1]) > 0.08 * hh:
+                tr.anchor, tr.top = (c[0], c[1], now), tr.p['score']
+            tr.top = max(getattr(tr, 'top', 0), tr.p['score'])
+            tr.ghost = now - tr.anchor[2] > 15 and tr.top < 0.55
+        live = [t for t in tracks if t.seen == now and not t.ghost]
         for tr in live:                                  # kisi konturu: seg sonucundan esle, arada kutuyla tasi
             if segs is not None:
                 best, bs = 0.3, None
@@ -877,7 +885,7 @@ def run_channel(channel, cfg, counter):
                     tr.p['alarm'] = True
                 report('fight', max(t.p['score'] for t in fast), f'{len(live)} kişi, hızlı kol hareketi', img, [t.p for t in live])
         show(img, car_marks + [t.p for t in live], f'{len(live)} kişi' + ('  korunan araç' if cars else '') + (f'  hareket %{moved * 100:.0f}' if motion else ''))
-        overlay(img, others + car_marks + ([predict(t, now) for t in tracks if now - t.seen < 0.6 and (t.hits >= 2 or t.p['score'] >= 0.5)] if shown.get('person', True) else []))   # seg ile bulunan kisi seg araliginda da gorunur
+        overlay(img, others + car_marks + ([predict(t, now) for t in tracks if now - t.seen < 0.6 and not getattr(t, 'ghost', False) and (t.hits >= 2 or t.p['score'] >= 0.5)] if shown.get('person', True) else []))   # seg ile bulunan kisi seg araliginda da gorunur
         # golge / yagmur / isik degisimi bildirim vermez: hareket, hareket eden bir arac/hayvanla birlikte olmali
         if motion and not live and now - moving_at < 1.5 and now - last_motion_ev > 30:
             last_motion_ev = now
