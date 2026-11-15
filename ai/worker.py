@@ -33,7 +33,7 @@ SIZE = int(os.environ.get('CAM_AI_SIZE', '416'))
 THREADS = int(os.environ.get('CAM_AI_THREADS', '2'))
 HEADERS = {'Authorization': f'Bearer {SECRET}', 'Content-Type': 'application/json'}
 PLATE_RE = re.compile(r'^(0[1-9]|[1-7][0-9]|8[01])([A-Z]{1,3})([0-9]{2,4})$')
-PLATE_MIN_W = int(os.environ.get('CAM_AI_PLATE_MIN', '45'))   # px (ana akis); daha kucuk plaka okunamiyor (olculdu: 17-29 px cop)
+PLATE_MIN_W = int(os.environ.get('CAM_AI_PLATE_MIN', '15'))   # px; 15-45 px okuma tahmindir ('?' ile gosterilir)
 # COCO eklemleri: 5/6 omuz, 9/10 bilek, 11/12 kalca
 SKELETON = [(5, 6), (5, 7), (7, 9), (6, 8), (8, 10), (5, 11), (6, 12), (11, 12), (11, 13), (13, 15), (12, 14), (14, 16)]
 
@@ -69,6 +69,23 @@ class Plates:
         from fast_plate_ocr import LicensePlateRecognizer
         self.det = LicensePlateDetector(detection_model='yolo-v9-t-384-license-plate-end2end')
         self.ocr = LicensePlateRecognizer('cct-s-v1-global-model')
+        self.clahe = cv2.createCLAHE(2.0, (4, 4))
+
+    def read(self, crop):
+        """Kucuk/karanlik plaka: buyutulmus ham + kontrastli keskin iki deneme, guveni yuksek olan."""
+        best = ('', 0.0)
+        k = max(1.0, 140 / max(crop.shape[1], 1))
+        up = cv2.resize(crop, None, fx=k, fy=k, interpolation=cv2.INTER_CUBIC)
+        g = self.clahe.apply(cv2.cvtColor(up, cv2.COLOR_BGR2GRAY))
+        g = cv2.cvtColor(cv2.addWeighted(g, 1.6, cv2.GaussianBlur(g, (0, 0), 2), -0.6, 0), cv2.COLOR_GRAY2BGR)
+        for v in (up, g):
+            r = self.ocr.run(v, return_confidence=True)[0]
+            text = re.sub(r'[^0-9A-Z]', '', str(getattr(r, 'plate', r)).upper())
+            cp = getattr(r, 'char_probs', None)
+            c = float(np.mean(np.asarray(cp)[:len(text)])) if cp is not None and len(text) else 0.0
+            if len(text) >= 4 and c > best[1]:
+                best = (text, c)
+        return best
 
     def __call__(self, img, regions=()):
         """Tam kare + her aracin kirpmasi (tam karede bulucu 384 px'e kucultuyor, uzak aracin plakasi kayboluyor)."""
@@ -80,7 +97,7 @@ class Plates:
             for d in self.det.predict(img[y0:y1, x0:x1]):
                 b = d.bounding_box
                 bb = [b.x1 + x0, b.y1 + y0, b.x2 + x0, b.y2 + y0]
-                if d.confidence >= 0.5 and not any(iou(bb, o[0]) > 0.3 for o in dets):
+                if d.confidence >= 0.4 and not any(iou(bb, o[0]) > 0.3 for o in dets):
                     dets.append((bb, float(d.confidence)))
         for (x1, y1, x2, y2), sc in dets:
             b = types.SimpleNamespace(x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2))
@@ -88,15 +105,14 @@ class Plates:
                 continue
             px, py = int((b.x2 - b.x1) * 0.1), int((b.y2 - b.y1) * 0.2)     # %10 pay: dar kirpmada son hane kaciyor (olculdu)
             crop = img[max(0, b.y1 - py):min(h, b.y2 + py), max(0, b.x1 - px):min(w, b.x2 + px)]
-            r = self.ocr.run(crop, return_confidence=True)[0]
-            text = re.sub(r'[^0-9A-Z]', '', str(getattr(r, 'plate', r)).upper())
-            cp = getattr(r, 'char_probs', None)
-            # gece aydinlatmasiz plaka: okuyucu uyduruyor (olculdu: 12AH / 14HY, harf guveni ort. 0.4-0.5) -> guveni dusuk okuma atilir
-            if cp is not None and len(text) and float(np.mean(np.asarray(cp)[:len(text)])) < 0.75:
+            text, conf = self.read(crop)
+            if not text:
                 continue
+            # gece IR plakayi parlatiyor / uzak plaka 15-40 px: okuma tahmin olur (olculdu: harf guveni 0.15-0.5, coklu kare
+            # ortalamasi da duzeltmiyor). Yine de "?" ile gosterilir; bildirim ve "bizim plaka" yalniz emin okumayla.
             m = PLATE_RE.match(text)
-            if m:
-                res.append({'text': text, 'show': ' '.join(m.groups()), 'box': [b.x1, b.y1, b.x2, b.y2], 'score': sc})
+            sure = bool(m) and conf >= 0.75
+            res.append({'text': text, 'show': ' '.join(m.groups()) if m else text, 'box': [b.x1, b.y1, b.x2, b.y2], 'score': sc, 'conf': conf, 'sure': sure})
         return res
 
 
@@ -252,19 +268,28 @@ def plate_for(box, plates, w, h, now):
         b = p['box']
         cx, cy = (b[0] + b[2]) / 2 * w, (b[1] + b[3]) / 2 * h
         if box[0] <= cx <= box[2] and box[1] <= cy <= box[3]:
-            return collections.Counter(t for _, t in p['reads']).most_common(1)[0][0]
+            return plate_best(p)
     return None
 
 
-def plate_add(plates, now, box, show):
+def plate_best(p):
+    """Guven karesiyle agirlikli oylama (emin gunduz okumasi gece tahminlerini ezer); emin degilse sonuna '?'."""
+    score, top = collections.defaultdict(float), collections.defaultdict(float)
+    for _, t, c in p['reads']:
+        score[t] += c * c; top[t] = max(top[t], c)
+    t = max(score, key=score.get)
+    return t if top[t] >= 0.75 and PLATE_RE.match(t.replace(' ', '')) else t + '?'
+
+
+def plate_add(plates, now, box, show, conf):
     """Ayni yerdeki okumalari biriktirir; yazi oylamayla secilir. Yer, ustunde arac durdukca yasar (gece plaka okunmuyor:
     gunduz okunan plaka park etmis aracta kalir; arac gidince yer silinir)."""
     for p in plates:
         if iou(p['box'], box) > 0.3:
             p['box'] = box; p['at'] = now
-            p['reads'] = p['reads'][-15:] + [(now, show)]
+            p['reads'] = p['reads'][-20:] + [(now, show, conf)]
             return p
-    plates.append({'box': box, 'at': now, 'reads': [(now, show)]})
+    plates.append({'box': box, 'at': now, 'reads': [(now, show, conf)]})
     return plates[-1]
 
 
@@ -601,14 +626,14 @@ def run_channel(channel, cfg, counter):
             gz = [g['box'] for g in (cfg.get('guards') or {}).get(str(channel)) or []]
             for p in found:
                 nb = [p['box'][0] / w0, p['box'][1] / h0, p['box'][2] / w0, p['box'][3] / h0]
-                spot = plate_add(state['plates'], now, nb, p['show'])
+                spot = plate_add(state['plates'], now, nb, p['show'], p['conf'])
                 cx, cy = (nb[0] + nb[2]) / 2, (nb[1] + nb[3]) / 2
                 if any(z[0] <= cx <= z[2] and z[1] <= cy <= z[3] for z in gz):
-                    best = collections.Counter(t for _, t in spot['reads']).most_common(1)[0][0].replace(' ', '')
-                    if best not in state['own']:
+                    best = plate_best(spot).replace(' ', '')
+                    if not best.endswith('?') and best not in state['own']:
                         state['own'] = (state['own'] + [best])[-10:]
             own = set(state['own'])
-            for p in found:
+            for p in [p for p in found if p['sure']]:
                 t = p['text']
                 seen[t] = now
                 votes[t] = [x for x in votes.get(t, []) if now - x < 60] + [now]
