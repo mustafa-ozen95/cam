@@ -16,6 +16,8 @@ cam-ai: kamera panelinin goruntu analizi (YOLO11n-pose, CPU, onnxruntime).
  - Olay -> POST /api/ai/report (isaretli JPEG, base64). Bildirim karari (bekleme, saat) panelde. Diske hicbir sey yazilmaz.
 """
 import base64, json, math, multiprocessing as mp, os, re, signal, threading, time, urllib.request
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")         # numpy BLAS 8 is parcacigiyla bos donuyordu (olculdu: seg 1003 -> 283 ms CPU)
 
 import cv2
 cv2.setNumThreads(1)                     # kanal surecleri zaten paralel; OpenCV ic is parcaciklari CPU sisiriyor
