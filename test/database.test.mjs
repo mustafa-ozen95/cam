@@ -25,7 +25,7 @@ test('goc: sema kurulur, tekrar kosunca bir sey yapmaz, surum tablosu dolu', asy
     const rows = await v.db.query('SELECT version FROM migrations ORDER BY version');
     assert.deepEqual(rows.map((s) => s.version), MIGRATIONS.map((m) => m.version));
     const tables = (await v.db.query('SHOW TABLES')).map((r) => Object.values(r)[0]).sort();
-    assert.deepEqual(tables, ['api_keys', 'audit_log', 'builtin_role_permissions', 'devices', 'events', 'hub_links', 'live_pages', 'migrations', 'roles', 'settings', 'users']);
+    assert.deepEqual(tables, ['api_keys', 'audit_log', 'builtin_role_permissions', 'detections', 'devices', 'events', 'hub_links', 'live_pages', 'migrations', 'roles', 'settings', 'users']);
   } finally { await v.remove(); }
 });
 
@@ -274,7 +274,7 @@ test('goc v3: eski etiketli cihaz parolasi, gunluk zinciri ve parmak izi yeni et
   const secret = randomBytes(32), v = await v2Database(secret), logs = [];
   try {
     const oldAudit = await auditRows(v.q);
-    assert.deepEqual(await v.db.runMigrations({ secret, log: (m) => logs.push(m) }), [3, 4]);   // 4: canli sayfalar (veriye dokunmaz, tablo ekler)
+    assert.deepEqual(await v.db.runMigrations({ secret, log: (m) => logs.push(m) }), [3, 4, 5, 6]);   // 4: canli sayfalar, 5-6: algilama olaylari/izleri (veriye dokunmaz, tablo ekler)
     // cihaz parolalari: yeni anahtarla cozulur, bos olan bos kalir
     const key = devicePasswordKey(secret), dev = Object.fromEntries((await v.q('SELECT id, password FROM devices'))[0].map((d) => [d.id, d.password]));
     assert.equal(unseal(key, JSON.parse(dev.d1)), 'parola-bir'); assert.equal(unseal(key, JSON.parse(dev.d2)), 'parola-iki'); assert.equal(dev.d3, null);

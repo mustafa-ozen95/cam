@@ -13,23 +13,23 @@ after(async () => { await t.close(); });
 test('varsayilan: 16 kamera, sira bos, arka planda durur', async () => {
   const r = await t.req('/api/me/preferences');
   assert.equal(r.status, 200);
-  assert.deepEqual(r.json, { allCount: 16, allOrder: [], pauseInBackground: true, gridStream: 'sub' });
+  assert.deepEqual(r.json, { allCount: 16, allOrder: [], pauseInBackground: true, gridStream: 'sub', overlay: true, recOverlay: true });
 });
 
 test('yazilan tercih kalici; verilmeyen alan degismez', async () => {
   let r = await t.req('/api/me/preferences', { method: 'PUT', body: { allCount: 12, allOrder: [3, 1, 2] } });
   assert.equal(r.status, 200);
   r = await t.req('/api/me/preferences', { method: 'PUT', body: { pauseInBackground: false } });
-  assert.deepEqual(r.json, { allCount: 12, allOrder: [3, 1, 2], pauseInBackground: false, gridStream: 'sub' });
+  assert.deepEqual(r.json, { allCount: 12, allOrder: [3, 1, 2], pauseInBackground: false, gridStream: 'sub', overlay: true, recOverlay: true });
   const [record] = await t.services.db.query('SELECT preferences FROM users WHERE name = ?', ['admin']);
-  assert.deepEqual(JSON.parse(record.preferences), { allCount: 12, allOrder: [3, 1, 2], pauseInBackground: false, gridStream: 'sub' });
+  assert.deepEqual(JSON.parse(record.preferences), { allCount: 12, allOrder: [3, 1, 2], pauseInBackground: false, gridStream: 'sub', overlay: true, recOverlay: true });
 });
 
 test('gecersiz degerler sinira cekilir, bilinmeyen alan kayda girmez', async () => {
   const r = await t.req('/api/me/preferences', { method: 'PUT', body: { allCount: 9999, allOrder: [5, 5, -1, 'x', 2.5, 7], role: 'admin', other: 1 } });
   assert.equal(r.json.allCount, 16);   // kayit cihazinin es zamanli akis siniri
   assert.deepEqual(r.json.allOrder, [5, 7]);
-  assert.deepEqual(Object.keys(r.json).sort(), ['allCount', 'allOrder', 'gridStream', 'pauseInBackground']);
+  assert.deepEqual(Object.keys(r.json).sort(), ['allCount', 'allOrder', 'gridStream', 'overlay', 'pauseInBackground', 'recOverlay']);
   // Kare hizi tercihi kaldirildi (canli goruntu MP4, kameranin kendi hizi): gelen alan kayda girmez
   assert.equal((await t.req('/api/me/preferences', { method: 'PUT', body: { gridFps: 20 } })).json.gridFps, undefined);
   assert.equal((await t.req('/api/me/preferences', { method: 'PUT', body: { gridStream: 'main' } })).json.gridStream, 'main');
@@ -40,7 +40,7 @@ test('gecersiz degerler sinira cekilir, bilinmeyen alan kayda girmez', async () 
 test('tercih kisiye ozel: baska uye kendi varsayilanini gorur', async () => {
   assert.equal((await t.req('/api/members', { method: 'POST', body: { name: 'ayse', password: 'ayseparola1', role: 'admin' } })).status, 200);
   await t.login('ayse', 'ayseparola1');
-  assert.deepEqual((await t.req('/api/me/preferences', { who: 'ayse' })).json, { allCount: 16, allOrder: [], pauseInBackground: true, gridStream: 'sub' });
+  assert.deepEqual((await t.req('/api/me/preferences', { who: 'ayse' })).json, { allCount: 16, allOrder: [], pauseInBackground: true, gridStream: 'sub', overlay: true, recOverlay: true });
 });
 
 test('uye listesi tercihi disari vermez', async () => {

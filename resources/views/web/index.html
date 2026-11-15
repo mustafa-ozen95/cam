@@ -2000,6 +2000,7 @@ async function loadTl(day) {
     loadRisk(k, day);
   }
 }
+const RISK_CLASS = ['', 'risk--person', 'risk--near', 'risk--alarm'];
 /** Algilama risk isaretleri (kisi / yakin / alarm); bugunun isaretleri 60 sn'de bir tazelenir. */
 function loadRisk(k, day) {
   const a = `${k}|${day}`, r = tl.risk.get(a);
@@ -2039,7 +2040,7 @@ function drawTime() {
       for (const [b, e, lv] of list) {
         if (e < w0 || b > w1) continue;
         const left = Math.max(0, ((b - w0) / tl.timeRange) * 100), right = Math.min(100, ((e - w0) / tl.timeRange) * 100);
-        sat.append(el('div', { class: `risk r${lv}`, title: riskTitle(lv), style: `left:${left}%;width:${right - left}%` }));
+        sat.append(el('div', { class: `risk ${RISK_CLASS[lv]}`, title: riskTitle(lv), style: `left:${left}%;width:${right - left}%` }));
       }
     }
     items.push(sat);

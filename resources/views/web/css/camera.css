@@ -127,9 +127,9 @@
 .timeline .chunk.A { background: color-mix(in srgb, var(--color-red-fg) 85%, transparent); }
 /* algilama riski: kaydin ustunde ince serit (1 kisi, 2 korunan nesneye yakin, 3 alarm) */
 .timeline .risk { position: absolute; top: 9px; height: 5px; min-width: 3px; border-radius: 1px; pointer-events: none; }
-.timeline .risk.r1 { background: #0a84ff; }
-.timeline .risk.r2 { background: #ff8c00; }
-.timeline .risk.r3 { background: #ff3b30; top: 7px; height: 9px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .6); }
+.timeline .risk.risk--person { background: #0a84ff; }
+.timeline .risk.risk--near { background: #ff8c00; }
+.timeline .risk.risk--alarm { background: #ff3b30; top: 7px; height: 9px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .6); }
 .timeline .ruler { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--color-line); pointer-events: none; }
 .timeline .playhead { position: absolute; top: 0; bottom: 0; left: 50%; margin-left: -1px; width: 2px; background: var(--color-accent); z-index: 3; pointer-events: none; }
 .player > .timeline-tip { position: absolute; margin-top: -22px; padding: 2px var(--space-3); background: var(--color-selected); color: var(--color-text); font: var(--text-md) var(--font-mono); border-radius: var(--radius-sm); z-index: 5; pointer-events: none; white-space: nowrap; }

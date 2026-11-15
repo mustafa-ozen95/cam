@@ -243,6 +243,8 @@ test('rota listesi: HER rota kimlik ister; kimliksiz yalnız giriş sayfasının
     // /:live: canli izleme sayfalari (identityOptional). Erisim denetleyicide SAYFA KAYDINA gore verilir: public sayfa uyeliksiz,
     // private sayfa giris + rol (bkz. test/live.test.mjs). Duzeni yazmak (/:live/layout, PUT) kimlik ister ve bu listede DEGIL.
     // /:live/rtc/:path/whep: izleme baglantisi (SDP alisverisi); yalniz o sayfanin duzenindeki yollar.
+    // /api/ai/*: goruntu analizi konteyneri (cam-ai); uye degil, ortak sir (Bearer CAM_AI_SECRET), sir yoksa 404.
+    '/api/ai/heartbeat', '/api/ai/report', '/api/ai/stream', '/api/ai/snapshot', '/api/ai/preview', '/api/ai/overlay', '/api/ai/track',
     '/:live', '/:live/cameras.json', '/:live/layout.json', '/:live/access', '/:live/:file', '/:live/rtc/:path/whep']);
   const routes = app.router.list();
   for (const r of routes) {
