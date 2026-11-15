@@ -18,6 +18,7 @@ cam-ai: kamera panelinin goruntu analizi (YOLO11n-pose, CPU, onnxruntime).
 import base64, json, math, multiprocessing as mp, os, re, signal, threading, time, urllib.request
 
 import cv2
+cv2.setNumThreads(1)                     # kanal surecleri zaten paralel; OpenCV ic is parcaciklari CPU sisiriyor
 import numpy as np
 import onnxruntime as ort
 
@@ -440,7 +441,7 @@ def run_channel(channel, cfg, counter):
             moved = float((cv2.absdiff(g, prev) > 25).mean())
         prev = g
         motion = moved > 0.002
-        if motion:
+        if moved > 0.01:                 # plaka okuyucu yalniz belirgin harekette (gurultu her 3 sn okumasin)
             state['motion_at'] = now
         # kisi izi yoksa ve hareket yoksa model calismaz (2 sn'de bir yine bakilir)
         if not motion and not tracks and not ov['watch'] and now - last_inf < 1:
