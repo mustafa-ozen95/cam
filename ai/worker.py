@@ -123,6 +123,19 @@ class Pose:
         return res
 
 
+_CLAHE = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+
+
+def night_boost(img):
+    """Karanlik/IR karede yalniz modele giden kopyayi aydinlatir (kayit/goruntu degismez). Gunduz dokunmaz."""
+    g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if float(g[::8, ::8].mean()) >= 85:
+        return img
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    lab[:, :, 0] = _CLAHE.apply(lab[:, :, 0])
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+
 def detect(model, img, conf):
     """Genis karede iki kare dilim (yukseklik x yukseklik) ayri calisir: uzaktaki kucuk kisi 416'ya kuculunce kaybolmaz."""
     h, w = img.shape[:2]
@@ -532,7 +545,8 @@ def run_channel(channel, cfg, counter):
             show(img, calm, 'sakin (model beklemede)'); overlay(img, others + calm)
             continue
         last_inf = now
-        people = [p for p in model(img, 0.3) if p['score'] >= 0.3]   # pose tam kare (eklem); uzaktakini dilimli seg bulur
+        aimg = night_boost(img)
+        people = [p for p in model(aimg, 0.3) if p['score'] >= 0.3]   # pose tam kare (eklem); uzaktakini dilimli seg bulur
         counter.value += 1
         min_score = float(cfg.get('minScore', 0.5))
         # --- kontur (seg): izleyen varken saniyede en cok 2, yoksa korunan arac icin 5 sn'de bir
@@ -542,7 +556,7 @@ def run_channel(channel, cfg, counter):
         if seg and now - seg_at >= (0.5 if ov['watch'] else 1.0):
             seg_at = now
             try:
-                segs = detect(seg, img, 0.3)
+                segs = detect(seg, aimg, 0.3)
             except Exception as ex:  # noqa: BLE001
                 log(f'K{channel + 1} seg: {ex}'); segs = []
         for s in segs or []:                              # pose'un kacirdigi kisiler (eklemsiz: durus kutu oranindan)
