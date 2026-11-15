@@ -340,7 +340,7 @@
       </section>
       <section class="panel" id="alertLivePanel">
         <header class="panel__head"><div><h2 class="panel__title">Canlı algılama</h2><p class="text-sm text-muted">Modelin gördüğü: kişi kutusu, iskelet, duruş (dik/yatay, açı, güven). Kırmızı = alarm. Yalnız bu sekme açıkken akar.</p></div></header>
-        <div class="panel__body"><div id="alertLive" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:12px"></div></div>
+        <div class="panel__body stack"><label class="checkbox"><input type="checkbox" id="alertOverlay"><span>Algılamayı Canlı kamera görüntüsünde göster (kontur, iskelet)</span></label><div id="alertLive" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:12px"></div></div>
       </section>
       <section class="panel" id="alertTgPanel">
         <header class="panel__head"><div><h2 class="panel__title">Telegram</h2><p class="text-sm text-muted">Bot jetonu şifreli saklanır, ekrana geri gelmez.</p></div></header>
@@ -1511,7 +1511,8 @@ function overlayDraw(k) {
     }
   }
 }
-setInterval(() => { if (overlayData.size) overlayDrawAll(); }, 700);   // eskiyen katman silinir, boyut degisimi izlenir
+setInterval(() => { if (overlayData.size) overlayDrawAll(); }, 700);
+$('#alertOverlay').addEventListener('change', (e) => { preferences.overlay = e.target.checked; persistPreferences({ overlay: preferences.overlay }); overlayDrawAll(); updateLive(); notify(preferences.overlay ? 'Algılama canlı görüntüde gösterilecek' : 'Algılama canlı görüntüde gizlendi', 'success'); });   // eskiyen katman silinir, boyut degisimi izlenir
 function stopLive(k) { frames[k]?.m.stop(); }
 function updateLive() {
   if (!info) return;
@@ -2603,6 +2604,7 @@ let alertDoc = null;
 const alertCheck = (key, label, on) => { const i = el('input', { type: 'checkbox', 'data-k': key }); i.checked = !!on; return el('label', { class: 'checkbox' }, i, el('span', {}, label)); };
 function alertDraw(g) {
   alertDoc = g;
+  $('#alertOverlay').checked = preferences.overlay;
   const t = g.telegram, d = g.detection, k = $('#alertInfo'); k.replaceChildren(); const row = makeRow(k);
   const w = g.worker, alive = !!w && w.lastSeenSec < 60;
   row('Analiz servisi', !g.aiReady ? 'kurulmamış (CAM_AI_SECRET yok)' : el('span', { class: `badge badge--${alive ? 'green' : 'red'}` }, alive ? 'çalışıyor' : w ? `${w.lastSeenSec} sn'dir ses yok` : 'bağlanmadı'), !alive);
