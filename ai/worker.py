@@ -280,7 +280,13 @@ def run_channel(channel, cfg, counter):
             car_check = now
             # korunan arac: kameraya en yakin (en buyuk) beyaz arac; arkadaki park etmis araclar sayilmaz
             area = img.shape[0] * img.shape[1]
-            white = [c for c in detector(img, 0.3) if white_ratio(img, c['box']) > 0.25 and (c['box'][2] - c['box'][0]) * (c['box'][3] - c['box'][1]) > 0.04 * area]
+            zone = (cfg.get('guardZones') or {}).get(str(channel))
+            if zone:
+                # sabit koruma alani (kadrajdan tasan/tepeden gorunen arac YOLO'ya yakalanmaz; beton zemin de "beyaz" olcuyor -> hep etkin)
+                h, w = img.shape[:2]
+                white = [{'box': [zone[0] * w, zone[1] * h, zone[2] * w, zone[3] * h], 'score': 1.0}]
+            else:
+                white = [c for c in detector(img, 0.3) if white_ratio(img, c['box']) > 0.25 and (c['box'][2] - c['box'][0]) * (c['box'][3] - c['box'][1]) > 0.04 * area]
             if white:
                 best = max(white, key=lambda c: (c['box'][2] - c['box'][0]) * (c['box'][3] - c['box'][1]))
                 best['at'] = now; cars = [best]
@@ -383,7 +389,7 @@ def main():
     while True:
         try:
             g = post('/api/ai/heartbeat', {'stats': stats})
-            for k in ('types', 'collapseSec', 'minScore', 'fps'):
+            for k in ('types', 'collapseSec', 'minScore', 'fps', 'guardZones'):
                 cfg[k] = g.get(k)
             want = {c['channel'] for c in g.get('channels', [])} if g.get('enabled') else set()
         except Exception as ex:  # noqa: BLE001

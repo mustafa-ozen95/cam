@@ -96,6 +96,14 @@ export class AlertService {
       if (x.collapseSec !== undefined) d.collapseSec = clamp(x.collapseSec, 5, 600, 20);
       if (x.minScore !== undefined) d.minScore = clamp(x.minScore, 0.2, 0.95, 0.5);
       if (x.fps !== undefined) d.fps = clamp(x.fps, 1, 10, 4);
+      if (x.guardZones !== undefined) {
+        const z = {};
+        for (const [k, v] of Object.entries(x.guardZones || {})) {
+          const b = Array.isArray(v) ? v.map(Number) : [];
+          if (/^\d{1,3}$/.test(k) && b.length === 4 && b.every((n) => n >= 0 && n <= 1) && b[0] < b[2] && b[1] < b[3]) z[k] = b;
+        }
+        d.guardZones = z;
+      }
       for (const f of ['activeFrom', 'activeTo']) if (x[f] !== undefined) { const s = String(x[f]).trim(); if (s && !TIME_RE.test(s)) throw new HttpError(400, 'Saat SS:DD biçiminde olmalı', 'INVALID_REQUEST'); d[f] = s; }
     }
     await this.settings.write('alerts', this.doc);
@@ -108,7 +116,7 @@ export class AlertService {
     this.worker = { at: Date.now(), stats: stats && typeof stats === 'object' ? stats : null };
     const d = this.doc.detection, real = this.channelList();
     const channels = d.channels.length ? d.channels.filter((k) => real.includes(k)) : real;
-    return { enabled: d.enabled, channels: d.enabled ? channels.map((k) => ({ channel: k, name: this.channelName(k) })) : [], types: d.types, collapseSec: d.collapseSec, minScore: d.minScore, fps: d.fps };
+    return { enabled: d.enabled, channels: d.enabled ? channels.map((k) => ({ channel: k, name: this.channelName(k) })) : [], types: d.types, collapseSec: d.collapseSec, minScore: d.minScore, fps: d.fps, guardZones: d.guardZones || {} };
   }
 
   /** Olay: { channel, type, score, detail, image (base64 JPEG, istege bagli) }. Satir yazilir, bildirim arka planda. */
