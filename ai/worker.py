@@ -120,6 +120,24 @@ class Pose:
         return res
 
 
+def detect(model, img, conf):
+    """Genis karede iki kare dilim (yukseklik x yukseklik) ayri calisir: uzaktaki kucuk kisi 416'ya kuculunce kaybolmaz."""
+    h, w = img.shape[:2]
+    if w < h * 1.2:
+        return model(img, conf)
+    out = []
+    for x in (0, w - h):
+        for p in model(img[:, x:x + h], conf):
+            b = p['box']; p['box'] = [b[0] + x, b[1], b[2] + x, b[3]]; p['kp'][:, 0] += x
+            out.append(p)
+    out.sort(key=lambda p: -p['score'])
+    keep = []
+    for p in out:                                   # dilim ortusmesindeki kopyalar
+        if all(iou(p['box'], q['box']) < 0.5 for q in keep):
+            keep.append(p)
+    return keep
+
+
 class Seg(Pose):
     """yolo11n-seg (COCO): kisi(0), araba(2), kamyon(7) -> kutu + kontur cokgeni (goruntu pikseli)."""
     def __call__(self, img, conf=0.35):
@@ -415,17 +433,17 @@ def run_channel(channel, cfg, counter):
         if prev is not None and prev.shape == g.shape:
             moved = float((cv2.absdiff(g, prev) > 25).mean())
         prev = g
-        motion = moved > 0.01
+        motion = moved > 0.002
         if motion:
             state['motion_at'] = now
         # kisi izi yoksa ve hareket yoksa model calismaz (2 sn'de bir yine bakilir)
-        if not motion and not tracks and now - last_inf < 2:
+        if not motion and not tracks and not ov['watch'] and now - last_inf < 1:
             counter.value += 1
             calm = [{'box': c['box'], 'poly': c.get('poly'), 'car': True, 'label': 'korunan arac'} for c in cars]
             show(img, calm, 'sakin (model beklemede)'); overlay(img, calm)
             continue
         last_inf = now
-        people = [p for p in model(img, 0.35) if p['score'] >= 0.35]
+        people = [p for p in detect(model, img, 0.3) if p['score'] >= 0.3]
         counter.value += 1
         min_score = float(cfg.get('minScore', 0.5))
         # --- kontur (seg): izleyen varken saniyede en cok 2, yoksa korunan arac icin 5 sn'de bir

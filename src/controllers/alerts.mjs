@@ -84,7 +84,7 @@ export function alertsController({ alerts, devices, auditLog, config }) {
       worker(ctx);
       const k = Number(ctx.q.get('channel'));
       if (!Number.isInteger(k) || k < 0 || k >= (devices.group.channelTotal ?? 0)) throw new HttpError(400, 'kanal geçersiz', 'INVALID_REQUEST');
-      const y = devices.group.feed(k, 'Extra1', 480);
+      const y = devices.group.feed(k, 'Main', 1280, 10);   // ana akis 1280 px, 10 kare/sn: uzaktaki kisi alt akista (480x270) birkac piksel kaliyordu
       ctx.res.raw = true;
       ctx.res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store', Connection: 'close' });
       y.subscriber(ctx.res);
@@ -95,7 +95,7 @@ export function alertsController({ alerts, devices, auditLog, config }) {
       worker(ctx);
       const k = Number(ctx.q.get('channel'));
       if (!Number.isInteger(k) || k < 0 || k >= (devices.group.channelTotal ?? 0)) throw new HttpError(400, 'kanal geçersiz', 'INVALID_REQUEST');
-      const y = devices.group.feed(k, 'Main', 0);
+      const y = devices.group.feed(k, 'Main', 1280, 10);   // analiz akisiyla ayni baglanti
       clearTimeout(y.idleTimer);
       await y.firstFrame();
       for (let t = 0; (y.frameCounter ?? 0) < 6 && t < 50 && !y.stopped; t++) await new Promise((r) => setTimeout(r, 100));

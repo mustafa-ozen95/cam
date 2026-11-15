@@ -254,12 +254,12 @@ export class Dvr {
   });
 
   // ---------- canli yayin (MJPEG, paylasimli) ----------
-  feed(channel, type, _width) {
-    // Genislik tur basina SABIT (istemci ne isterse): her kanal/tur icin cihaza tek baglanti, tum izleyiciler paylasir.
-    const width = type === 'Extra1' ? 480 : 1280;
-    const key = `${channel}/${type}/${width}`;
+  feed(channel, type, _width, fps) {
+    // Genislik tur basina SABIT (istemci ne isterse): her kanal/tur icin cihaza tek baglanti, tum izleyiciler paylasir. fps: kare sinirli kopya (analiz).
+    const width = type === 'Extra1' ? 480 : 1280, f = Math.max(0, Math.min(30, Number(fps) || 0));
+    const key = `${channel}/${type}/${width}/${f}`;
     let y = this.feeds.get(key);
-    if (!y) { y = new LiveFeed(this, channel, type, width, () => this.feeds.delete(key)); this.feeds.set(key, y); y.start(); }
+    if (!y) { y = new LiveFeed(this, channel, type, width, () => this.feeds.delete(key)); y.fps = f; this.feeds.set(key, y); y.start(); }
     return y;
   }
 
@@ -365,7 +365,7 @@ class LiveFeed {
     }, null);
     const w = Math.max(160, Math.min(1920, this.width || 640));
     this.ff = spawn(dvr.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-flags', 'low_delay', '-probesize', '32768', '-analyzeduration', '0',
-      '-f', 'h264', '-i', 'pipe:0', '-an', '-vf', dvr.scale(w), '-q:v', '5', '-f', 'image2pipe', '-c:v', 'mjpeg', 'pipe:1'], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+      '-f', 'h264', '-i', 'pipe:0', '-an', '-vf', (this.fps ? `fps=${this.fps},` : '') + dvr.scale(w), '-q:v', '5', '-f', 'image2pipe', '-c:v', 'mjpeg', 'pipe:1'], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     this.ff.on('error', () => this.stop());       // baslatilamazsa dinleyicisiz 'error' paneli dusurur
     this.ff.stdin.on('error', () => {}); this.ff.stderr.on('data', () => {});
     this.ff.stdout.on('data', (b) => this.#jpeg(b));
