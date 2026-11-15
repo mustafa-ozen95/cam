@@ -20,11 +20,13 @@ export const EVENT_TYPES = {
   motion: { tr: 'Hareket algılandı', icon: '👣' },
   approach: { tr: 'Korunan nesneye yaklaşan kişi', icon: '🛡️' },
   plate: { tr: 'Plaka okundu', icon: '🔢' },
+  touch: { tr: 'Korunan nesneye dokunma', icon: '✋' },
+  impact: { tr: 'Korunan nesne yerinden oynadı / çarpma', icon: '💥' },
 };
 const DEFAULTS = {
   telegram: { enabled: false, token: null, chat: '', thread: '', photo: true },
   detection: {
-    enabled: false, channels: [], types: { person: true, fall: true, collapse: true, fight: false, motion: false, approach: true, plate: true },
+    enabled: false, channels: [], types: { person: true, fall: true, collapse: true, fight: false, motion: false, approach: true, plate: true, touch: true, impact: true },
     ownPlates: [], cooldownSec: 120, collapseSec: 20, minScore: 0.5, fps: 4, activeFrom: '', activeTo: '',
     guards: {},                                                   // { kanal: [{ name, box: [x1,y1,x2,y2] (0..1), nearM }] } korunan nesneler
     classes: { person: true, vehicle: true, animal: true, object: true },   // katmanda/kayitta gosterilen siniflar

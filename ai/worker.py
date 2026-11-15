@@ -158,6 +158,55 @@ def detect(model, img, conf):
     return keep
 
 
+def small_pass(seg, img, dmask, known):
+    """Kucuk hareketli nesne (yerdeki guvercin): 416'ya kuculen tam karede kaybolur. Hareket maskesindeki
+    aciklanmamis en buyuk kucuk lekenin cevresi tam cozunurlukte (320 px) ayrica taranir; yalniz hayvan alinir."""
+    h, w = img.shape[:2]
+    s = w / dmask.shape[1]
+    n, _, st, cen = cv2.connectedComponentsWithStats(cv2.dilate(dmask.astype(np.uint8), np.ones((3, 3), np.uint8)))
+    best = None
+    for i in range(1, n):
+        a = int(st[i, cv2.CC_STAT_AREA])
+        if a < 3 or a > 150:
+            continue
+        cx, cy = float(cen[i][0]) * s, float(cen[i][1]) * s
+        if any(k['box'][0] <= cx <= k['box'][2] and k['box'][1] <= cy <= k['box'][3] for k in known):
+            continue
+        if best is None or a > best[0]:
+            best = (a, cx, cy)
+    if best is None:
+        return []
+    c = min(320, w, h)
+    x0, y0 = int(min(max(0, best[1] - c / 2), w - c)), int(min(max(0, best[2] - c / 2), h - c))
+    out = []
+    for p in seg(img[y0:y0 + c, x0:x0 + c], 0.25):
+        if p['kind'] != 'animal':
+            continue
+        b = p['box']; p['box'] = [b[0] + x0, b[1] + y0, b[2] + x0, b[3] + y0]
+        if p.get('poly') is not None:
+            p['poly'] = p['poly'] + np.array([x0, y0], np.float32)
+        if all(iou(p['box'], k['box']) < 0.3 for k in known):
+            out.append(p)
+    return out
+
+
+def box_motion(dmask, box, w):
+    """Kutunun icindeki hareketli piksel orani (dmask: 160 px fark maskesi)."""
+    s = dmask.shape[1] / w
+    x1, y1 = max(0, int(box[0] * s)), max(0, int(box[1] * s))
+    x2, y2 = min(dmask.shape[1], int(box[2] * s) + 1), min(dmask.shape[0], int(box[3] * s) + 1)
+    return float(dmask[y1:y2, x1:x2].mean()) if x2 > x1 and y2 > y1 else 0.0
+
+
+def plate_for(box, plates, w, h, now):
+    """Kutunun icinde son 10 sn'de okunmus plaka (normalize kutu) -> yazi."""
+    for t, b, show in reversed(plates):
+        cx, cy = (b[0] + b[2]) / 2 * w, (b[1] + b[3]) / 2 * h
+        if now - t < 10 and box[0] <= cx <= box[2] and box[1] <= cy <= box[3]:
+            return show
+    return None
+
+
 # COCO 80 sinif (yolo11n-seg sirasiyla); arac siniflari ayri renkte cizilir
 COCO_TR = ['kişi', 'bisiklet', 'araç', 'motosiklet', 'uçak', 'otobüs', 'tren', 'kamyon', 'tekne', 'trafik ışığı', 'yangın musluğu', 'dur levhası',
            'parkmetre', 'bank', 'kuş', 'kedi', 'köpek', 'at', 'koyun', 'inek', 'fil', 'ayı', 'zebra', 'zürafa', 'sırt çantası', 'şemsiye', 'el çantası',
@@ -167,6 +216,9 @@ COCO_TR = ['kişi', 'bisiklet', 'araç', 'motosiklet', 'uçak', 'otobüs', 'tren
            'telefon', 'mikrodalga', 'fırın', 'tost makinesi', 'lavabo', 'buzdolabı', 'kitap', 'saat', 'vazo', 'makas', 'oyuncak ayı', 'saç kurutma', 'diş fırçası']
 VEHICLES = {1, 2, 3, 5, 6, 7, 8}
 ANIMALS = set(range(14, 24))          # kus, kedi, kopek, at, koyun, inek, fil, ayi, zebra, zurafa
+# dis mekanda anlamli siniflar: kisi, bisiklet, araba, motosiklet, otobus, kamyon, kus..inek, canta/semsiye/bavul
+# (tuvalet, yangin musluğu, saksi vb. yanlis etiketler cizilmez)
+KEEP = np.zeros(80, bool); KEEP[[0, 1, 2, 3, 5, 7, 14, 15, 16, 17, 18, 19, 24, 25, 26, 28]] = True
 
 
 class Seg(Pose):
@@ -182,7 +234,7 @@ class Seg(Pose):
         o = self.s.run(None, {self.name: x})
         out, proto = o[0][0].T, o[1][0]                      # (N, 4+80+32), (32, mh, mw)
         cls = out[:, 4:84].argmax(1); sc = out[np.arange(len(out)), 4 + cls]
-        m = sc >= np.where((cls < 9) | ((cls >= 14) & (cls < 24)), conf, max(conf, 0.4))     # kisi/arac/hayvan disi nesnelerde biraz daha sec
+        m = KEEP[cls] & (sc >= np.where((cls < 9) | ((cls >= 14) & (cls < 24)), conf, max(conf, 0.4)))     # kisi/arac/hayvan disi nesnelerde biraz daha sec
         out, sc, cls = out[m], sc[m], cls[m]
         if not len(out):
             return []
@@ -451,11 +503,13 @@ def run_channel(channel, cfg, counter):
     threading.Thread(target=frames, args=(channel, latest, stop), daemon=True).start()
     tracks, prev, last_t, last_motion_ev, last_inf = [], None, 0, 0, 0
     fprev, fprev_t = None, 0             # optik akis icin onceki gri kare (640 px) ve zamani
+    moving_at = 0                        # son seg'de hareketli arac/hayvan goruldugu an (golge/yagmur suzgeci)
     local_gap = {}                       # tur -> son gonderim (yerel seyreltme; asil bekleme panelde)
     view = {'watch': False, 'at': 0}
     ov = {'watch': False, 'at': 0}       # canli goruntu ustu katman
     rec = {'buf': [], 'last': 0, 'sent': time.time()}   # kayit ustu katman icin algilama izi
-    state = {'motion_at': 0}
+    state = {'motion_at': 0, 'plates': []}   # plates: [(t, normalize kutu, yazi)] ekranda araca yazilir
+    base = {}                            # korunan nesne -> [taban seg kutusu, ust uste sapma sayisi] (carpma)
 
     def plates_loop():
         try:
@@ -466,7 +520,7 @@ def run_channel(channel, cfg, counter):
         while True:
             time.sleep(0.5)
             now = time.time()
-            if not cfg.get('types', {}).get('plate') or now - state['motion_at'] > 8 or now - last < 3:
+            if not cfg.get('types', {}).get('plate') or (now - state['motion_at'] > 8 and not ov['watch']) or now - last < 3:
                 continue
             last = now
             try:
@@ -478,6 +532,8 @@ def run_channel(channel, cfg, counter):
             for t in [t for t in told if now - seen.get(t, 0) > 1800]:   # 30 dk gorulmeyen plaka yeniden bildirilebilir
                 told.discard(t)
             own = set(cfg.get('ownPlates') or [])
+            h0, w0 = img.shape[:2]
+            state['plates'] = [x for x in state['plates'] if now - x[0] < 10][-20:] + [(now, [p['box'][0] / w0, p['box'][1] / h0, p['box'][2] / w0, p['box'][3] / h0], p['show']) for p in found]
             for p in found:
                 t = p['text']
                 seen[t] = now
@@ -554,7 +610,7 @@ def run_channel(channel, cfg, counter):
     while True:
         fps = max(1.0, float(cfg.get('fps', 4)))
         if ov['watch']:
-            fps = max(fps, 8.0)         # canli katman izlenirken hareketi yakalamak icin daha sik
+            fps = max(fps, 10.0)        # canli katman izlenirken analiz akisinin tum kareleri (10 fps)
         wait = last_t + 1.0 / fps - time.time()
         if wait > 0:
             time.sleep(wait)
@@ -570,9 +626,10 @@ def run_channel(channel, cfg, counter):
         now = ft
         # --- hareket on-suzgeci (160 px gri)
         g = cv2.GaussianBlur(cv2.cvtColor(cv2.resize(img, (160, int(160 * img.shape[0] / img.shape[1]))), cv2.COLOR_BGR2GRAY), (5, 5), 0)
-        moved = 0.0
+        moved, dmask = 0.0, None
         if prev is not None and prev.shape == g.shape:
-            moved = float((cv2.absdiff(g, prev) > 25).mean())
+            dmask = cv2.absdiff(g, prev) > 25
+            moved = float(dmask.mean())
         prev = g
         fg = cv2.cvtColor(cv2.resize(img, (640, int(640 * img.shape[0] / img.shape[1]))), cv2.COLOR_BGR2GRAY)
         fa, fa_t, fprev, fprev_t = fprev, fprev_t, fg, now
@@ -599,6 +656,8 @@ def run_channel(channel, cfg, counter):
             seg_at = now
             try:
                 segs = detect(seg, aimg, 0.3)
+                if dmask is not None and motion:
+                    segs += small_pass(seg, aimg, dmask, segs + people)
             except Exception as ex:  # noqa: BLE001
                 log(f'K{channel + 1} seg: {ex}'); segs = []
         for s in segs or []:                              # pose'un kacirdigi kisiler (eklemsiz: durus kutu oranindan)
@@ -616,13 +675,52 @@ def run_channel(channel, cfg, counter):
                         best, bi = iou(s['box'], zb), s
                 old = known.get(g['name'])
                 poly = bi['poly'] if bi else (old['poly'] if old and segs is None else np.array([[zb[0], zb[1]], [zb[2], zb[1]], [zb[2], zb[3]], [zb[0], zb[3]]], np.float32))
-                cars.append({'box': zb, 'poly': poly, 'score': 1.0, 'at': now, 'name': g['name'], 'nearM': float(g.get('nearM', NEAR_M))})
+                cars.append({'box': zb, 'poly': poly, 'score': 1.0, 'at': now, 'name': g['name'], 'nearM': float(g.get('nearM', NEAR_M)), 'seg': bi['box'] if bi else None})
+            # carpma / yerinden oynama: kimse/hicbir arac ortmuyorken nesnenin seg kutusu tabandan 3 kez ust uste sapti
+            if segs is not None:
+                for c in cars:
+                    sb = c['seg']
+                    if sb is None:
+                        continue
+                    area = max((sb[2] - sb[0]) * (sb[3] - sb[1]), 1.0)
+                    cover = lambda o: max(0.0, min(o[2], sb[2]) - max(o[0], sb[0])) * max(0.0, min(o[3], sb[3]) - max(o[1], sb[1])) / area
+                    if any(cover(p['box']) > 0.02 for p in people) or any(s['box'] is not sb and s['kind'] == 'vehicle' and cover(s['box']) > 0.05 for s in segs):
+                        continue
+                    b = base.get(c['name'])
+                    if b is None:
+                        base[c['name']] = [list(sb), 0]; continue
+                    v = iou(sb, b[0])
+                    if v < 0.85:
+                        b[1] += 1
+                        if b[1] >= 3:
+                            report('impact', None, f'{c["name"]} yerinden oynadı / çarpma olabilir (örtüşme %{int(v * 100)})', img,
+                                   [{'box': c['box'], 'poly': c['poly'], 'car': True, 'alarm': True, 'label': c['name']}])
+                            base[c['name']] = [list(sb), 0]
+                    else:
+                        b[1] = 0
+                        if v > 0.93:              # isik/gece yavas kaymasi
+                            b[0] = [0.9 * x + 0.1 * y for x, y in zip(b[0], sb)]
         elif not guards:
             cars = []
+        H, W = img.shape[:2]
         if segs is not None:
-            others = [{'box': s['box'], 'poly': s['poly'], 'other': s['kind'], 'label': f"{s['name']} %{int(s['score'] * 100)}"} for s in segs
-                      if s['cls'] != 'person' and shown.get(s['kind'], True) and not any(iou(s['box'], c['box']) > 0.3 for c in cars)]
-        car_marks = [{'box': c['box'], 'poly': c.get('poly'), 'score': c['score'], 'car': True, 'label': c['name']} for c in cars]
+            old = others
+            others = []
+            for s in segs:
+                if s['cls'] == 'person' or not shown.get(s['kind'], True) or any(iou(s['box'], c['box']) > 0.3 for c in cars):
+                    continue
+                if any(iou(s['box'], p['box']) > 0.4 for p in people):       # kisinin ustune yapisan yanlis etiket
+                    continue
+                pl = plate_for(s['box'], state['plates'], W, H, now) if s['kind'] == 'vehicle' else None
+                # hareketli: kutusunda fark var ve onceki seg'de ayni yerde degildi (park etmis arac yagmurda sayilmaz)
+                mv = dmask is not None and s['kind'] in ('vehicle', 'animal') and box_motion(dmask, s['box'], W) > 0.05 and not any(iou(s['box'], o['box']) > 0.85 for o in old)
+                others.append({'box': s['box'], 'poly': s['poly'], 'other': s['kind'], 'name': s['name'], 'moving': mv,
+                               'label': f"{s['name']} {pl}" if pl else f"{s['name']} %{int(s['score'] * 100)}"})
+            moving_at = now if any(o['moving'] for o in others) else moving_at
+        car_marks = []
+        for c in cars:
+            pl = plate_for(c['box'], state['plates'], W, H, now)
+            car_marks.append({'box': c['box'], 'poly': c.get('poly'), 'score': c['score'], 'car': True, 'label': f"{c['name']} {pl}" if pl else c['name']})
         # --- izleyici (acgozlu IoU)
         used = set()
         for tr in tracks:
@@ -697,6 +795,22 @@ def run_channel(channel, cfg, counter):
                 tr.near_car = True
                 came = max((m for _, m in hist), default=dm) >= max(CLEAR_M, near_m * 2)
                 report('approach', p['score'], f'kişi {gc["name"]} yanında, {dm:.1f} m' + (' (yaklaşarak)' if came else ''), img, car_marks + [t.p for t in live])
+            # dokunma: ayak nesnenin dibinde (<=0.3 m) ya da bilek nesne konturunda ve ayak <=0.6 m; 0.3 sn surerse
+            touch = False
+            if dm is not None and gc is not None:
+                k = p.get('kp'); gp = gc.get('poly')
+                wr = gp is not None and len(gp) >= 3 and k is not None and any(k[i, 2] > 0.4 and cv2.pointPolygonTest(np.asarray(gp, np.float32).reshape(-1, 1, 2), (float(k[i, 0]), float(k[i, 1])), False) >= 0 for i in (9, 10))
+                touch = dm <= 0.3 or (wr and dm <= 0.6)
+            if touch:
+                tr.touch_since = getattr(tr, 'touch_since', None) or now
+                p['alarm'] = True
+                if not getattr(tr, 'touched', False) and now - tr.touch_since >= 0.3:
+                    tr.touched = True
+                    report('touch', p['score'], f'kişi {gc["name"]} nesnesine dokunuyor ({dm:.1f} m)', img, car_marks + [t.p for t in live])
+            else:
+                tr.touch_since = None
+                if dm is None or dm > 1.0:
+                    tr.touched = False
             if not tr.announced and tr.hits >= 3 and p['score'] >= min_score:
                 tr.announced = True
                 report('person', p['score'], f'{len(live)} kişi', img, [t.p for t in live])
@@ -737,9 +851,11 @@ def run_channel(channel, cfg, counter):
                 report('fight', max(t.p['score'] for t in fast), f'{len(live)} kişi, hızlı kol hareketi', img, [t.p for t in live])
         show(img, car_marks + [t.p for t in live], f'{len(live)} kişi' + ('  korunan araç' if cars else '') + (f'  hareket %{moved * 100:.0f}' if motion else ''))
         overlay(img, others + car_marks + ([predict(t, now) for t in tracks if now - t.seen < 0.6] if shown.get('person', True) else []))   # seg ile bulunan kisi seg araliginda da gorunur
-        if motion and not live and now - last_motion_ev > 30:
+        # golge / yagmur / isik degisimi bildirim vermez: hareket, hareket eden bir arac/hayvanla birlikte olmali
+        if motion and not live and now - moving_at < 1.5 and now - last_motion_ev > 30:
             last_motion_ev = now
-            report('motion', None, f'görüntünün %{moved * 100:.0f} değişti', img, [])
+            mv = [o for o in others if o.get('moving')]
+            report('motion', None, ', '.join(sorted({o['name'] for o in mv})) + ' hareket ediyor', img, mv)
 
 
 # ------------------------------------------------------------------ yonetici
