@@ -5,7 +5,8 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
  && pip uninstall -y opencv-python && pip install --no-cache-dir --force-reinstall --no-deps opencv-python-headless
 WORKDIR /m
 RUN yolo export model=yolo26n-pose.pt format=onnx imgsz=416 simplify=True \
- && yolo export model=yolo26s-seg.pt format=onnx imgsz=416 simplify=True \n && yolo export model=yolo26n-seg.pt format=onnx imgsz=416 simplify=True && ls -la /m
+ && yolo export model=yolo26s-seg.pt format=onnx imgsz=416 simplify=True \
+ && yolo export model=yolo26n-seg.pt format=onnx imgsz=416 simplify=True && ls -la /m
 
 FROM python:3.12-slim
 RUN pip install --no-cache-dir onnxruntime numpy open-image-models "fast-plate-ocr[onnx]" \
