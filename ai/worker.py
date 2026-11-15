@@ -566,14 +566,14 @@ def run_channel(channel, cfg, counter):
         # --- korunan nesneler: panelde kamera basina cizilen alanlar; alana oturan seg nesnesinin konturu kullanilir, yoksa alan
         if guards and (segs is not None or len(cars) != len(guards)):
             h, w = img.shape[:2]
-            prev, cars = {c['name']: c for c in cars}, []
+            known, cars = {c['name']: c for c in cars}, []
             for g in guards:
                 zb = [g['box'][0] * w, g['box'][1] * h, g['box'][2] * w, g['box'][3] * h]
                 best, bi = 0.2, None
                 for s in segs or []:
                     if s['cls'] != 'person' and s['poly'] is not None and iou(s['box'], zb) > best:
                         best, bi = iou(s['box'], zb), s
-                old = prev.get(g['name'])
+                old = known.get(g['name'])
                 poly = bi['poly'] if bi else (old['poly'] if old and segs is None else np.array([[zb[0], zb[1]], [zb[2], zb[1]], [zb[2], zb[3]], [zb[0], zb[3]]], np.float32))
                 cars.append({'box': zb, 'poly': poly, 'score': 1.0, 'at': now, 'name': g['name'], 'nearM': float(g.get('nearM', NEAR_M))})
         elif not guards:
