@@ -6,7 +6,7 @@ import { HUB_ERRORS } from './hub.mjs';
 
 export const escape = (m) => String(m).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const TYPES = { '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.js': 'text/javascript; charset=utf-8', '.md': 'text/markdown; charset=utf-8', '.json': 'application/json; charset=utf-8', '.html': 'text/html; charset=utf-8' };
+const TYPES = { '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json; charset=utf-8','.js': 'text/javascript; charset=utf-8', '.md': 'text/markdown; charset=utf-8', '.json': 'application/json; charset=utf-8', '.html': 'text/html; charset=utf-8' };
 
 export function viewController({ config, hub = null }) {
   const root = config.views;
@@ -35,7 +35,7 @@ export function viewController({ config, hub = null }) {
       // Kimliksiz sunulan varliklar yalniz giris sayfasinin css/js/font/simgesi: .json/.md (yapi ozeti, belge) burada SUNULMAZ.
       const extension = extname(ctx.path);
       const type = extension === '.json' || extension === '.md' ? undefined : TYPES[extension];
-      const p = type && /^\/(css|fonts|js)\/|^\/icon\.svg$/.test(ctx.path) ? secure(root, ctx.path) : null;
+      const p = type && /^\/(css|fonts|js)\/|^\/(icon\.svg|icon-(192|512)\.png|apple-touch-icon\.png|manifest\.webmanifest)$/.test(ctx.path) ? secure(root, ctx.path) : null;
       if (!p || !existsSync(p)) return json(ctx.res, 404, { error: 'Yok', code: 'NOT_FOUND' });
       ctx.res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' }); ctx.res.end(readFileSync(p));
     },

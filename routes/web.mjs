@@ -8,6 +8,8 @@ export function webRoutes(r, d, middleware) {
   r.get('/', d.view.mainPage, [middleware.identityOptional]);
   r.get('/index.html', d.view.mainPage, [middleware.identityOptional]);
   r.get('/icon.svg', d.view.serveStatic);
+  // ana ekran (telefon): PNG simgeler + uygulama bildirimi (tam ekran acilis)
+  for (const f of ['/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/manifest.webmanifest']) r.get(f, d.view.serveStatic);
   r.get('/css/:a', d.view.serveStatic); r.get('/css/:a/:b', d.view.serveStatic); r.get('/css/:a/:b/:c', d.view.serveStatic);
   r.get('/fonts/:a', d.view.serveStatic); r.get('/js/:a', d.view.serveStatic); r.get('/js/:a/:b', d.view.serveStatic); r.get('/js/:a/:b/:c', d.view.serveStatic);   // js/eys/lib, js/eys/components
   // Kimlik Yonetim Merkezi ile giris (yapilandirilmamissa 404). Donus adresi merkezde kayitli olanla birebir ayni olmali.

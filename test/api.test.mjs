@@ -239,7 +239,7 @@ test('cihaz yönetimi ve günlük: parola sızmaz, zincir doğrulanır, olaylar 
 test('rota listesi: HER rota kimlik ister; kimliksiz yalnız giriş sayfasının ihtiyacı ve açık istisnalar', async () => {
   // /api/identity/refresh: merkezden gelen bildirim; kimligi HMAC imzasi (bkz. merkez.test.mjs), cerez/anahtar degil.
   // /api/v1/saglik: yalniz dongu adresinden yanit verir (HEALTHCHECK). Digerleri giris sayfasi: ana sayfa (oturum yoksa giris formu), css/js/font/simge, merkez ile giris akisi.
-  const isOpen = new Set(['/api/login', '/api/logout', '/api/identity/refresh', '/api/identity/logout', '/api/v1/health', '/', '/index.html', '/icon.svg', '/css/:a', '/css/:a/:b', '/css/:a/:b/:c', '/fonts/:a', '/js/:a', '/js/:a/:b', '/js/:a/:b/:c', '/login/hub', '/login/hub/callback',
+  const isOpen = new Set(['/api/login', '/api/logout', '/api/identity/refresh', '/api/identity/logout', '/api/v1/health', '/', '/index.html', '/icon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/manifest.webmanifest', '/css/:a', '/css/:a/:b', '/css/:a/:b/:c', '/fonts/:a', '/js/:a', '/js/:a/:b', '/js/:a/:b/:c', '/login/hub', '/login/hub/callback',
     // /:live: canli izleme sayfalari (identityOptional). Erisim denetleyicide SAYFA KAYDINA gore verilir: public sayfa uyeliksiz,
     // private sayfa giris + rol (bkz. test/live.test.mjs). Duzeni yazmak (/:live/layout, PUT) kimlik ister ve bu listede DEGIL.
     // /:live/rtc/:path/whep: izleme baglantisi (SDP alisverisi); yalniz o sayfanin duzenindeki yollar.
