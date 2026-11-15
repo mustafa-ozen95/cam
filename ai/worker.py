@@ -67,8 +67,10 @@ class Plates:
     def __init__(self):
         from open_image_models import LicensePlateDetector
         from fast_plate_ocr import LicensePlateRecognizer
-        self.det = LicensePlateDetector(detection_model='yolo-v9-t-384-license-plate-end2end')
-        self.ocr = LicensePlateRecognizer('cct-s-v1-global-model')
+        # tek is parcacigi: varsayilan tum cekirdekleri kullaniyordu (olculdu: tur basina 6.7 cpu-sn, seg/pose'u aciktiriyordu)
+        so = ort.SessionOptions(); so.intra_op_num_threads = 1; so.inter_op_num_threads = 1
+        self.det = LicensePlateDetector(detection_model='yolo-v9-t-384-license-plate-end2end', providers=['CPUExecutionProvider'], sess_options=so)
+        self.ocr = LicensePlateRecognizer('cct-s-v1-global-model', device='cpu', providers=['CPUExecutionProvider'], sess_options=so)
         self.clahe = cv2.createCLAHE(2.0, (4, 4))
 
     def read(self, crop):
@@ -614,8 +616,13 @@ def run_channel(channel, cfg, counter):
             try:
                 img = cv2.imdecode(np.frombuffer(snapshot(channel), np.uint8), cv2.IMREAD_COLOR)
                 h0, w0 = img.shape[:2]
+                # her turda 2 arac kirpmasi (sirayla); plakasi emin okunmus araclar atlanir
+                cand = [b for b in state['veh'] if not any((lambda t: not t.endswith('?'))(plate_best(p)) and b[0] <= (p['box'][0] + p['box'][2]) / 2 <= b[2]
+                                                          and b[1] <= (p['box'][1] + p['box'][3]) / 2 <= b[3] for p in state['plates'])]
+                rr = (state.get('rr', 0) + 2) % max(1, len(cand)); state['rr'] = rr
+                pick = (cand[rr:] + cand[:rr])[:2]
                 regs = [[max(0, b[0] - 0.1 * (b[2] - b[0])) * w0, max(0, b[1] - 0.1 * (b[3] - b[1])) * h0, min(1, b[2] + 0.1 * (b[2] - b[0])) * w0, min(1, b[3] + 0.1 * (b[3] - b[1])) * h0]
-                        for b in sorted(state['veh'], key=lambda b: -(b[2] - b[0]) * (b[3] - b[1]))[:6]]
+                        for b in pick]
                 found = reader(img, regs) if img is not None else []
             except Exception as ex:  # noqa: BLE001
                 log(f'K{channel + 1} plaka: {ex}'); time.sleep(10); continue
