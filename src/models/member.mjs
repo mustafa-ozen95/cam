@@ -33,7 +33,7 @@ export function normalizePreferences(t) {
   const g = t && typeof t === 'object' ? t : {};
   const count = Number.isInteger(g.allCount) ? Math.min(ALL_COUNT.max, Math.max(ALL_COUNT.min, g.allCount)) : ALL_COUNT.fallback;
   const order = Array.isArray(g.allOrder) ? [...new Set(g.allOrder.filter((k) => Number.isInteger(k) && k >= 0 && k < 100_000))].slice(0, ORDER_MAX) : [];
-  return { allCount: count, allOrder: order, pauseInBackground: g.pauseInBackground !== false, gridStream: g.gridStream === 'main' ? 'main' : 'sub', overlay: g.overlay !== false };
+  return { allCount: count, allOrder: order, pauseInBackground: g.pauseInBackground !== false, gridStream: g.gridStream === 'main' ? 'main' : 'sub', overlay: g.overlay !== false, recOverlay: g.recOverlay !== false };
 }
 
 export class Membership {

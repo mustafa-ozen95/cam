@@ -145,8 +145,18 @@ def detect(model, img, conf):
     return keep
 
 
+# COCO 80 sinif (yolo11n-seg sirasiyla); arac siniflari ayri renkte cizilir
+COCO_TR = ['kişi', 'bisiklet', 'araç', 'motosiklet', 'uçak', 'otobüs', 'tren', 'kamyon', 'tekne', 'trafik ışığı', 'yangın musluğu', 'dur levhası',
+           'parkmetre', 'bank', 'kuş', 'kedi', 'köpek', 'at', 'koyun', 'inek', 'fil', 'ayı', 'zebra', 'zürafa', 'sırt çantası', 'şemsiye', 'el çantası',
+           'kravat', 'bavul', 'frizbi', 'kayak', 'snowboard', 'top', 'uçurtma', 'beyzbol sopası', 'beyzbol eldiveni', 'kaykay', 'sörf tahtası',
+           'raket', 'şişe', 'kadeh', 'bardak', 'çatal', 'bıçak', 'kaşık', 'kase', 'muz', 'elma', 'sandviç', 'portakal', 'brokoli', 'havuç', 'sosisli',
+           'pizza', 'çörek', 'pasta', 'sandalye', 'kanepe', 'saksı', 'yatak', 'masa', 'tuvalet', 'televizyon', 'dizüstü', 'fare', 'kumanda', 'klavye',
+           'telefon', 'mikrodalga', 'fırın', 'tost makinesi', 'lavabo', 'buzdolabı', 'kitap', 'saat', 'vazo', 'makas', 'oyuncak ayı', 'saç kurutma', 'diş fırçası']
+VEHICLES = {1, 2, 3, 5, 6, 7, 8}
+
+
 class Seg(Pose):
-    """yolo11n-seg (COCO): kisi(0), araba(2), kamyon(7) -> kutu + kontur cokgeni (goruntu pikseli)."""
+    """yolo11n-seg (COCO 80 sinif) -> kutu + kontur cokgeni (goruntu pikseli). cls: person / car (araba, kamyon: korunan arac adayi) / other."""
     def __call__(self, img, conf=0.35):
         h0, w0 = img.shape[:2]
         r = SIZE / max(h0, w0)
@@ -158,12 +168,12 @@ class Seg(Pose):
         o = self.s.run(None, {self.name: x})
         out, proto = o[0][0].T, o[1][0]                      # (N, 4+80+32), (32, mh, mw)
         cls = out[:, 4:84].argmax(1); sc = out[np.arange(len(out)), 4 + cls]
-        m = ((cls == 0) | (cls == 2) | (cls == 7)) & (sc >= conf)
+        m = sc >= np.where(cls < 9, conf, max(conf, 0.4))     # arac/kisi disi nesnelerde biraz daha sec (yanlis isaret az)
         out, sc, cls = out[m], sc[m], cls[m]
         if not len(out):
             return []
         boxes = np.stack([out[:, 0] - out[:, 2] / 2, out[:, 1] - out[:, 3] / 2, out[:, 2], out[:, 3]], 1)
-        shifted = boxes.copy(); shifted[:, :2] += (cls[:, None] > 0) * 4096      # sinif basina NMS
+        shifted = boxes.copy(); shifted[:, :2] += cls[:, None] * 4096      # sinif basina NMS
         keep = np.array(cv2.dnn.NMSBoxes(shifted.tolist(), sc.tolist(), conf, 0.45)).flatten()
         if not len(keep):
             return []
@@ -184,7 +194,9 @@ class Seg(Pose):
                 if cv2.contourArea(c) > 4:
                     c = cv2.approxPolyDP(c, 0.006 * cv2.arcLength(c, True), True).reshape(-1, 2).astype(np.float32)
                     poly = (c - np.array([left, top], np.float32)) / r
-            res.append({'cls': 'person' if cls[i] == 0 else 'car', 'box': box, 'score': float(sc[i]), 'poly': poly})
+            c = int(cls[i])
+            res.append({'cls': 'person' if c == 0 else 'car' if c in (2, 7) else 'other', 'kind': 'vehicle' if c in VEHICLES else 'object',
+                        'name': COCO_TR[c], 'box': box, 'score': float(sc[i]), 'poly': poly})
         return res
 
 
@@ -199,7 +211,7 @@ def overlay_items(marks, w, h):
     """Isaretler -> normalize (0..1) katman ogeleri."""
     items = []
     for p in marks:
-        it = {'k': 'car' if p.get('car') else 'vehicle' if p.get('other') else 'person', 'box': [round(p['box'][0] / w, 4), round(p['box'][1] / h, 4), round(p['box'][2] / w, 4), round(p['box'][3] / h, 4)],
+        it = {'k': 'car' if p.get('car') else p['other'] if p.get('other') else 'person', 'box': [round(p['box'][0] / w, 4), round(p['box'][1] / h, 4), round(p['box'][2] / w, 4), round(p['box'][3] / h, 4)],
               'label': p.get('label') or '', 'alarm': bool(p.get('alarm'))}
         if p.get('poly') is not None:
             it['poly'] = [[round(float(x) / w, 4), round(float(y) / h, 4)] for x, y in p['poly']]
@@ -337,6 +349,7 @@ def run_channel(channel, cfg, counter):
     local_gap = {}                       # tur -> son gonderim (yerel seyreltme; asil bekleme panelde)
     view = {'watch': False, 'at': 0}
     ov = {'watch': False, 'at': 0}       # canli goruntu ustu katman
+    rec = {'buf': [], 'last': 0, 'sent': time.time()}   # kayit ustu katman icin algilama izi
     state = {'motion_at': 0}
 
     def plates_loop():
@@ -396,14 +409,28 @@ def run_channel(channel, cfg, counter):
         except Exception:  # noqa: BLE001
             view['watch'] = False
 
+    def send_track(buf):
+        try:
+            post('/api/ai/track', {'channel': channel, 'frames': buf}, 15)
+        except Exception as ex:  # noqa: BLE001
+            log(f'K{channel + 1} iz: {ex}')
+
     def overlay(img, marks):
-        """Katman: izleyen varken her islenen kare, yoksa 3 sn'de bir (izleyen var mi diye)."""
+        """Katman: izleyen varken her islenen kare, yoksa 3 sn'de bir (izleyen var mi diye).
+        Kayit icin de saklanir (yalniz koordinat, goruntu degil): kisi varken 4/sn, yoksa 1/sn; 10 sn'de bir toplu gonderilir."""
         now = time.time()
+        ft, items = ov.get('ft', now), None
+        if ft - rec['last'] >= (0.25 if any(not (m.get('car') or m.get('other')) for m in marks) else 1.0):
+            items = overlay_items(marks, img.shape[1], img.shape[0])
+            rec['last'] = ft; rec['buf'].append([round(ft, 2), items])
+        if rec['buf'] and now - rec['sent'] >= 10:
+            buf, rec['buf'], rec['sent'] = rec['buf'], [], now
+            threading.Thread(target=send_track, args=(buf,), daemon=True).start()
         if now - ov['at'] < (0 if ov['watch'] else 3):
             return
         ov['at'] = now
         try:
-            ov['watch'] = bool(post('/api/ai/overlay', {'channel': channel, 'age': round(max(0.0, time.time() - ov.get('ft', now)), 3), 'items': overlay_items(marks, img.shape[1], img.shape[0])}, 5).get('watch'))
+            ov['watch'] = bool(post('/api/ai/overlay', {'channel': channel, 'age': round(max(0.0, time.time() - ft), 3), 'items': items or overlay_items(marks, img.shape[1], img.shape[0])}, 5).get('watch'))
         except Exception:  # noqa: BLE001
             ov['watch'] = False
 
@@ -481,8 +508,8 @@ def run_channel(channel, cfg, counter):
         elif not zone:
             cars = []
         if segs is not None:
-            others = [{'box': s['box'], 'poly': s['poly'], 'other': True, 'label': 'araç'} for s in segs
-                      if s['cls'] == 'car' and not any(iou(s['box'], c['box']) > 0.3 for c in cars)]
+            others = [{'box': s['box'], 'poly': s['poly'], 'other': s['kind'], 'label': s['name']} for s in segs
+                      if s['cls'] != 'person' and not any(iou(s['box'], c['box']) > 0.3 for c in cars)]
         car_marks = [{'box': c['box'], 'poly': c.get('poly'), 'score': c['score'], 'car': True, 'label': 'korunan arac'} for c in cars]
         # --- izleyici (acgozlu IoU)
         used = set()

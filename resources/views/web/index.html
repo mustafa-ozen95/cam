@@ -114,6 +114,7 @@
                 <button type="button" class="btn btn--sm btn--primary btn--icon" id="play" title="Oynat / duraklat" aria-label="Oynat / duraklat"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none"/></svg></button>
                 <label class="btn btn--sm timeline-date" id="timelineTime" title="Tarih seç"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span id="playClock"></span><input type="date" id="timelineDate" class="timeline-date-input" aria-label="Tarih seç"></label>
                 <span class="timeline-spacer"></span>
+                <button type="button" class="btn btn--sm btn--icon" id="recOverlay" aria-pressed="true" title="Algılamayı göster / gizle" aria-label="Algılamayı göster / gizle"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3"/><rect x="8" y="8" width="8" height="8" rx="1.5"/></svg></button>
                 <button type="button" class="btn btn--sm btn--icon" id="timelineDownload" title="Bu kaydı indir (seçili kameralar)" aria-label="Bu kaydı indir"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></svg></button>
                 <button type="button" class="btn btn--sm btn--icon" id="playFull" title="Tam ekran" aria-label="Tam ekran"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
               </div>
@@ -1306,7 +1307,7 @@ function dragBind(b, k) {
 }
 
 // ---------- gorunum tercihleri (uyenin kendi kaydinda; /api/ben/tercih) ----------
-const preferences = { allCount: STREAM_LIMIT, allOrder: [], pauseInBackground: true, gridStream: 'sub', overlay: true };
+const preferences = { allCount: STREAM_LIMIT, allOrder: [], pauseInBackground: true, gridStream: 'sub', overlay: true, recOverlay: true };
 // Izgara akisi (uye tercihi): alt akis (varsayilan; dar ekranda Mini) ya da ana akis (kare boyunda: masaustu 960, dar ekran 640).
 // Canli goruntu MP4: olcek/kare hizi yok (kameranin kendi akisi); alt akis tek (Extra1).
 const gridMp4Type = () => (preferences.gridStream === 'main' ? 'Main' : 'Extra1');
@@ -1483,21 +1484,26 @@ function overlaySync(watch) {
 function overlayDrawAll() { for (const k of Object.keys(frames)) overlayDraw(Number(k)); if (status.focus !== null) overlayDraw(status.focus); }
 function overlayDraw(k) {
   const focus = status.focus === k, video = focus ? $('#focusVideo') : frames[k]?.video, canvas = focus ? $('#focusOverlay') : frames[k]?.canvas;
+  const o = overlayData.get(k);
+  const ok = o && preferences.overlay && performance.now() - o.at <= 2500;
+  // analiz gecikmesi: hareketli kisi hiziyla ileri tasinir
+  drawDetections(canvas, video?.videoWidth, video?.videoHeight, video, ok ? o.items : null, ok ? Math.min(0.6, o.age + (performance.now() - o.at) / 1000) : 0);
+}
+/** Normalize algilama ogelerini kanvasa cizer (canli ve kayit ortak). mw/mh: goruntunun kendi boyu; media object-fit icin. */
+function drawDetections(canvas, mw, mh, media, items, lead) {
   if (!canvas) return;
   const r = canvas.getBoundingClientRect(), dpr = devicePixelRatio || 1, W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
   if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
   const c = canvas.getContext('2d'); c.clearRect(0, 0, W, H);
-  const o = overlayData.get(k);
-  if (!o || !preferences.overlay || performance.now() - o.at > 2500 || !video?.videoWidth || !W) return;
+  if (!items?.length || !mw || !W) return;
   let x0 = 0, y0 = 0, w = W, h = H;   // goruntunun kutu icindeki yeri (object-fit: contain -> siyah bant payi)
-  if (getComputedStyle(video).objectFit !== 'fill') { const s = Math.min(W / video.videoWidth, H / video.videoHeight); w = video.videoWidth * s; h = video.videoHeight * s; x0 = (W - w) / 2; y0 = (H - h) / 2; }
-  const lead = Math.min(0.6, o.age + (performance.now() - o.at) / 1000);   // analiz gecikmesi: hareketli kisi hiziyla ileri tasinir
+  if (getComputedStyle(media).objectFit !== 'fill') { const s = Math.min(W / mw, H / mh); w = mw * s; h = mh * s; x0 = (W - w) / 2; y0 = (H - h) / 2; }
   const X = (v) => x0 + v * w, Y = (v) => y0 + v * h, lw = Math.max(1.5, Math.min(3, W / 400)) * dpr;
   c.lineJoin = 'round'; c.font = `600 ${Math.round(11 * dpr)}px system-ui, sans-serif`;
-  for (const raw of o.items) {
+  for (const raw of items) {
     const dx = raw.v ? raw.v[0] * lead : 0, dy = raw.v ? raw.v[1] * lead : 0;
     const it = dx || dy ? { ...raw, box: [raw.box[0] + dx, raw.box[1] + dy, raw.box[2] + dx, raw.box[3] + dy], poly: raw.poly?.map(([a, b]) => [a + dx, b + dy]), kp: raw.kp?.map((p) => (p ? [p[0] + dx, p[1] + dy] : p)) } : raw;
-    const col = it.k === 'car' ? '#ff8c00' : it.k === 'vehicle' ? '#0a84ff' : it.alarm ? '#ff3b30' : '#34c759';
+    const col = it.k === 'car' ? '#ff8c00' : it.k === 'vehicle' ? '#0a84ff' : it.k === 'object' ? '#bf5af2' : it.alarm ? '#ff3b30' : '#34c759';
     c.beginPath();
     if (it.poly?.length >= 3) { it.poly.forEach(([a, b], i) => (i ? c.lineTo(X(a), Y(b)) : c.moveTo(X(a), Y(b)))); c.closePath(); }
     else c.rect(X(it.box[0]), Y(it.box[1]), (it.box[2] - it.box[0]) * w, (it.box[3] - it.box[1]) * h);
@@ -1802,10 +1808,11 @@ function setupTl() {
   if (!channels.length) grid.append(el('div', { class: 'timeline-empty text-sm text-muted' }, 'İzlemek için kamera listesinden kamera seçin.')); grid.style.setProperty('--timeline-n', String(Math.max(1, channels.length))); grid.style.setProperty('--timeline-r', String(Math.max(1, Math.ceil(channels.length / 2)))); $('#player').dataset.n = String(channels.length);
   for (const k of channels) {
     const img = el('img', { sub: info.channelNames[k] });
+    const canvas = el('canvas', { class: 'channel__overlay', 'aria-hidden': 'true' });
     const stop = el('div', { class: 'channel__status' }, tl.playing ? 'Bağlanıyor…' : 'Başlatmak için ▶');
-    const container = el('div', { class: 'timeline-frame', draggable: channels.length > 1 ? 'true' : 'false', title: channels.length > 1 ? 'Yerini değiştirmek için sürükleyin' : '' }, img, el('span', { class: 'channel__name' }, info.channelNames[k]), stop);
+    const container = el('div', { class: 'timeline-frame', draggable: channels.length > 1 ? 'true' : 'false', title: channels.length > 1 ? 'Yerini değiştirmek için sürükleyin' : '' }, img, canvas, el('span', { class: 'channel__name' }, info.channelNames[k]), stop);
     bindTlDrag(container, k); grid.append(container);
-    tl.tile.set(k, { img, stop, container });
+    tl.tile.set(k, { img, stop, container, canvas });
     tl.m.set(k, new Mjpeg(img, {
       url: () => tlUrl(k), stall: 12_000,
       status: (t) => { stop.textContent = t; },
@@ -1820,6 +1827,43 @@ function setupTl() {
   $('#playHeader').textContent = channels.map((k) => info.channelNames[k]).join(' · ') || 'Oynatıcı';
   tlChips();
 }
+// ---------- kayit ustu algilama (cam-ai izi: yalniz koordinat; 60 sn'lik bloklar halinde cekilir) ----------
+const recTrack = new Map();   // `${k}|${blok}` -> { frames, at, busy, closed }
+function recFrames(k, t) {
+  const b = Math.floor(t / 60) * 60, out = [];
+  for (const x of [b - 60, b, b + 60]) {
+    const key = `${k}|${x}`, e = recTrack.get(key);
+    const fresh = e && (e.closed || performance.now() - e.at < 10_000);   // canli uca yakin blok 10 sn'de bir yenilenir
+    if (!fresh && !e?.busy) {
+      const n = { frames: e?.frames ?? [], at: performance.now(), busy: true, closed: false };
+      recTrack.set(key, n);
+      api(`/api/tracks?channel=${k}&from=${x}&to=${x + 60}`).then((f) => { n.frames = f; n.closed = x + 75 < epoch(info.serverClock ?? info.clock); }).catch(() => {}).finally(() => { n.busy = false; n.at = performance.now(); });
+    }
+    if (e) out.push(...e.frames);
+  }
+  if (recTrack.size > 60) for (const key of [...recTrack.keys()].slice(0, 20)) recTrack.delete(key);
+  return out;
+}
+function recOverlayDraw() {
+  if (!tl.ready || status.tab !== 'recordings') return;
+  const t = tlNow();
+  for (const [k, tile] of tl.tile) {
+    let items = null, lead = 0;
+    if (preferences.recOverlay && tile.img.naturalWidth && tl.t0) {
+      let best = null;
+      for (const f of recFrames(k, t)) if (f[0] <= t + 0.15 && (!best || f[0] > best[0])) best = f;
+      if (best && t - best[0] < 1.5) { items = best[1]; lead = Math.min(0.6, Math.max(0, t - best[0])); }
+    }
+    drawDetections(tile.canvas, tile.img.naturalWidth, tile.img.naturalHeight, tile.img, items, lead);
+  }
+}
+setInterval(recOverlayDraw, 100);
+function recOverlayButton() { $('#recOverlay').setAttribute('aria-pressed', String(preferences.recOverlay)); $('#recOverlay').classList.toggle('btn--primary', preferences.recOverlay); }
+$('#recOverlay').addEventListener('click', () => {
+  preferences.recOverlay = !preferences.recOverlay; recOverlayButton(); recOverlayDraw();
+  persistPreferences({ recOverlay: preferences.recOverlay });
+  notify(preferences.recOverlay ? 'Kayıtta algılama gösteriliyor' : 'Kayıt algılamasız gösteriliyor', 'success');
+});
 function tlUrl(k) {
   const s = Math.floor(tl.t0 ? tlNow() : tl.hub);           // yeniden bağlanmada saat akmaya devam eder, kaldığı yerden
   // Kayit cihazda ana akistir; genislik ekrandaki kare boyuna gore: tek kamera tam (1920), 2-4 kamera 960, dar ekran 640.
@@ -2027,6 +2071,7 @@ function playTl(k, channel) {
 }
 function startTl() {
   if (tl.ready || !info) return;
+  recOverlayButton();
   tl.ready = true; tl.select = new Set();   // başlangıçta seçili kamera yok: kullanıcı seçer
   tl.hub = epoch(info.clock ?? string(Date.now() / 1000)) - 330;     // varsayılan: son 5 dakika
   setupTl(); drawTime();

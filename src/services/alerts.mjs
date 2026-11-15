@@ -8,6 +8,7 @@
  *  - Bildirim karari burada: tur kapali / saat disi / ayni kanal+tur icin bekleme suresi dolmadi -> yazilir ama gonderilmez.
  */
 import { randomBytes } from 'node:crypto';
+import { gzipSync, gunzipSync } from 'node:zlib';
 import { alertSecretKey, seal, unseal } from '../core/crypto-labels.mjs';
 import { HttpError } from '../core/http.mjs';
 
@@ -28,6 +29,9 @@ const DEFAULTS = {
   },
 };
 const KEEP_DAYS = 90;
+const TRACK_DAYS = 7;          // kayit ustu algilama izi (yalniz koordinat) bu kadar gun tutulur
+/** unix sn -> cihaz yerel saati (Europe/Istanbul) UTC gibi okunmus sn: oynaticinin olcegi. */
+const localSec = (unix) => Date.parse(new Date(unix * 1000).toLocaleString('sv-SE', { timeZone: 'Europe/Istanbul' }).replace(' ', 'T') + 'Z') / 1000 + (unix % 1);
 /** Turk plakasi: il kodu 01-81 + 1-3 harf + 2-4 rakam (bosluksuz, buyuk harf). */
 export const PLATE_RE = /^(0[1-9]|[1-7][0-9]|8[01])[A-Z]{1,3}[0-9]{2,4}$/;
 const normPlate = (s) => String(s ?? '').toLocaleUpperCase('tr-TR').replace(/[^0-9A-Z]/g, '');
@@ -268,5 +272,21 @@ export class AlertService {
     const [rows] = await this.db.pool.query(`SELECT id, ts, channel, type, score, detail, notified FROM events ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY ts DESC LIMIT ?`, [...v, Math.min(500, Math.max(1, limit)) * 2]);
     return rows.filter((r) => allowed(r.channel)).slice(0, limit).map((r) => ({ ...r, score: r.score === null ? null : Number(r.score), name: this.channelName(r.channel) }));
   }
-  async prune() { await this.db.pool.query('DELETE FROM events WHERE ts < ?', [new Date(Date.now() - KEEP_DAYS * 864e5).toISOString()]); }
+  async prune() {
+    await this.db.pool.query('DELETE FROM events WHERE ts < ?', [new Date(Date.now() - KEEP_DAYS * 864e5).toISOString()]);
+    await this.db.pool.query('DELETE FROM detections WHERE t < ?', [Math.floor(localSec(Date.now() / 1000) - TRACK_DAYS * 86400)]);
+  }
+  /** cam-ai algilama izi: [[unix, items]] -> yerel saniye, tek gzip parca. */
+  async saveTrack(k, frames) {
+    const list = frames.filter((f) => Array.isArray(f) && Number.isFinite(f[0]) && Array.isArray(f[1])).slice(0, 200)
+      .map(([t, items]) => [Math.round(localSec(t) * 100) / 100, items.slice(0, 64)]);
+    if (!list.length) return { ok: true };
+    await this.db.pool.query('INSERT INTO detections (channel, t, data) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data)', [k, Math.floor(list[0][0]), gzipSync(JSON.stringify(list))]);
+    return { ok: true };
+  }
+  /** Oynatici: [from, to] (yerel sn) araligindaki izler, JSON dizi metni (parcalar acilip birlestirilir). */
+  async tracks(k, from, to) {
+    const [rows] = await this.db.pool.query('SELECT data FROM detections WHERE channel = ? AND t BETWEEN ? AND ? ORDER BY t', [k, Math.floor(from) - 15, Math.ceil(to)]);
+    return `[${rows.map((r) => gunzipSync(r.data).toString().slice(1, -1)).filter(Boolean).join(',')}]`;
+  }
 }

@@ -70,6 +70,20 @@ export function alertsController({ alerts, devices, auditLog, config }) {
       if (!Number.isInteger(k) || k < 0 || k >= (devices.group.channelTotal ?? 0)) throw new HttpError(400, 'kanal geçersiz', 'INVALID_REQUEST');
       return json(ctx.res, 200, alerts.overlay(k, { t: Date.now(), age: Math.min(5, Math.max(0, Number(g.age) || 0)), items: Array.isArray(g.items) ? g.items.slice(0, 64) : [] }));
     },
+    async trackPush(ctx) {
+      worker(ctx);
+      const g = await readBody(ctx.req, 3_000_000), k = Number(g.channel);
+      if (!Number.isInteger(k) || k < 0 || k >= (devices.group.channelTotal ?? 0) || !Array.isArray(g.frames)) throw new HttpError(400, 'iz geçersiz', 'INVALID_REQUEST');
+      return json(ctx.res, 200, await alerts.saveTrack(k, g.frames));
+    },
+    /** Kayit oynaticisi ustu algilama izi: ?channel&from&to (cihaz yerel saniyesi, en cok 10 dk). */
+    async tracks(ctx) {
+      const k = Number(ctx.q.get('channel')), from = Number(ctx.q.get('from')), to = Number(ctx.q.get('to'));
+      if (!Number.isInteger(k) || k < 0 || !ctx.principal.channelAllowed(k)) throw new HttpError(403, 'Bu kameraya izniniz yok', 'FORBIDDEN');
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to < from || to - from > 600) throw new HttpError(400, 'aralık geçersiz', 'INVALID_REQUEST');
+      const body = await alerts.tracks(k, from, to);
+      ctx.res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); ctx.res.end(body);
+    },
     async framePush(ctx) {
       worker(ctx);
       const k = Number(ctx.q.get('channel'));

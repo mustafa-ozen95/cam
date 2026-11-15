@@ -233,4 +233,15 @@ export const MIGRATIONS = [
       ) ${ENGINE}`,
     ],
   },
+  {
+    // Detection track for the recording overlay: only normalized coordinates (no image), one gzip JSON chunk per channel per ~10 s.
+    // t = first frame time as device-local seconds (Europe/Istanbul read as UTC), the same scale the player uses.
+    version: 6, name: 'detection tracks',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS detections (
+        channel INT NOT NULL, t BIGINT NOT NULL, data MEDIUMBLOB NOT NULL,
+        PRIMARY KEY (channel, t)
+      ) ${ENGINE}`,
+    ],
+  },
 ];
