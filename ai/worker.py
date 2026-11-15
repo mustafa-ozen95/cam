@@ -170,16 +170,17 @@ class Seg(Pose):
         for j, i in enumerate(keep):
             bx, by, bw, bh = boxes[i]
             box = [float((bx - left) / r), float((by - top) / r), float((bx + bw - left) / r), float((by + bh - top) / r)]
-            mk = cv2.resize(masks[j], (SIZE, SIZE))[top:top + nh, left:left + nw]
-            mk = cv2.resize(mk, (w0, h0)) > 0.5
-            x1, y1, x2, y2 = max(0, int(box[0])), max(0, int(box[1])), min(w0, int(box[2]) + 1), min(h0, int(box[3]) + 1)
-            cut = np.zeros((h0, w0), np.uint8); cut[y1:y2, x1:x2] = mk[y1:y2, x1:x2]
+            # kontur model uzayinda (SIZE) bulunur, sonra goruntuye olceklenir: tam boy maske buyutme yok (CPU)
+            mk = cv2.resize(masks[j], (SIZE, SIZE)) > 0.5
+            x1, y1, x2, y2 = max(0, int(bx)), max(0, int(by)), min(SIZE, int(bx + bw) + 1), min(SIZE, int(by + bh) + 1)
+            cut = np.zeros((SIZE, SIZE), np.uint8); cut[y1:y2, x1:x2] = mk[y1:y2, x1:x2]
             cs, _ = cv2.findContours(cut, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             poly = None
             if cs:
                 c = max(cs, key=cv2.contourArea)
-                if cv2.contourArea(c) > 30:
-                    poly = cv2.approxPolyDP(c, 0.006 * cv2.arcLength(c, True), True).reshape(-1, 2).astype(np.float32)
+                if cv2.contourArea(c) > 4:
+                    c = cv2.approxPolyDP(c, 0.006 * cv2.arcLength(c, True), True).reshape(-1, 2).astype(np.float32)
+                    poly = (c - np.array([left, top], np.float32)) / r
             res.append({'cls': 'person' if cls[i] == 0 else 'car', 'box': box, 'score': float(sc[i]), 'poly': poly})
         return res
 
