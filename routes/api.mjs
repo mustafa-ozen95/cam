@@ -11,6 +11,10 @@ export function apiRoutes(r, d, middleware) {
   r.post('/api/identity/refresh', d.hub.refresh);
   // Merkezden ortak cikis bildirimi: HMAC imza ani da kapsar (bkz. src/controllers/hub.mjs · logout).
   r.post('/api/identity/logout', d.hub.logout);
+  // Goruntu analizi (cam-ai): uye degil, ortak sir (Bearer CAM_AI_SECRET); sir yoksa 404.
+  r.post('/api/ai/heartbeat', d.alerts.heartbeat);
+  r.post('/api/ai/report', d.alerts.report);
+  r.get('/api/ai/stream', d.alerts.stream);
 
   r.group([middleware.identity], () => {
     r.get('/api/me', d.login.me);
@@ -28,6 +32,12 @@ export function apiRoutes(r, d, middleware) {
     r.get('/stream/playback', d.stream.play, [permission('recording.play')]);
     r.get('/api/download', d.stream.download, [permission('recording.download')]);
     r.get('/api/jobs', async (ctx) => { ctx.res.writeHead(200, { 'Content-Type': 'application/json' }); ctx.res.end('[]'); }, [any('live.view', 'recording.play')]);   // eski istemciler
+    // algilama olaylari ve bildirim (Telegram)
+    r.get('/api/events', d.alerts.events, [permission('event.read')]);
+    r.get('/api/alerts', d.alerts.settings, [permission('alert.manage')]);
+    r.put('/api/alerts', d.alerts.save, [permission('alert.manage')]);
+    r.post('/api/alerts/test', d.alerts.test, [permission('alert.manage')]);
+    r.post('/api/alerts/chats', d.alerts.chats, [permission('alert.manage')]);
     // members
     r.get('/api/members', d.members.list, [permission('member.manage')]);
     r.post('/api/members', d.members.add, [permission('member.manage')]);

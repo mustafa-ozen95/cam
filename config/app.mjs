@@ -115,5 +115,14 @@ export const config = Object.freeze({
     api: 'https://api.github.com',
   },
 
+  /**
+   * Goruntu analizi (cam-ai konteyneri): kareleri /api/ai/stream'den alir, olaylari /api/ai/report'a yazar. Iki taraf
+   * ayni sirri tasir (Authorization: Bearer <sir>). Bossa /api/ai/* kapali (404); olay listesi ve bildirim ayarlari yine calisir.
+   */
+  ai: {
+    secret: env.CAM_AI_SECRET || '',
+    telegramApi: (env.CAM_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, ''),
+  },
+
   language: { default: 'tr', supported: ['tr', 'en'] },
 });

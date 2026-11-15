@@ -15,7 +15,11 @@ export const LABELS = {
   auditLog: 'cam/audit-log',               // audit log chain signatures (stored)
   keyFingerprint: 'cam/key-fingerprint',   // secret key fingerprint (stored in settings)
   databaseConnection: 'cam/database-connection',   // remote database connection file (data/database/connection.json)
+  alertSecret: 'cam/alert-secret',         // notification channel secrets, e.g. the Telegram bot token (stored in settings)
 };
+
+/** AES-256 key for notification secrets (Telegram bot token) kept in the `alerts` settings document. */
+export const alertSecretKey = (secret, label = LABELS.alertSecret) => createHmac('sha256', secret).update(label).digest();
 
 /** AES-256 key for the remote database connection file (Settings -> Veritabanı). */
 export const databaseConnectionKey = (secret, label = LABELS.databaseConnection) => createHmac('sha256', secret).update(label).digest();

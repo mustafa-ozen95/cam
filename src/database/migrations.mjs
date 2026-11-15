@@ -220,4 +220,17 @@ export const MIGRATIONS = [
       await c.query("INSERT INTO live_pages (id, name, slug, access, roles, layout, created_by, created_at) VALUES ('live', 'Kameralar', 'live', 'public', '[]', ?, 'migration 4', ?)", [layout, new Date().toISOString()]);
     },
   },
+  {
+    // Detection events written by the analysis worker (cam-ai). Images are NOT stored (nothing of the footage lands on the server's disk);
+    // the snapshot goes straight to the notification channel. "notified" tells why a row was or was not sent (sent, cooldown, off, error).
+    version: 5, name: 'detection events',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS events (
+        seq BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        id VARCHAR(32) NOT NULL, ts VARCHAR(40) NOT NULL, channel INT NOT NULL, type VARCHAR(32) NOT NULL, score DOUBLE NULL,
+        detail TEXT NULL, notified VARCHAR(16) NULL, extra TEXT NULL,
+        UNIQUE KEY events_id (id), KEY events_ts (ts), KEY events_channel_ts (channel, ts), KEY events_type_ts (type, ts)
+      ) ${ENGINE}`,
+    ],
+  },
 ];

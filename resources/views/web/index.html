@@ -329,6 +329,72 @@
       </section>
     </div></section>
 
+    <!-- BILDIRIM (alert.manage): goruntu analizi (cam-ai, YOLO) ve Telegram; olaylar event.read. Jeton yanitta gelmez, yalniz "tanimli". -->
+    <section class="page" id="s-alerts" hidden><div class="page__inner page__inner--wide">
+      <header class="page-head">
+        <div class="page-head__text"><h1>Ayarlar</h1><p class="page-head__subtitle">Görüntü analizi (insan, düşme, bayılma, hareket) ve Telegram bildirimleri.</p></div>
+      </header>
+      <section class="panel">
+        <header class="panel__head"><h2 class="panel__title">Durum</h2></header>
+        <div class="panel__body"><dl class="facts" id="alertInfo"></dl></div>
+      </section>
+      <section class="panel" id="alertTgPanel">
+        <header class="panel__head"><div><h2 class="panel__title">Telegram</h2><p class="text-sm text-muted">Bot jetonu şifreli saklanır, ekrana geri gelmez.</p></div></header>
+        <div class="panel__body">
+          <form id="alertTgForm" class="stack" autocomplete="off">
+            <label class="checkbox"><input type="checkbox" id="alertTgEnabled"><span>Bildirim gönder</span></label>
+            <div class="field-row">
+              <div class="field"><label class="field__label" for="alertTgToken">Bot jetonu</label><input class="input input--mono" id="alertTgToken" type="password" maxlength="80" autocomplete="new-password"><span class="field__hint" id="alertTgTokenHint">@BotFather'ın verdiği değer.</span></div>
+              <div class="field"><label class="field__label" for="alertTgChat">Kanal / sohbet</label><input class="input input--mono" id="alertTgChat" maxlength="64" placeholder="@kanal ya da -100…"><span class="field__hint">Bot kanala yönetici olarak eklenmeli.</span></div>
+              <div class="field"><label class="field__label" for="alertTgThread">Konu kimliği (isteğe bağlı)</label><input class="input input--mono" id="alertTgThread" inputmode="numeric" maxlength="12"></div>
+            </div>
+            <label class="checkbox"><input type="checkbox" id="alertTgPhoto"><span>Görüntüyü de gönder</span></label>
+            <div class="table-wrap" id="alertChats" hidden></div>
+            <div class="form-actions row row--wrap">
+              <button type="button" class="btn" id="alertChatsFind">Sohbetleri bul</button>
+              <select class="select" id="alertTestChannel" aria-label="Deneme görüntüsü kamerası"></select>
+              <button type="button" class="btn" id="alertTest">Deneme gönder</button>
+              <button type="submit" class="btn btn--primary">Kaydet</button>
+            </div>
+          </form>
+        </div>
+      </section>
+      <section class="panel" id="alertDetPanel">
+        <header class="panel__head"><div><h2 class="panel__title">Algılama</h2><p class="text-sm text-muted">Analiz sunucuda yapılır; görüntü diske kaydedilmez. Kamera seçilmezse hepsi izlenir.</p></div></header>
+        <div class="panel__body">
+          <form id="alertDetForm" class="stack" autocomplete="off">
+            <label class="checkbox"><input type="checkbox" id="alertDetEnabled"><span>Algılama açık</span></label>
+            <div class="field"><span class="field__label">Bildirilecek durumlar</span><div class="row row--wrap" id="alertTypes"></div></div>
+            <div class="field"><span class="field__label">Kameralar</span><div class="row row--wrap" id="alertChannels"></div></div>
+            <div class="field-row">
+              <div class="field"><label class="field__label" for="alertCooldown">Aynı olay arası (sn)</label><input class="input" id="alertCooldown" type="number" min="10" max="86400"></div>
+              <div class="field"><label class="field__label" for="alertCollapse">Bayılma için hareketsizlik (sn)</label><input class="input" id="alertCollapse" type="number" min="5" max="600"></div>
+              <div class="field"><label class="field__label" for="alertScore">En düşük güven (%)</label><input class="input" id="alertScore" type="number" min="20" max="95"></div>
+              <div class="field"><label class="field__label" for="alertFps">Saniyede kare</label><input class="input" id="alertFps" type="number" min="1" max="10"></div>
+            </div>
+            <div class="field-row">
+              <div class="field"><label class="field__label" for="alertFrom">Etkin saat başı</label><input class="input" id="alertFrom" type="time"></div>
+              <div class="field"><label class="field__label" for="alertTo">Etkin saat sonu</label><input class="input" id="alertTo" type="time"><span class="field__hint">İkisi boşsa her saat.</span></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn btn--primary">Kaydet</button></div>
+          </form>
+        </div>
+      </section>
+      <section class="panel">
+        <header class="panel__head"><div><h2 class="panel__title">Son olaylar</h2><p class="text-sm text-muted">90 gün saklanır.</p></div><button type="button" class="btn btn--sm" id="alertEventsReload">Yenile</button></header>
+        <div class="panel__body panel__body--flush"><div class="table-wrap" id="alertEvents"></div></div>
+      </section>
+      <section class="panel" id="alertHelpPanel">
+        <header class="panel__head"><h2 class="panel__title">Telegram botu nasıl açılır</h2></header>
+        <div class="panel__body"><ol class="text-sm stack">
+          <li>Telegram'da @BotFather'a yazın: /newbot, ad "kamera", kullanıcı adı ör. kamera_bildirim_bot. Verdiği jetonu yukarıya girin.</li>
+          <li>Yeni bir kanal açın (ör. "kamera"), botu kanala yönetici olarak ekleyin (mesaj gönderme izni yeter).</li>
+          <li>Kanala bir mesaj yazın, sonra "Sohbetleri bul": kanal listede çıkar, "Seç" kimliği alana yazar. Herkese açık kanalda @kullaniciadi da olur.</li>
+          <li>"Deneme gönder" ile sınayın, "Bildirim gönder"i işaretleyip kaydedin.</li>
+        </ol></div>
+      </section>
+    </div></section>
+
     <!-- CIHAZ -->
     <!-- CIHAZ (Ayarlar): ustte ayarlar seridi (betik ekler), altinda iki sutunlu duzen -->
     <section class="settings-split" id="s-devices" hidden>
@@ -780,24 +846,24 @@ function table(headers, rows) {
 let info = null;
 const visible = () => (info ? info.channelNames.map((_, k) => k).filter((k) => !info.channelEmpty?.[k]) : []);
 const status = { tab: 'live', focus: null, device: null, deviceSelected: false };
-const TABS = ['live', 'recordings', 'downloads', 'devices', 'members', 'livepages', 'audit', 'updates', 'database', 'access'];
+const TABS = ['live', 'recordings', 'downloads', 'devices', 'members', 'livepages', 'audit', 'updates', 'database', 'alerts', 'access'];
 // İzin tabanlı görünürlük: sunucunun /api/ben ile verdiği izin listesi (models/permission.mjs kataloğu)
 const hasPermission = (i) => !!me?.permissions?.includes(i);
-const TAB_PERMISSION = { live: ['live.view'], recordings: ['recording.list', 'recording.play', 'recording.download'], devices: ['device.read'], members: ['member.manage'], audit: ['audit.read'], updates: ['update.check'], database: ['database.manage'], access: ['permission.manage', 'api.key'], livepages: ['livepage.manage'] };
+const TAB_PERMISSION = { live: ['live.view'], recordings: ['recording.list', 'recording.play', 'recording.download'], devices: ['device.read'], members: ['member.manage'], audit: ['audit.read'], updates: ['update.check'], database: ['database.manage'], access: ['permission.manage', 'api.key'], livepages: ['livepage.manage'], alerts: ['alert.manage', 'event.read'] };
 // Ust baslikta konum yolu (kirinti) YOK: bolum menude secili, alt duzey orta bolmenin basliginda.
 const allowed = (s) => TABS.includes(s) && s !== 'downloads' && (TAB_PERMISSION[s] ?? []).some(hasPermission);
 /*
  * AYARLAR: Cihaz, Üyeler (Roller ve API anahtarlari dahil), Günlük, Güncelleme, Veritabani. Ust menude tek giris; her bolumun
  * ustunde ayni alt sekme seridi (DC panellerindeki Ayarlar -> sekmeler). Adresler degismedi (#devices, #audit...).
  */
-const SETTINGS = [['devices', 'Cihaz'], ['members', 'Üyeler'], ['livepages', 'Canlı sayfalar'], ['audit', 'Günlük'], ['updates', 'Güncelleme'], ['database', 'Veritabanı']];
+const SETTINGS = [['devices', 'Cihaz'], ['members', 'Üyeler'], ['livepages', 'Canlı sayfalar'], ['audit', 'Günlük'], ['updates', 'Güncelleme'], ['database', 'Veritabanı'], ['alerts', 'Bildirim']];
 const SETTINGS_OF = { access: 'members' };   // Yetki (roller, anahtarlar) Uyeler sekmesinin icinde
 const settingsAllowed = (s) => (s === 'members' ? allowed('members') || allowed('access') : allowed(s));
 const settingsTarget = (s) => (s === 'members' && !allowed('members') && allowed('access') ? 'access' : s);
 const firstSettings = () => settingsTarget(SETTINGS.map(([s]) => s).find(settingsAllowed) ?? 'live');
 const isSettings = (name) => SETTINGS.some(([s]) => s === (SETTINGS_OF[name] ?? name));
 function setupSettingsTabs() {
-  for (const id of ['s-devices', 's-members', 's-access', 's-livepages', 's-audit', 's-updates', 's-database']) {
+  for (const id of ['s-devices', 's-members', 's-access', 's-livepages', 's-audit', 's-updates', 's-database', 's-alerts']) {
     const sec = document.getElementById(id);
     if (!sec || sec.querySelector('.settings-tabs')) continue;
     const nav = el('nav', { class: 'tabs settings-tabs', 'aria-label': 'Ayarlar' }, ...SETTINGS.map(([s, label]) => el('a', { href: `#${s}`, class: 'tabs__link', 'data-tab': s }, label)));
@@ -831,6 +897,7 @@ function openTab(name) {
   if (name === 'audit') reloadAuditLog();
   if (name === 'updates') updateReload();
   if (name === 'database') dbReload();
+  if (name === 'alerts') alertReload();
   if (name !== 'recordings') pauseTl();
 }
 document.addEventListener('click', (e) => {
@@ -2475,6 +2542,85 @@ $('#updateApply').addEventListener('click', async () => {
   try { const g = await api('/api/update/apply', { method: 'POST' }); updateDraw(g); notify(g.message, 'success'); }
   catch (err) { notify(err.message, 'danger'); } finally { d.disabled = false; }
 });
+
+// ---------- bildirim (algilama + Telegram) ----------
+const ALERT_NOTIFIED = { sent: ['gönderildi', 'green'], sending: ['gönderiliyor', 'blue'], error: ['gönderilemedi', 'red'], off: ['kapalı', 'gray'], low: ['düşük güven', 'gray'], schedule: ['saat dışı', 'gray'], cooldown: ['bekleme', 'gray'] };
+const ALERT_TYPES_FALLBACK = { person: { tr: 'İnsan', icon: '🧍' }, fall: { tr: 'Düşme', icon: '⚠️' }, collapse: { tr: 'Hareketsiz yatan kişi', icon: '🚨' }, fight: { tr: 'Kavga', icon: '🥊' }, motion: { tr: 'Hareket', icon: '👣' } };
+let alertDoc = null;
+const alertCheck = (key, label, on) => { const i = el('input', { type: 'checkbox', 'data-k': key }); i.checked = !!on; return el('label', { class: 'checkbox' }, i, el('span', {}, label)); };
+function alertDraw(g) {
+  alertDoc = g;
+  const t = g.telegram, d = g.detection, k = $('#alertInfo'); k.replaceChildren(); const row = makeRow(k);
+  const w = g.worker, alive = !!w && w.lastSeenSec < 60;
+  row('Analiz servisi', !g.aiReady ? 'kurulmamış (CAM_AI_SECRET yok)' : el('span', { class: `badge badge--${alive ? 'green' : 'red'}` }, alive ? 'çalışıyor' : w ? `${w.lastSeenSec} sn'dir ses yok` : 'bağlanmadı'), !alive);
+  if (alive && w.stats) row('İzlenen', `${w.stats.channels ?? 0} kamera · ${w.stats.fps ?? '—'} kare/sn · CPU %${w.stats.cpu ?? '—'}`);
+  row('Algılama', d.enabled ? 'açık' : 'kapalı');
+  row('Telegram', t.enabled ? `açık · ${t.chat}` : 'kapalı');
+  $('#alertTgEnabled').checked = t.enabled; $('#alertTgPhoto').checked = t.photo;
+  $('#alertTgChat').value = t.chat ?? ''; $('#alertTgThread').value = t.thread ?? ''; $('#alertTgToken').value = '';
+  $('#alertTgToken').placeholder = t.tokenSet ? 'tanımlı — değiştirmek için yazın' : '123456:ABC…';
+  $('#alertTgTokenHint').textContent = t.tokenSet ? 'Jeton tanımlı. Boş bırakılırsa değişmez.' : "@BotFather'ın verdiği değer.";
+  $('#alertTestChannel').replaceChildren(el('option', { value: '' }, 'Görüntüsüz'), ...g.channels.map((c) => el('option', { value: c.channel }, `${c.name} (K${c.channel + 1})`)));
+  $('#alertDetEnabled').checked = d.enabled;
+  $('#alertTypes').replaceChildren(...Object.entries(g.types).map(([key, v]) => alertCheck(key, `${v.icon} ${v.tr}`, d.types[key])));
+  $('#alertChannels').replaceChildren(...g.channels.map((c) => alertCheck(c.channel, c.name, d.channels.includes(c.channel))));
+  $('#alertCooldown').value = d.cooldownSec; $('#alertCollapse').value = d.collapseSec; $('#alertScore').value = Math.round(d.minScore * 100); $('#alertFps').value = d.fps;
+  $('#alertFrom').value = d.activeFrom; $('#alertTo').value = d.activeTo;
+}
+async function alertEvents() {
+  const box = $('#alertEvents');
+  try {
+    const list = await api('/api/events?limit=50'), types = alertDoc?.types ?? ALERT_TYPES_FALLBACK;
+    if (!list.length) { box.replaceChildren(el('p', { class: 'text-sm text-muted', style: 'padding:16px' }, 'Henüz olay yok.')); return; }
+    box.replaceChildren(table(['Zaman', 'Kamera', 'Durum', ['Güven', 'right'], 'Bildirim'], list.map((e) => {
+      const [label, color] = ALERT_NOTIFIED[e.notified] ?? [e.notified ?? '—', 'gray'];
+      return el('tr', {}, el('td', {}, new Date(e.ts).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'medium' })), el('td', {}, e.name),
+        el('td', {}, `${types[e.type]?.icon ?? ''} ${types[e.type]?.tr ?? e.type}${e.detail ? ` · ${e.detail}` : ''}`), el('td', { class: 'text-right' }, e.score === null ? '—' : `%${Math.round(e.score * 100)}`),
+        el('td', {}, el('span', { class: `badge badge--${color}` }, label)));
+    })));
+  } catch (err) { box.replaceChildren(writeError(err.message)); }
+}
+async function alertReload() {
+  const manage = hasPermission('alert.manage');
+  for (const id of ['#alertTgPanel', '#alertDetPanel', '#alertHelpPanel']) $(id).hidden = !manage;
+  if (manage) { try { alertDraw(await api('/api/alerts')); } catch (err) { $('#alertInfo').replaceChildren(writeError(err.message)); } }
+  else $('#alertInfo').replaceChildren();
+  if (hasPermission('event.read')) alertEvents();
+}
+const alertTg = () => {
+  const x = { enabled: $('#alertTgEnabled').checked, photo: $('#alertTgPhoto').checked, chat: $('#alertTgChat').value.trim(), thread: $('#alertTgThread').value.trim() };
+  const token = $('#alertTgToken').value.trim(); if (token) x.token = token;
+  return x;
+};
+async function alertPut(body, button) {
+  button.disabled = true;
+  try { alertDraw(await api('/api/alerts', { method: 'PUT', body: JSON.stringify(body) })); notify('Kaydedildi.', 'success'); }
+  catch (err) { notify(err.message, 'danger'); } finally { button.disabled = false; }
+}
+$('#alertTgForm').addEventListener('submit', (e) => { e.preventDefault(); alertPut({ telegram: alertTg() }, $('#alertTgForm button[type=submit]')); });
+$('#alertDetForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const types = Object.fromEntries([...$('#alertTypes').querySelectorAll('input')].map((i) => [i.dataset.k, i.checked]));
+  const channels = [...$('#alertChannels').querySelectorAll('input:checked')].map((i) => Number(i.dataset.k));
+  alertPut({ detection: { enabled: $('#alertDetEnabled').checked, types, channels, cooldownSec: Number($('#alertCooldown').value), collapseSec: Number($('#alertCollapse').value),
+    minScore: Number($('#alertScore').value) / 100, fps: Number($('#alertFps').value), activeFrom: $('#alertFrom').value, activeTo: $('#alertTo').value } }, $('#alertDetForm button[type=submit]'));
+});
+$('#alertTest').addEventListener('click', async () => {
+  const b = $('#alertTest'), x = alertTg(), ch = $('#alertTestChannel').value; b.disabled = true;
+  try { await api('/api/alerts/test', { method: 'POST', body: JSON.stringify({ chat: x.chat, thread: x.thread, token: x.token, channel: ch === '' ? undefined : Number(ch) }) }); notify('Deneme bildirimi gönderildi.', 'success'); }
+  catch (err) { notify(err.message, 'danger'); } finally { b.disabled = false; }
+});
+$('#alertChatsFind').addEventListener('click', async () => {
+  const b = $('#alertChatsFind'), box = $('#alertChats'); b.disabled = true;
+  try {
+    const { chats } = await api('/api/alerts/chats', { method: 'POST', body: JSON.stringify({ token: alertTg().token }) });
+    box.hidden = false;
+    if (!chats.length) { box.replaceChildren(el('p', { class: 'text-sm text-muted' }, 'Bot henüz bir mesaj görmedi: kanala bir mesaj yazıp yeniden deneyin.')); return; }
+    box.replaceChildren(table(['Ad', 'Tür', 'Kimlik', ''], chats.map((c) => el('tr', {}, el('td', {}, c.title || c.username || '—'), el('td', {}, c.type), el('td', { class: 'table__cell--mono' }, c.id),
+      el('td', { class: 'table__cell--tight' }, el('button', { type: 'button', class: 'btn btn--sm', onclick: () => { $('#alertTgChat').value = c.id; box.hidden = true; } }, 'Seç'))))));
+  } catch (err) { notify(err.message, 'danger'); } finally { b.disabled = false; }
+});
+$('#alertEventsReload').addEventListener('click', alertEvents);
 
 // ---------- veritabani (tasi / baglan) ----------
 const DB_STAGES = {

@@ -58,6 +58,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD gerekli (.env.example)}
       # base64, 32 bayt (openssl rand -base64 32). Boşsa data/secret.key dosyası kullanılır. Veritabanına girmez.
       CAM_SECRET_KEY: ${CAM_SECRET_KEY:-}
+      # cam-ai ile ortak sir (openssl rand -hex 32). Bossa goruntu analizi uc noktalari kapali (404).
+      CAM_AI_SECRET: ${CAM_AI_SECRET:-}
     volumes:
       - data:/app/data
     # DB_REPLICAS=0 (dışarıdaki veritabanı) iken db servisi yoktur; bağımlılık o zaman aranmaz.
@@ -108,6 +110,23 @@ services:
     ports:
       # WebRTC medyası; HTTP değil, vekil taşımaz.
       - "${CAM_RTC_PORT:-8189}:8189/udp"
+
+  # Goruntu analizi (YOLO11n-pose, CPU). Istege bagli: COMPOSE_PROFILES=ai. Kareyi panelin paylasilan akisindan alir;
+  # cihaza ek baglanti acmaz, diske yazmaz. Ayar ve olaylar: panel Ayarlar -> Bildirim.
+  cam-ai:
+    build: ./ai
+    profiles: ["ai"]
+    container_name: ${CAM_AI_CONTAINER:-cam-ai}
+    restart: unless-stopped
+    environment:
+      CAM_URL: http://cam
+      CAM_AI_SECRET: ${CAM_AI_SECRET:-}
+      CAM_AI_THREADS: ${CAM_AI_THREADS:-2}
+    cpus: ${CAM_AI_CPUS:-6}
+    mem_limit: ${CAM_AI_MEMORY:-1536m}
+    read_only: true
+    tmpfs: ["/tmp"]
+    depends_on: [cam]
 
 networks:
   default:

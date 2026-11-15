@@ -18,6 +18,7 @@ import { LiveService } from './services/live.mjs';
 import { LivePageStore } from './models/live-page.mjs';
 import { AuditLog } from './services/audit-log.mjs';
 import { UpdateService } from './services/updates.mjs';
+import { AlertService } from './services/alerts.mjs';
 import { ConnectionFile } from './services/database-move.mjs';
 import { HubLinks, HubClient } from './services/hub.mjs';
 import { hubController } from './controllers/hub.mjs';
@@ -28,6 +29,7 @@ import { streamController } from './controllers/streams.mjs';
 import { permissionController } from './controllers/permissions.mjs';
 import { auditLogController } from './controllers/audit-log.mjs';
 import { updateController } from './controllers/updates.mjs';
+import { alertsController } from './controllers/alerts.mjs';
 import { databaseController } from './controllers/database.mjs';
 import { viewController } from './controllers/views.mjs';
 import { liveController } from './controllers/live.mjs';
@@ -86,8 +88,9 @@ async function createAppWithDb(config, db, extra) {
   livePages = await new LivePageStore(db, { roleValid: (r) => permissions.roleVar(r) }).load();
   const live = new LiveService({ config, devices, livePages });
   const updates = await new UpdateService({ settings, setting: config.updates }).load();
+  const alerts = await new AlertService({ db, settings, secret, devices, config }).load();
   const databaseMove = { file: databaseFile(config, secret), secret, restart: () => process.kill(process.pid, 'SIGTERM'), ...extra.databaseMove };
-  const services = { db, members, permissions, devices, auditLog, config, hub, links, live, livePages, updates, databaseMove };
+  const services = { db, members, permissions, devices, auditLog, config, hub, links, live, livePages, updates, alerts, databaseMove };
 
   // denetleyiciler + ara katmanlar
   const view = viewController(services);
@@ -95,7 +98,7 @@ async function createAppWithDb(config, db, extra) {
     login: loginController(services), members: membersController(services), devices: devicesController(services),
     stream: streamController(services), permissions: permissionController(services), auditLog: auditLogController(services), view,
     hub: hubController(services), live: liveController({ ...services, view }), livePages: livePagesController(services), updates: updateController(services),
-    database: databaseController(services),
+    database: databaseController(services), alerts: alertsController(services),
   };
   const middleware = setupIdentity(services);
 
@@ -110,6 +113,6 @@ async function createAppWithDb(config, db, extra) {
   live.start();
   updates.start();
   // Kapanis: bekleyen gunluk yazimlari ve ertelenmis yetki yazimi veritabanina islenir, sonra havuz kapanir.
-  app.close = async () => { updates.close(); live.close(); devices.close(); await permissions.close(); await auditLog.wait(); await db.close(); };
+  app.close = async () => { updates.close(); alerts.close(); live.close(); devices.close(); await permissions.close(); await auditLog.wait(); await db.close(); };
   return app;
 }

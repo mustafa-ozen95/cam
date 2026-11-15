@@ -25,7 +25,7 @@ test('goc: sema kurulur, tekrar kosunca bir sey yapmaz, surum tablosu dolu', asy
     const rows = await v.db.query('SELECT version FROM migrations ORDER BY version');
     assert.deepEqual(rows.map((s) => s.version), MIGRATIONS.map((m) => m.version));
     const tables = (await v.db.query('SHOW TABLES')).map((r) => Object.values(r)[0]).sort();
-    assert.deepEqual(tables, ['api_keys', 'audit_log', 'builtin_role_permissions', 'devices', 'hub_links', 'live_pages', 'migrations', 'roles', 'settings', 'users']);
+    assert.deepEqual(tables, ['api_keys', 'audit_log', 'builtin_role_permissions', 'devices', 'events', 'hub_links', 'live_pages', 'migrations', 'roles', 'settings', 'users']);
   } finally { await v.remove(); }
 });
 
