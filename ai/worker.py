@@ -207,12 +207,28 @@ def follow(poly, a, b):
     return q
 
 
+def predict(tr, now):
+    """Bu karede gorulmeyen izi hiziyla ileri tasir (en cok 0.6 sn)."""
+    v, dt = getattr(tr, 'v', None), now - tr.seen
+    if not v or dt <= 0:
+        return tr.p
+    b = tr.p['box']; nb = [b[0] + v[0] * dt, b[1] + v[1] * dt, b[2] + v[0] * dt, b[3] + v[1] * dt]
+    q = dict(tr.p, box=nb)
+    if q.get('poly') is not None:
+        q['poly'] = q['poly'] + np.array([v[0] * dt, v[1] * dt], np.float32)
+    if q.get('kp') is not None:
+        q['kp'] = q['kp'].copy(); q['kp'][:, 0] += v[0] * dt; q['kp'][:, 1] += v[1] * dt
+    return q
+
+
 def overlay_items(marks, w, h):
     """Isaretler -> normalize (0..1) katman ogeleri."""
     items = []
     for p in marks:
         it = {'k': 'car' if p.get('car') else p['other'] if p.get('other') else 'person', 'box': [round(p['box'][0] / w, 4), round(p['box'][1] / h, 4), round(p['box'][2] / w, 4), round(p['box'][3] / h, 4)],
               'label': p.get('label') or '', 'alarm': bool(p.get('alarm'))}
+        if p.get('id'):
+            it['id'] = p['id']
         if p.get('poly') is not None:
             it['poly'] = [[round(float(x) / w, 4), round(float(y) / h, 4)] for x, y in p['poly']]
         k = p.get('kp')
@@ -235,10 +251,47 @@ def white_ratio(img, box):
     return float(((hsv[:, :, 1] < 50) & (hsv[:, :, 2] > 150)).mean())
 
 
-def near(person, car, margin=0.25):
-    m = margin * (car[2] - car[0])
-    x1, y1, x2, y2 = car[0] - m, car[1] - m, car[2] + m, car[3] + m
-    return person[0] < x2 and person[2] > x1 and person[1] < y2 and person[3] > y1
+PERSON_M = 1.7      # olcek: kisi boyu ~1.7 m (piksel -> metre)
+DEPTH_K = 2.0       # goruntude dikey fark derinliktir, egik kamerada ~2 kat kisalir
+NEAR_M, CLEAR_M = 1.0, 2.0   # yaninda / uzaklasti (histerezis)
+
+
+def foot(p):
+    """Yere basma noktasi: ayak bilekleri gorunurse onlar, yoksa kutunun alt ortasi."""
+    k, (x1, y1, x2, y2) = p.get('kp'), p['box']
+    pts = [k[i] for i in (15, 16) if k is not None and k[i, 2] > 0.4]
+    if pts:
+        return float(np.mean([q[0] for q in pts])), float(max(q[1] for q in pts))
+    return (x1 + x2) / 2, y2
+
+
+def car_distance(p, car):
+    """Kisinin korunan araca uzakligi (metre, tahmini). Ayak noktasi -> arac konturu; olcek kisi boyundan.
+    Derinlik uyusmazsa (kisi aracin cok arkasinda/onunde: boyu arac boyuna oransiz) None."""
+    poly = car.get('poly')
+    if poly is None or len(poly) < 3:
+        b = car['box']; poly = np.array([[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]], np.float32)
+    x1, y1, x2, y2 = p['box']
+    ph = max(x2 - x1, y2 - y1, 1.0)                     # yatan kiside de boy
+    cy1, cy2 = float(poly[:, 1].min()), float(poly[:, 1].max())
+    fx, fy = foot(p)
+    q = (poly * np.array([1, DEPTH_K], np.float32)).reshape(-1, 1, 2)
+    d = cv2.pointPolygonTest(q, (fx, fy * DEPTH_K), True)   # + icinde
+    if d >= 0:              # ayak konturun icinde: aracin hemen arkasinda (ortulu) ya da onunde -> bitisik
+        return 0.0 if y1 < cy2 else None
+    ratio = ph / max(cy2 - cy1, 1.0)
+    if ratio < 0.4 or ratio > 3.0:
+        return None
+    return -d / (ph / PERSON_M)
+
+
+def car_trend(hist, now, span=1.5):
+    """Son span sn'deki uzaklik degisimi (m/sn, eksi = yaklasiyor)."""
+    pts = [(t, m) for t, m in hist if now - t <= span]
+    if len(pts) < 3 or pts[-1][0] - pts[0][0] < 0.5:
+        return 0.0
+    t = np.array([a for a, _ in pts]); m = np.array([b for _, b in pts])
+    return float(np.polyfit(t - t[0], m, 1)[0])
 
 
 def iou(a, b):
@@ -545,15 +598,37 @@ def run_channel(channel, cfg, counter):
         # --- kurallar
         for tr in live:
             p = tr.p
+            p['id'] = tr.id
             ang, lying = posture(p)
             p['label'] = f'#{tr.id} {"yatay" if lying else "dik"} {int(ang)}° %{int(p["score"] * 100)}'
             x1, y1, x2, y2 = p['box']
             cx, cy, size = (x1 + x2) / 2, (y1 + y2) / 2, max(x2 - x1, y2 - y1)
-            if cars and tr.hits >= 2 and not getattr(tr, 'near_car', False) and any(near(p['box'], c['box']) for c in cars):
-                tr.near_car = True; p['alarm'] = True
-                report('approach', p['score'], 'kişi korunan aracın yanında', img, car_marks + [t.p for t in live])
-            elif cars and getattr(tr, 'near_car', False) and not any(near(p['box'], c['box'], 0.5) for c in cars):
+            # yakinlasma: ayak -> arac konturu uzakligi (m), egilim, yaninda kalma suresi, histerezisli sifirlama
+            ds = [m for m in (car_distance(p, c) for c in cars) if m is not None]
+            dm = min(ds) if ds else None
+            hist = tr.car_hist = [h for h in getattr(tr, 'car_hist', []) if now - h[0] <= 4] + ([(now, dm)] if dm is not None else [])
+            if dm is not None:
+                v = car_trend(hist, now)
+                p['label'] += f' · araç {dm:.1f} m' + (' ↓' if v < -0.3 else ' ↑' if v > 0.3 else '')
+                if dm <= NEAR_M:
+                    tr.near_since = getattr(tr, 'near_since', None) or now
+                    p['alarm'] = True
+                else:
+                    tr.near_since = None
+                if dm > CLEAR_M:
+                    tr.clear_since = getattr(tr, 'clear_since', None) or now
+                else:
+                    tr.clear_since = None
+            else:
+                tr.near_since = None
+                tr.clear_since = getattr(tr, 'clear_since', None) or now
+            if getattr(tr, 'near_car', False) and tr.clear_since and now - tr.clear_since >= 2:
                 tr.near_car = False
+            if (not getattr(tr, 'near_car', False) and tr.hits >= 2 and tr.near_since
+                    and (now - tr.near_since >= 0.8 or dm <= 0.3)):
+                tr.near_car = True
+                came = max((m for _, m in hist), default=dm) >= CLEAR_M
+                report('approach', p['score'], f'kişi korunan araca {dm:.1f} m' + (' (yaklaşarak)' if came else ''), img, car_marks + [t.p for t in live])
             if not tr.announced and tr.hits >= 3 and p['score'] >= min_score:
                 tr.announced = True
                 report('person', p['score'], f'{len(live)} kişi', img, [t.p for t in live])
@@ -593,7 +668,7 @@ def run_channel(channel, cfg, counter):
                     tr.p['alarm'] = True
                 report('fight', max(t.p['score'] for t in fast), f'{len(live)} kişi, hızlı kol hareketi', img, [t.p for t in live])
         show(img, car_marks + [t.p for t in live], f'{len(live)} kişi' + ('  korunan araç' if cars else '') + (f'  hareket %{moved * 100:.0f}' if motion else ''))
-        overlay(img, others + car_marks + [t.p for t in tracks if now - t.seen < 0.6])   # seg ile bulunan kisi seg araliginda da gorunur
+        overlay(img, others + car_marks + [predict(t, now) for t in tracks if now - t.seen < 0.6])   # seg ile bulunan kisi seg araliginda da gorunur
         if motion and not live and now - last_motion_ev > 30:
             last_motion_ev = now
             report('motion', None, f'görüntünün %{moved * 100:.0f} değişti', img, [])

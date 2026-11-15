@@ -1479,18 +1479,58 @@ function overlaySync(watch) {
   overlayKey = key; overlaySource?.close(); overlaySource = null; overlayData.clear(); overlayDrawAll();
   if (!want.length) return;
   overlaySource = new EventSource(`/api/alerts/overlay?channels=${key}`);
-  overlaySource.onmessage = (e) => { try { const o = JSON.parse(e.data); overlayData.set(o.channel, { items: o.items, at: performance.now(), age: o.age || 0 }); overlayDraw(o.channel); } catch { /* bozuk ileti */ } };
+  overlaySource.onmessage = (e) => {
+    try {
+      const o = JSON.parse(e.data), now = performance.now() / 1000, d = overlayData.get(o.channel) || { hist: [] };
+      d.hist.push([now - (o.age || 0), o.items]); d.hist.sort((a, b) => a[0] - b[0]);   // yakalanma ani (istemci saati)
+      while (d.hist.length > 2 && now - d.hist[0][0] > 4) d.hist.shift();
+      d.at = now; overlayData.set(o.channel, d);
+    } catch { /* bozuk ileti */ }
+  };
 }
 function overlayDrawAll() { for (const k of Object.keys(frames)) overlayDraw(Number(k)); if (status.focus !== null) overlayDraw(status.focus); }
+/** Canli videonun ekrandaki gecikmesi (sn): oynatici tamponu + sabit boru gecikmesi (localStorage overlayShift ile ayarlanir). */
+function videoLag(v) {
+  let shift = 0;
+  try { shift = Number(localStorage.getItem('overlayShift')) || 0; } catch { /* yok */ }
+  const b = v?.buffered;
+  return (b?.length ? Math.max(0, b.end(b.length - 1) - v.currentTime) : 0) + shift;
+}
 function overlayDraw(k) {
   const focus = status.focus === k, video = focus ? $('#focusVideo') : frames[k]?.video, canvas = focus ? $('#focusOverlay') : frames[k]?.canvas;
-  const o = overlayData.get(k);
-  const ok = o && preferences.overlay && performance.now() - o.at <= 2500;
-  // analiz gecikmesi: hareketli kisi hiziyla ileri tasinir
-  drawDetections(canvas, video?.videoWidth, video?.videoHeight, video, ok ? o.items : null, ok ? Math.min(0.6, o.age + (performance.now() - o.at) / 1000) : 0);
+  const o = overlayData.get(k), now = performance.now() / 1000;
+  const ok = o && preferences.overlay && now - o.at <= 2.5;
+  // videoda o an gorunen kareye denk gelen algilama: gecmisten ara degerle (yetisme/onde kalma yok)
+  drawDetections(canvas, video?.videoWidth, video?.videoHeight, video, ok ? detectionsAt(o.hist, now - videoLag(video)) : null);
+}
+/** Kutu a'dan b'ye: kontur/eklemleri olcekleyip tasir. */
+function moveItem(it, box) {
+  const [a0, a1, a2, a3] = it.box, sx = (box[2] - box[0]) / Math.max(a2 - a0, 1e-4), sy = (box[3] - box[1]) / Math.max(a3 - a1, 1e-4);
+  const m = ([x, y]) => [box[0] + (x - a0) * sx, box[1] + (y - a1) * sy];
+  return { ...it, box, poly: it.poly?.map(m), kp: it.kp?.map((p) => (p ? m(p) : p)) };
+}
+/** hist: [[t, items]] artan; t anindaki ogeler. Ayni kimlikli kisiler iki kare arasinda dogrusal ara degerlenir;
+ *  en yeni kareden ilerisi icin hizla en cok 0.4 sn ileri tasinir. */
+function detectionsAt(hist, t) {
+  let a = null, b = null;
+  for (const f of hist || []) { if (f[0] <= t) a = f; else { b = f; break; } }
+  if (a && b && b[0] - a[0] > 1.5) b = null;
+  if (!a) return b && b[0] - t < 0.3 ? b[1] : null;
+  if (!b) {
+    const d = Math.min(0.4, t - a[0]);
+    if (t - a[0] > 1.5) return null;
+    return a[1].map((it) => (it.v && d > 0 ? moveItem(it, [it.box[0] + it.v[0] * d, it.box[1] + it.v[1] * d, it.box[2] + it.v[0] * d, it.box[3] + it.v[1] * d]) : it));
+  }
+  const r = (t - a[0]) / (b[0] - a[0]), base = r < 0.5 ? a[1] : b[1], other = new Map((r < 0.5 ? b[1] : a[1]).filter((i) => i.id).map((i) => [i.id, i]));
+  return base.map((it) => {
+    const j = it.id && other.get(it.id);
+    if (!j) return it;
+    const [p, q] = r < 0.5 ? [it, j] : [j, it];
+    return moveItem(it, p.box.map((v, i) => v + (q.box[i] - v) * r));
+  });
 }
 /** Normalize algilama ogelerini kanvasa cizer (canli ve kayit ortak). mw/mh: goruntunun kendi boyu; media object-fit icin. */
-function drawDetections(canvas, mw, mh, media, items, lead) {
+function drawDetections(canvas, mw, mh, media, items) {
   if (!canvas) return;
   const r = canvas.getBoundingClientRect(), dpr = devicePixelRatio || 1, W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
   if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
@@ -1500,9 +1540,7 @@ function drawDetections(canvas, mw, mh, media, items, lead) {
   if (getComputedStyle(media).objectFit !== 'fill') { const s = Math.min(W / mw, H / mh); w = mw * s; h = mh * s; x0 = (W - w) / 2; y0 = (H - h) / 2; }
   const X = (v) => x0 + v * w, Y = (v) => y0 + v * h, lw = Math.max(1, Math.min(1.5, W / 900)) * dpr;   // ince cizgi (kullanici istegi)
   c.lineJoin = 'round'; c.font = `600 ${Math.round(11 * dpr)}px system-ui, sans-serif`;
-  for (const raw of items) {
-    const dx = raw.v ? raw.v[0] * lead : 0, dy = raw.v ? raw.v[1] * lead : 0;
-    const it = dx || dy ? { ...raw, box: [raw.box[0] + dx, raw.box[1] + dy, raw.box[2] + dx, raw.box[3] + dy], poly: raw.poly?.map(([a, b]) => [a + dx, b + dy]), kp: raw.kp?.map((p) => (p ? [p[0] + dx, p[1] + dy] : p)) } : raw;
+  for (const it of items) {
     const col = it.k === 'car' ? '#ff8c00' : it.k === 'vehicle' ? '#0a84ff' : it.k === 'object' ? '#bf5af2' : it.alarm ? '#ff3b30' : '#34c759';
     c.beginPath();
     if (it.poly?.length >= 3) { it.poly.forEach(([a, b], i) => (i ? c.lineTo(X(a), Y(b)) : c.moveTo(X(a), Y(b)))); c.closePath(); }
@@ -1520,7 +1558,7 @@ function drawDetections(canvas, mw, mh, media, items, lead) {
     }
   }
 }
-setInterval(() => { if (overlayData.size) overlayDrawAll(); }, 100);
+setInterval(() => { if (overlayData.size) overlayDrawAll(); }, 50);
 $('#alertOverlay').addEventListener('change', (e) => { preferences.overlay = e.target.checked; persistPreferences({ overlay: preferences.overlay }); overlayDrawAll(); updateLive(); notify(preferences.overlay ? 'Algılama canlı görüntüde gösterilecek' : 'Algılama canlı görüntüde gizlendi', 'success'); });   // eskiyen katman silinir, boyut degisimi izlenir
 function stopLive(k) { frames[k]?.m.stop(); }
 function updateLive() {
@@ -1848,13 +1886,8 @@ function recOverlayDraw() {
   if (!tl.ready || status.tab !== 'recordings') return;
   const t = tlNow();
   for (const [k, tile] of tl.tile) {
-    let items = null, lead = 0;
-    if (preferences.recOverlay && tile.img.naturalWidth && tl.t0) {
-      let best = null;
-      for (const f of recFrames(k, t)) if (f[0] <= t + 0.15 && (!best || f[0] > best[0])) best = f;
-      if (best && t - best[0] < 1.5) { items = best[1]; lead = Math.min(0.6, Math.max(0, t - best[0])); }
-    }
-    drawDetections(tile.canvas, tile.img.naturalWidth, tile.img.naturalHeight, tile.img, items, lead);
+    const items = preferences.recOverlay && tile.img.naturalWidth && tl.t0 ? detectionsAt(recFrames(k, t).sort((a, b) => a[0] - b[0]), t) : null;
+    drawDetections(tile.canvas, tile.img.naturalWidth, tile.img.naturalHeight, tile.img, items);
   }
 }
 setInterval(recOverlayDraw, 100);
