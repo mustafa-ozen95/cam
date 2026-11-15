@@ -137,11 +137,12 @@ def night_boost(img):
 
 
 def detect(model, img, conf):
-    """Genis karede iki kare dilim (yukseklik x yukseklik) ayri calisir: uzaktaki kucuk kisi 416'ya kuculunce kaybolmaz."""
+    """Tam kare + genis karede iki kare dilim (yukseklik x yukseklik) ayri calisir: uzaktaki kucuk kisi 416'ya kuculunce kaybolmaz."""
     h, w = img.shape[:2]
     if w < h * 1.2:
         return model(img, conf)
-    out = []
+    # tam kare da: yakindaki buyuk, kenara dayali nesne (korunan arac) dilimde bulunamiyor (olculdu: tam %84, dilim yok)
+    out = model(img, conf)
     for x in (0, w - h):
         for p in model(img[:, x:x + h], conf):
             b = p['box']; p['box'] = [b[0] + x, b[1], b[2] + x, b[3]]
