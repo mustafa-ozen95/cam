@@ -18,15 +18,19 @@ export const EVENT_TYPES = {
   fight: { tr: 'Kavga / saldırgan hareket olabilir', icon: '🥊' },
   motion: { tr: 'Hareket algılandı', icon: '👣' },
   approach: { tr: 'Beyaz araca yaklaşan kişi', icon: '🚗' },
+  plate: { tr: 'Plaka okundu', icon: '🔢' },
 };
 const DEFAULTS = {
   telegram: { enabled: false, token: null, chat: '', thread: '', photo: true },
   detection: {
-    enabled: false, channels: [], types: { person: true, fall: true, collapse: true, fight: false, motion: false, approach: true },
-    cooldownSec: 120, collapseSec: 20, minScore: 0.5, fps: 4, activeFrom: '', activeTo: '',
+    enabled: false, channels: [], types: { person: true, fall: true, collapse: true, fight: false, motion: false, approach: true, plate: true },
+    ownPlates: [], cooldownSec: 120, collapseSec: 20, minScore: 0.5, fps: 4, activeFrom: '', activeTo: '',
   },
 };
 const KEEP_DAYS = 90;
+/** Turk plakasi: il kodu 01-81 + 1-3 harf + 2-4 rakam (bosluksuz, buyuk harf). */
+export const PLATE_RE = /^(0[1-9]|[1-7][0-9]|8[01])[A-Z]{1,3}[0-9]{2,4}$/;
+const normPlate = (s) => String(s ?? '').toLocaleUpperCase('tr-TR').replace(/[^0-9A-Z]/g, '');
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const clamp = (v, a, b, d) => (Number.isFinite(Number(v)) ? Math.min(b, Math.max(a, Number(v))) : d);
 const escape = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
@@ -96,6 +100,7 @@ export class AlertService {
       if (x.collapseSec !== undefined) d.collapseSec = clamp(x.collapseSec, 5, 600, 20);
       if (x.minScore !== undefined) d.minScore = clamp(x.minScore, 0.2, 0.95, 0.5);
       if (x.fps !== undefined) d.fps = clamp(x.fps, 1, 10, 4);
+      if (Array.isArray(x.ownPlates)) d.ownPlates = [...new Set(x.ownPlates.map(normPlate).filter((p) => PLATE_RE.test(p)))].slice(0, 50);
       if (x.guardZones !== undefined) {
         const z = {};
         for (const [k, v] of Object.entries(x.guardZones || {})) {
@@ -116,7 +121,7 @@ export class AlertService {
     this.worker = { at: Date.now(), stats: stats && typeof stats === 'object' ? stats : null };
     const d = this.doc.detection, real = this.channelList();
     const channels = d.channels.length ? d.channels.filter((k) => real.includes(k)) : real;
-    return { enabled: d.enabled, channels: d.enabled ? channels.map((k) => ({ channel: k, name: this.channelName(k) })) : [], types: d.types, collapseSec: d.collapseSec, minScore: d.minScore, fps: d.fps, guardZones: d.guardZones || {} };
+    return { enabled: d.enabled, channels: d.enabled ? channels.map((k) => ({ channel: k, name: this.channelName(k) })) : [], types: d.types, collapseSec: d.collapseSec, minScore: d.minScore, fps: d.fps, guardZones: d.guardZones || {}, ownPlates: d.ownPlates || [] };
   }
 
   /** Olay: { channel, type, score, detail, image (base64 JPEG, istege bagli) }. Satir yazilir, bildirim arka planda. */
@@ -130,7 +135,7 @@ export class AlertService {
     const why = this.#decision(ev);
     await this.db.pool.query('INSERT INTO events (id, ts, channel, type, score, detail, notified) VALUES (?, ?, ?, ?, ?, ?, ?)', [ev.id, ev.ts, channel, type, score, detail, why ?? 'sending']);
     if (!why) {
-      this.lastSent.set(`${channel}|${type}`, Date.now());
+      this.lastSent.set(this.#key(ev), Date.now());
       this.#send(ev, image).then(() => 'sent', (e) => { console.error(`Telegram: ${e.message}`); return 'error'; })
         .then((r) => this.db.pool.query('UPDATE events SET notified = ? WHERE id = ?', [r, ev.id])).catch(() => {});
     }
@@ -143,10 +148,12 @@ export class AlertService {
     if (!d.types[ev.type]) return 'off';
     if (ev.score !== null && ev.score < d.minScore) return 'low';
     if (!this.#activeNow()) return 'schedule';
-    const last = this.lastSent.get(`${ev.channel}|${ev.type}`) ?? 0;
+    const last = this.lastSent.get(this.#key(ev)) ?? 0;
     if (Date.now() - last < d.cooldownSec * 1000) return 'cooldown';
     return null;
   }
+  /** Bekleme anahtari: plakada her plaka ayri (farkli araclar birbirini susturmaz). */
+  #key(ev) { return `${ev.channel}|${ev.type}${ev.type === 'plate' ? `|${ev.detail}` : ''}`; }
   #activeNow() {
     const { activeFrom: a, activeTo: b } = this.doc.detection;
     if (!a || !b || a === b) return true;

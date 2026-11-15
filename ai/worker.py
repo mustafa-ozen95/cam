@@ -10,9 +10,11 @@ cam-ai: kamera panelinin goruntu analizi (YOLO11n-pose, CPU, onnxruntime).
      fight    : (deneysel) iki kisi ust uste ve bilekler cok hizli
      motion   : kisi yokken hareket
      approach : beyaz araca (yolo11n arac sinifi + renk) yaklasan kisi; arac 5 sn'de bir aranir
+     plate    : hareket varken 3 sn'de bir ANA akistan tek kare (GET /api/ai/snapshot) -> plaka bulucu + OCR;
+                yalniz >=45 px plaka, Turk plaka bicimi, 60 sn icinde 2 ayni okuma; ayni plaka 30 dk gorulmeden tekrar bildirilmez
  - Olay -> POST /api/ai/report (isaretli JPEG, base64). Bildirim karari (bekleme, saat) panelde. Diske hicbir sey yazilmaz.
 """
-import base64, json, math, multiprocessing as mp, os, signal, threading, time, urllib.request
+import base64, json, math, multiprocessing as mp, os, re, signal, threading, time, urllib.request
 
 import cv2
 import numpy as np
@@ -25,6 +27,8 @@ DETECT = os.environ.get('CAM_AI_DETECT', '/models/yolo11n.onnx')
 SIZE = int(os.environ.get('CAM_AI_SIZE', '416'))
 THREADS = int(os.environ.get('CAM_AI_THREADS', '2'))
 HEADERS = {'Authorization': f'Bearer {SECRET}', 'Content-Type': 'application/json'}
+PLATE_RE = re.compile(r'^(0[1-9]|[1-7][0-9]|8[01])([A-Z]{1,3})([0-9]{2,4})$')
+PLATE_MIN_W = int(os.environ.get('CAM_AI_PLATE_MIN', '45'))   # px (ana akis); daha kucuk plaka okunamiyor (olculdu: 17-29 px cop)
 # COCO eklemleri: 5/6 omuz, 9/10 bilek, 11/12 kalca
 SKELETON = [(5, 6), (5, 7), (7, 9), (6, 8), (8, 10), (5, 11), (6, 12), (11, 12), (11, 13), (13, 15), (12, 14), (14, 16)]
 
@@ -46,7 +50,38 @@ def post_jpeg(channel, data):
         return bool(json.loads(r.read() or b'{}').get('watch'))
 
 
+def snapshot(channel):
+    req = urllib.request.Request(f'{CAM}/api/ai/snapshot?channel={channel}', headers={'Authorization': HEADERS['Authorization']})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return r.read()
+
+
 # ------------------------------------------------------------------ model
+class Plates:
+    """Plaka bulucu (open-image-models yolo-v9-t-384) + okuyucu (fast-plate-ocr cct-s global). Modeller imajda (HOME onbellegi)."""
+    def __init__(self):
+        from open_image_models import LicensePlateDetector
+        from fast_plate_ocr import LicensePlateRecognizer
+        self.det = LicensePlateDetector(detection_model='yolo-v9-t-384-license-plate-end2end')
+        self.ocr = LicensePlateRecognizer('cct-s-v1-global-model')
+
+    def __call__(self, img):
+        h, w = img.shape[:2]
+        res = []
+        for d in self.det.predict(img):
+            b = d.bounding_box
+            if b.x2 - b.x1 < PLATE_MIN_W or d.confidence < 0.5:
+                continue
+            px, py = int((b.x2 - b.x1) * 0.1), int((b.y2 - b.y1) * 0.2)     # %10 pay: dar kirpmada son hane kaciyor (olculdu)
+            crop = img[max(0, b.y1 - py):min(h, b.y2 + py), max(0, b.x1 - px):min(w, b.x2 + px)]
+            r = self.ocr.run(crop)[0]
+            text = re.sub(r'[^0-9A-Z]', '', str(getattr(r, 'plate', r)).upper())
+            m = PLATE_RE.match(text)
+            if m:
+                res.append({'text': text, 'show': ' '.join(m.groups()), 'box': [b.x1, b.y1, b.x2, b.y2], 'score': float(d.confidence)})
+        return res
+
+
 class Pose:
     def __init__(self, path=MODEL):
         o = ort.SessionOptions()
@@ -220,6 +255,52 @@ def run_channel(channel, cfg, counter):
     tracks, prev, last_t, last_motion_ev, last_inf = [], None, 0, 0, 0
     local_gap = {}                       # tur -> son gonderim (yerel seyreltme; asil bekleme panelde)
     view = {'watch': False, 'at': 0}
+    state = {'motion_at': 0}
+
+    def plates_loop():
+        try:
+            reader = Plates()
+        except Exception as ex:  # noqa: BLE001
+            log(f'K{channel + 1} plaka modeli yok: {ex}'); return
+        votes, seen, told, last = {}, {}, set(), 0
+        while True:
+            time.sleep(0.5)
+            now = time.time()
+            if not cfg.get('types', {}).get('plate') or now - state['motion_at'] > 8 or now - last < 3:
+                continue
+            last = now
+            try:
+                img = cv2.imdecode(np.frombuffer(snapshot(channel), np.uint8), cv2.IMREAD_COLOR)
+                found = reader(img) if img is not None else []
+            except Exception as ex:  # noqa: BLE001
+                log(f'K{channel + 1} plaka: {ex}'); time.sleep(10); continue
+            now = time.time()
+            for t in [t for t in told if now - seen.get(t, 0) > 1800]:   # 30 dk gorulmeyen plaka yeniden bildirilebilir
+                told.discard(t)
+            own = set(cfg.get('ownPlates') or [])
+            for p in found:
+                t = p['text']
+                seen[t] = now
+                votes[t] = [x for x in votes.get(t, []) if now - x < 60] + [now]
+                if len(votes[t]) < 2 or t in told:
+                    continue
+                told.add(t)
+                if t in own:
+                    log(f'K{channel + 1} bizim plaka {p["show"]}'); continue
+                s = 960 / img.shape[1]
+                small = cv2.resize(img, (960, int(img.shape[0] * s)))
+                mark = [{'box': [v * s for v in p['box']], 'car': True, 'label': p['show']}]
+                try:
+                    post('/api/ai/report', {'channel': channel, 'type': 'plate', 'score': None, 'detail': f'Plaka {p["show"]}',
+                                            'image': annotate(small, mark, f'K{channel + 1}  plaka {p["show"]}  {time.strftime("%H:%M:%S")}')}, 15)
+                    log(f'K{channel + 1} olay plate {p["show"]}')
+                except Exception as ex:  # noqa: BLE001
+                    log(f'K{channel + 1} rapor: {ex}')
+            if len(seen) > 500:
+                for t in sorted(seen, key=seen.get)[:250]:
+                    seen.pop(t, None); votes.pop(t, None)
+
+    threading.Thread(target=plates_loop, daemon=True).start()
 
     def show(img, people, note):
         """Canli algilama onizlemesi: izleyen varken her islenen kare, yoksa 3 sn'de bir (izleyici var mi diye)."""
@@ -266,6 +347,8 @@ def run_channel(channel, cfg, counter):
             moved = float((cv2.absdiff(g, prev) > 25).mean())
         prev = g
         motion = moved > 0.01
+        if motion:
+            state['motion_at'] = now
         # kisi izi yoksa ve hareket yoksa model calismaz (2 sn'de bir yine bakilir)
         if not motion and not tracks and now - last_inf < 2:
             counter.value += 1
@@ -389,7 +472,7 @@ def main():
     while True:
         try:
             g = post('/api/ai/heartbeat', {'stats': stats})
-            for k in ('types', 'collapseSec', 'minScore', 'fps', 'guardZones'):
+            for k in ('types', 'collapseSec', 'minScore', 'fps', 'guardZones', 'ownPlates'):
                 cfg[k] = g.get(k)
             want = {c['channel'] for c in g.get('channels', [])} if g.get('enabled') else set()
         except Exception as ex:  # noqa: BLE001

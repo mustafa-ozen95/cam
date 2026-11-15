@@ -8,7 +8,12 @@ RUN yolo export model=yolo11n-pose.pt format=onnx imgsz=416 simplify=True \
  && yolo export model=yolo11n.pt format=onnx imgsz=416 simplify=True && ls -la /m
 
 FROM python:3.12-slim
-RUN pip install --no-cache-dir onnxruntime opencv-python-headless numpy
+RUN pip install --no-cache-dir onnxruntime numpy open-image-models "fast-plate-ocr[onnx]" \
+ && (pip uninstall -y opencv-python || true) && pip install --no-cache-dir --force-reinstall --no-deps opencv-python-headless
+# plaka modelleri (bulucu + okuyucu) imaja gomulur: calisirken indirme yok (konteyner salt okunur)
+ENV HOME=/opt/ai
+RUN python -c "from open_image_models import LicensePlateDetector as D; from fast_plate_ocr import LicensePlateRecognizer as R; D(detection_model='yolo-v9-t-384-license-plate-end2end'); R('cct-s-v1-global-model')" \
+ && chmod -R a+rX /opt/ai && du -sh /opt/ai
 COPY --from=export /m/yolo11n-pose.onnx /m/yolo11n.onnx /models/
 COPY worker.py /app/worker.py
 USER nobody
