@@ -278,8 +278,17 @@ export class AlertService {
   }
   /** cam-ai algilama izi: [[unix, items]] -> yerel saniye, tek gzip parca. */
   async saveTrack(k, frames) {
+    // kayit cihazin saatiyle damgali: iz de cihaz saatine kaydirilir (fark 10 dk'da bir olculur)
+    this.clocks ??= new Map();
+    const ck = this.clocks.get(k);
+    if (!ck || Date.now() - ck.at > 600_000) {
+      const n = { diff: ck?.diff ?? 0, at: Date.now() }; this.clocks.set(k, n);
+      const p = this.devices.group.clockDiff(k).then((d) => { n.diff = d; }).catch(() => {});
+      if (!ck) await p;
+    }
+    const shift = this.clocks.get(k).diff;
     const list = frames.filter((f) => Array.isArray(f) && Number.isFinite(f[0]) && Array.isArray(f[1])).slice(0, 200)
-      .map(([t, items]) => [Math.round(localSec(t) * 100) / 100, items.slice(0, 64)]);
+      .map(([t, items]) => [Math.round((localSec(t) + shift) * 100) / 100, items.slice(0, 64)]);
     if (!list.length) return { ok: true };
     await this.db.pool.query('INSERT INTO detections (channel, t, data) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data)', [k, Math.floor(list[0][0]), gzipSync(JSON.stringify(list))]);
     return { ok: true };
