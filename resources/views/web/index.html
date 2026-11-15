@@ -1554,7 +1554,9 @@ function drawDetections(canvas, mw, mh, media, items) {
     }
     const label = it.k === 'car' ? 'Korunan araç' : it.label;
     if (label) {
-      const th = Math.round(16 * dpr), tx = Math.max(0, X(it.box[0])), ty = Math.max(th, Y(it.box[1])), tw = c.measureText(label).width + 8 * dpr;
+      // etiket nesnenin ustune: kontur varsa en ust noktasi (alan kutusu nesneden genis olabilir), yoksa kutu sol ustu
+      const th = Math.round(16 * dpr), tw = c.measureText(label).width + 8 * dpr, top = it.poly?.length >= 3 ? it.poly.reduce((m, q) => (q[1] < m[1] ? q : m)) : null;
+      const tx = Math.min(W - tw, Math.max(0, top ? X(top[0]) - tw / 2 : X(it.box[0]))), ty = Math.max(th, top ? Y(top[1]) : Y(it.box[1]));
       c.fillStyle = col; c.fillRect(tx, ty - th, tw, th); c.fillStyle = '#fff'; c.fillText(label, tx + 4 * dpr, ty - 4 * dpr);
     }
   }
