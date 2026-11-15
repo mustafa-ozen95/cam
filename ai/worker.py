@@ -486,6 +486,27 @@ def car_trend(hist, now, span=1.5):
     return float(np.polyfit(t - t[0], m, 1)[0])
 
 
+def person_ok(p, veh_boxes):
+    """Insan olamayacak sekiller atilir (gece direk/agac): ayni derinlikteki araca gore asiri boy, garip oran, bacak/govde orani."""
+    b = p['box']; bw, bh = max(b[2] - b[0], 1.0), max(b[3] - b[1], 1.0)
+    if bh / bw > 5 or bh / bw < 0.6:
+        return False
+    for v in veh_boxes:                  # ayakta insan, yanindaki aracin yaklasik 1-1.6 kati; 2.2 kati ustu imkansiz
+        vh = v[3] - v[1]
+        if vh > 8 and abs(v[3] - b[3]) < 0.5 * vh and bh > 2.2 * vh:
+            return False
+    k = p.get('kp')
+    if k is not None and k[:, 2].max() > 0:
+        sh, hp, an = k[[5, 6]], k[[11, 12]], k[[15, 16]]
+        if (sh[:, 2] > 0.5).all() and (hp[:, 2] > 0.5).all():
+            torso = hp[:, 1].mean() - sh[:, 1].mean()
+            if torso < 0.08 * bh:        # omuzdan yukarida kalca: ters/ezik iskelet
+                return False
+            if (an[:, 2] > 0.5).all() and (an[:, 1].mean() - hp[:, 1].mean()) / torso > 2.6:
+                return False             # bacak govdenin 2.6 katindan uzun: insan degil (olagan 1.4-2.2)
+    return True
+
+
 def iou(a, b):
     x1, y1, x2, y2 = max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])
     i = max(0, x2 - x1) * max(0, y2 - y1)
@@ -757,6 +778,7 @@ def run_channel(channel, cfg, counter):
         people = [p for p in pose_near(model, aimg, [t.p['box'] for t in tracks if now - t.seen < 1.0 and not getattr(t, 'ghost', False)]) if p['score'] >= 0.3]
         # gece park etmis aracin ustunde dusuk puanli sahte "insan": arac kutusuyla ortusen zayif pozlar atilir
         people = [p for p in people if p['score'] >= 0.5 or not any(iou(p['box'], v) > 0.25 for v in veh_boxes)]
+        people = [p for p in people if person_ok(p, veh_boxes)]
         counter.value += 1
         min_score = float(cfg.get('minScore', 0.5))
         # --- kontur (seg): izleyen varken saniyede en cok 2, yoksa korunan arac icin 5 sn'de bir
@@ -780,7 +802,7 @@ def run_channel(channel, cfg, counter):
                     p['at'] = now
             state['plates'][:] = [p for p in state['plates'] if now - p['at'] < 60][-30:]
         for s in segs or []:                              # pose'un kacirdigi kisiler (eklemsiz: durus kutu oranindan)
-            if s['cls'] == 'person' and s['score'] >= 0.35 and not any(iou(s['box'], p['box']) > 0.3 for p in people):
+            if s['cls'] == 'person' and s['score'] >= 0.35 and person_ok(s, veh_boxes) and not any(iou(s['box'], p['box']) > 0.3 for p in people):
                 people.append({'box': [float(v) for v in s['box']], 'score': s['score'], 'kp': np.zeros((17, 3), np.float32), 'poly': s['poly']})
         # --- korunan nesneler: panelde kamera basina cizilen alanlar; alana oturan seg nesnesinin konturu kullanilir, yoksa alan
         if guards and (segs is not None or len(cars) != len(guards)):
