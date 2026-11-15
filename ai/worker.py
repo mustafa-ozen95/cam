@@ -26,8 +26,9 @@ import onnxruntime as ort
 
 CAM = os.environ.get('CAM_URL', 'http://cam').rstrip('/')
 SECRET = os.environ.get('CAM_AI_SECRET', '')
-MODEL = os.environ.get('CAM_AI_MODEL', '/models/yolo11n-pose.onnx')
-SEGMENT = os.environ.get('CAM_AI_SEG', '/models/yolo11n-seg.onnx')
+# yolo26: ayni hizda daha cok kisi/arac (olculdu: gece kayitlari, 26s-seg arac 1.3-1.8x, kisi puani 0.61->0.72; 26n-pose kisi 10->13)
+MODEL = os.environ.get('CAM_AI_MODEL', '/models/yolo26n-pose.onnx')
+SEGMENT = os.environ.get('CAM_AI_SEG', '/models/yolo26s-seg.onnx')
 SIZE = int(os.environ.get('CAM_AI_SIZE', '416'))
 THREADS = int(os.environ.get('CAM_AI_THREADS', '2'))
 HEADERS = {'Authorization': f'Bearer {SECRET}', 'Content-Type': 'application/json'}
@@ -95,6 +96,17 @@ class Plates:
         return res
 
 
+def raw_rows(o, nc):
+    """Model cikisini (N, 4 cx cy w h + nc sinif puani + ek) satirlarina cevirir. yolo11: ham (4+nc+ek, N).
+    yolo26 uctan uca: (300, 6+ek) = x1 y1 x2 y2 puan sinif ek -> ayni bicim (NMS sonra yine calisir, zararsiz)."""
+    if o.shape[0] == 300 and o.shape[1] < o.shape[0]:
+        o = o[o[:, 4] > 0.05]
+        sc = np.zeros((len(o), nc), np.float32)
+        sc[np.arange(len(o)), 0 if nc == 1 else o[:, 5].astype(int)] = o[:, 4]
+        return np.concatenate([np.stack([(o[:, 0] + o[:, 2]) / 2, (o[:, 1] + o[:, 3]) / 2, o[:, 2] - o[:, 0], o[:, 3] - o[:, 1]], 1), sc, o[:, 6:]], 1)
+    return o.T
+
+
 class Pose:
     def __init__(self, path=MODEL):
         o = ort.SessionOptions()
@@ -112,7 +124,7 @@ class Pose:
         top, left = (SIZE - nh) // 2, (SIZE - nw) // 2
         pad[top:top + nh, left:left + nw] = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_LINEAR)
         x = cv2.cvtColor(pad, cv2.COLOR_BGR2RGB).transpose(2, 0, 1)[None].astype(np.float32) / 255.0
-        return self.s.run(None, {self.name: x})[0][0].T, r, top, left
+        return raw_rows(self.s.run(None, {self.name: x})[0][0], 1), r, top, left
 
     def __call__(self, img, conf=0.35):
         out, r, top, left = self.letterbox(img)          # (N, 56): cx cy w h conf + 17*(x y v)
@@ -277,7 +289,7 @@ class Seg(Pose):
         pad[top:top + nh, left:left + nw] = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_LINEAR)
         x = cv2.cvtColor(pad, cv2.COLOR_BGR2RGB).transpose(2, 0, 1)[None].astype(np.float32) / 255.0
         o = self.s.run(None, {self.name: x})
-        out, proto = o[0][0].T, o[1][0]                      # (N, 4+80+32), (32, mh, mw)
+        out, proto = raw_rows(o[0][0], 80), o[1][0]          # (N, 4+80+32), (32, mh, mw)
         cls = out[:, 4:84].argmax(1); sc = out[np.arange(len(out)), 4 + cls]
         m = KEEP[cls] & (sc >= np.where((cls < 9) | ((cls >= 14) & (cls < 24)), conf, max(conf, 0.4)))     # kisi/arac/hayvan disi nesnelerde biraz daha sec
         out, sc, cls = out[m], sc[m], cls[m]
