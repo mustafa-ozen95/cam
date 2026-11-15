@@ -166,6 +166,7 @@ COCO_TR = ['kişi', 'bisiklet', 'araç', 'motosiklet', 'uçak', 'otobüs', 'tren
            'pizza', 'çörek', 'pasta', 'sandalye', 'kanepe', 'saksı', 'yatak', 'masa', 'tuvalet', 'televizyon', 'dizüstü', 'fare', 'kumanda', 'klavye',
            'telefon', 'mikrodalga', 'fırın', 'tost makinesi', 'lavabo', 'buzdolabı', 'kitap', 'saat', 'vazo', 'makas', 'oyuncak ayı', 'saç kurutma', 'diş fırçası']
 VEHICLES = {1, 2, 3, 5, 6, 7, 8}
+ANIMALS = set(range(14, 24))          # kus, kedi, kopek, at, koyun, inek, fil, ayi, zebra, zurafa
 
 
 class Seg(Pose):
@@ -181,7 +182,7 @@ class Seg(Pose):
         o = self.s.run(None, {self.name: x})
         out, proto = o[0][0].T, o[1][0]                      # (N, 4+80+32), (32, mh, mw)
         cls = out[:, 4:84].argmax(1); sc = out[np.arange(len(out)), 4 + cls]
-        m = sc >= np.where(cls < 9, conf, max(conf, 0.4))     # arac/kisi disi nesnelerde biraz daha sec (yanlis isaret az)
+        m = sc >= np.where((cls < 9) | ((cls >= 14) & (cls < 24)), conf, max(conf, 0.4))     # kisi/arac/hayvan disi nesnelerde biraz daha sec
         out, sc, cls = out[m], sc[m], cls[m]
         if not len(out):
             return []
@@ -208,7 +209,7 @@ class Seg(Pose):
                     c = cv2.approxPolyDP(c, 0.006 * cv2.arcLength(c, True), True).reshape(-1, 2).astype(np.float32)
                     poly = (c - np.array([left, top], np.float32)) / r
             c = int(cls[i])
-            res.append({'cls': 'person' if c == 0 else 'car' if c in (2, 7) else 'other', 'kind': 'vehicle' if c in VEHICLES else 'object',
+            res.append({'cls': 'person' if c == 0 else 'car' if c in (2, 7) else 'other', 'kind': 'vehicle' if c in VEHICLES else 'animal' if c in ANIMALS else 'object',
                         'name': COCO_TR[c], 'box': box, 'score': float(sc[i]), 'poly': poly})
         return res
 
@@ -575,7 +576,7 @@ def run_channel(channel, cfg, counter):
         elif not zone:
             cars = []
         if segs is not None:
-            others = [{'box': s['box'], 'poly': s['poly'], 'other': s['kind'], 'label': s['name']} for s in segs
+            others = [{'box': s['box'], 'poly': s['poly'], 'other': s['kind'], 'label': f"{s['name']} %{int(s['score'] * 100)}"} for s in segs
                       if s['cls'] != 'person' and not any(iou(s['box'], c['box']) > 0.3 for c in cars)]
         car_marks = [{'box': c['box'], 'poly': c.get('poly'), 'score': c['score'], 'car': True, 'label': 'korunan arac'} for c in cars]
         # --- izleyici (acgozlu IoU)
@@ -614,7 +615,7 @@ def run_channel(channel, cfg, counter):
             p = tr.p
             p['id'] = tr.id
             ang, lying = posture(p)
-            p['label'] = f'#{tr.id} {"yatay" if lying else "dik"} {int(ang)}° %{int(p["score"] * 100)}'
+            p['label'] = f'İnsan{" (yatıyor)" if lying else ""} %{int(p["score"] * 100)}'
             x1, y1, x2, y2 = p['box']
             cx, cy, size = (x1 + x2) / 2, (y1 + y2) / 2, max(x2 - x1, y2 - y1)
             # yakinlasma: ayak -> arac konturu uzakligi (m), egilim, yaninda kalma suresi, histerezisli sifirlama
