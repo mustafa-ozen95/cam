@@ -76,6 +76,13 @@ export function alertsController({ alerts, devices, auditLog, config }) {
       if (!Number.isInteger(k) || k < 0 || k >= (devices.group.channelTotal ?? 0) || !Array.isArray(g.frames)) throw new HttpError(400, 'iz geçersiz', 'INVALID_REQUEST');
       return json(ctx.res, 200, await alerts.saveTrack(k, g.frames));
     },
+    /** Zaman cizelgesi risk isaretleri: ?channel&day=YYYY-MM-DD -> [[bas, son, seviye]]. */
+    async risk(ctx) {
+      const k = Number(ctx.q.get('channel')), day = ctx.q.get('day') ?? '';
+      if (!Number.isInteger(k) || k < 0 || !ctx.principal.channelAllowed(k)) throw new HttpError(403, 'Bu kameraya izniniz yok', 'FORBIDDEN');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new HttpError(400, 'gün geçersiz', 'INVALID_REQUEST');
+      return json(ctx.res, 200, await alerts.risk(k, day));
+    },
     /** Kayit oynaticisi ustu algilama izi: ?channel&from&to (cihaz yerel saniyesi, en cok 10 dk). */
     async tracks(ctx) {
       const k = Number(ctx.q.get('channel')), from = Number(ctx.q.get('from')), to = Number(ctx.q.get('to'));

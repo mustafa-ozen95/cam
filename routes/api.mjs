@@ -34,7 +34,8 @@ export function apiRoutes(r, d, middleware) {
     r.get('/api/recordings', d.stream.records, [permission('recording.list')]);
     r.get('/api/motions', d.stream.motions, [permission('recording.list')]);
     r.get('/stream/playback', d.stream.play, [permission('recording.play')]);
-    r.get('/api/tracks', d.alerts.tracks, [permission('recording.play')]);   // kayit ustu algilama izi
+    r.get('/api/tracks', d.alerts.tracks, [permission('recording.play')]);
+    r.get('/api/risk', d.alerts.risk, [permission('recording.list')]);        // cizelge risk isaretleri   // kayit ustu algilama izi
     r.get('/api/download', d.stream.download, [permission('recording.download')]);
     r.get('/api/jobs', async (ctx) => { ctx.res.writeHead(200, { 'Content-Type': 'application/json' }); ctx.res.end('[]'); }, [any('live.view', 'recording.play')]);   // eski istemciler
     // algilama olaylari ve bildirim (Telegram)

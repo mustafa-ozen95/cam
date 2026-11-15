@@ -307,6 +307,36 @@ export class AlertService {
     await this.db.pool.query('INSERT INTO detections (channel, t, data) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data)', [k, Math.floor(list[0][0]), gzipSync(JSON.stringify(list))]);
     return { ok: true };
   }
+  /** Zaman cizelgesi risk isaretleri: gunun izlerinden [[bas, son, seviye]] (yerel sn). 1 kisi, 2 korunan nesneye yakin (<=1.5 m), 3 alarm.
+   *  Bitmis gunler bellekte tutulur; bugun 60 sn'de bir yeniden hesaplanir. */
+  async risk(k, day) {
+    const from = Date.parse(`${day}T00:00:00Z`) / 1000, key = `${k}|${day}`, now = localSec(Date.now() / 1000);
+    this.riskCache ??= new Map();
+    const c = this.riskCache.get(key);
+    if (c && (c.done || Date.now() - c.at < 60_000)) return c.list;
+    const [rows] = await this.db.pool.query('SELECT data FROM detections WHERE channel = ? AND t BETWEEN ? AND ? ORDER BY t', [k, from - 15, from + 86400]);
+    const pts = [];
+    for (const r of rows) for (const [t, items] of JSON.parse(gunzipSync(r.data))) {
+      if (t < from || t >= from + 86400) continue;
+      let lv = 0;
+      for (const i of items) {
+        if (i.k !== 'person') continue;
+        const m = /(\d+(?:\.\d+)?) m\b/.exec(i.label || '');
+        lv = Math.max(lv, i.alarm ? 3 : m && Number(m[1]) <= 1.5 ? 2 : 1);
+      }
+      if (lv) pts.push([t, lv]);
+    }
+    pts.sort((a, b) => a[0] - b[0]);
+    const list = [];                                     // ayni seviyede 2 sn'den yakin noktalar birlesir
+    for (const [t, lv] of pts) {
+      const s = list.at(-1);
+      if (s && s[2] === lv && t - s[1] <= 2) s[1] = t; else list.push([t, t, lv]);
+    }
+    for (const s of list) { s[0] = Math.floor(s[0]); s[1] = Math.ceil(s[1] + 0.5); }
+    if (this.riskCache.size > 200) this.riskCache.clear();
+    this.riskCache.set(key, { list, at: Date.now(), done: from + 86400 + 120 < now });
+    return list;
+  }
   /** Oynatici: [from, to] (yerel sn) araligindaki izler, JSON dizi metni (parcalar acilip birlestirilir). */
   async tracks(k, from, to) {
     const [rows] = await this.db.pool.query('SELECT data FROM detections WHERE channel = ? AND t BETWEEN ? AND ? ORDER BY t', [k, Math.floor(from) - 15, Math.ceil(to)]);

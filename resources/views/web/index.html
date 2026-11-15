@@ -1819,7 +1819,7 @@ $('#recTomorrow').addEventListener('click', () => scrollDay(1));
 const epoch = (z) => Date.parse(z.replace(' ', 'T') + 'Z') / 1000;               // DVR yerel saati: UTC gibi ele alınır (yalnız fark/dizge için)
 const string = (t) => new Date(t * 1000).toISOString().slice(0, 19).replace('T', ' ');
 const dayString = (t) => string(t).slice(0, 10);
-const tl = { timeRange: 300, hub: 0, playing: false, t0: 0, hubFrom: 0, select: new Set(), record: new Map(), motion: new Map(), loaded: new Set(), m: new Map(), tile: new Map(), finishing: new Set(), ready: false };
+const tl = { timeRange: 300, hub: 0, playing: false, t0: 0, hubFrom: 0, select: new Set(), record: new Map(), motion: new Map(), risk: new Map(), loaded: new Set(), m: new Map(), tile: new Map(), finishing: new Set(), ready: false };
 // Aynı anda en çok bu kadar kamera eşzamanlı oynar (sunucu/cihaz yükü, ekrana sığma); fazlası seçilirse en eski seçim çıkar.
 const TL_MAX = 4;
 const clampTl = (k) => { while (tl.select.size > TL_MAX) { const first = [...tl.select].find((x) => x !== k); tl.select.delete(first); } };
@@ -1988,8 +1988,18 @@ async function loadTl(day) {
     catch { tl.loaded.delete(a); continue; }
     // Hareket isaretleri (NVR'in kendi oynaticisindaki gibi): alinamazsa cizelge isaretsiz kalir, kayit etkilenmez
     api(`/api/motions?channel=${k}&day=${day}`).then((l) => { tl.motion.set(a, l.map((x) => ({ b: epoch(x.from), e: epoch(x.to) }))); drawTime(); }).catch(() => {});
+    loadRisk(k, day);
   }
 }
+/** Algilama risk isaretleri (kisi / yakin / alarm); bugunun isaretleri 60 sn'de bir tazelenir. */
+function loadRisk(k, day) {
+  const a = `${k}|${day}`, r = tl.risk.get(a);
+  if (r && (r.busy || performance.now() - r.at < 60_000)) return;
+  const n = { list: r?.list ?? [], at: performance.now(), busy: true };
+  tl.risk.set(a, n);
+  api(`/api/risk?channel=${k}&day=${day}`).then((l) => { n.list = l; drawTime(); }).catch(() => {}).finally(() => { n.busy = false; n.at = performance.now(); });
+}
+function riskTitle(lv) { return lv === 3 ? 'Alarm: korunan nesnenin dibinde' : lv === 2 ? 'Korunan nesneye yakın' : 'Kişi algılandı'; }
 const TL_STEP = { 60: [10, 'sn'], 300: [60, 'sn'], 1800: [300, 'dk'], 7200: [900, 'dk'], 86400: [10800, 'dk'] };
 function drawTime() {
   if (!info || !tl.ready || status.tab !== 'recordings') return;
@@ -2013,6 +2023,15 @@ function drawTime() {
       const left = Math.max(0, ((s.b - w0) / tl.timeRange) * 100), right = Math.min(100, ((s.e - w0) / tl.timeRange) * 100);
       // Gercek genislik (en az 2 px, css): %0,3 alt siniri 24 saatte 4 dk demekti, kisa hareket uzun gorunuyordu
       sat.append(el('div', { class: 'chunk M', style: `left:${left}%;width:${right - left}%` }));
+    }
+    for (const g of days) {
+      loadRisk(k, g);
+      const list = [...(tl.risk.get(`${k}|${g}`)?.list ?? [])].sort((a, b) => a[2] - b[2]);   // kirmizi en ustte
+      for (const [b, e, lv] of list) {
+        if (e < w0 || b > w1) continue;
+        const left = Math.max(0, ((b - w0) / tl.timeRange) * 100), right = Math.min(100, ((e - w0) / tl.timeRange) * 100);
+        sat.append(el('div', { class: `risk r${lv}`, title: riskTitle(lv), style: `left:${left}%;width:${right - left}%` }));
+      }
     }
     items.push(sat);
   });
