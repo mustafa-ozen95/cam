@@ -15,7 +15,7 @@ cam-ai: kamera panelinin goruntu analizi (YOLO11n-pose, CPU, onnxruntime).
                 yalniz >=45 px plaka, Turk plaka bicimi, 60 sn icinde 2 ayni okuma; ayni plaka 30 dk gorulmeden tekrar bildirilmez
  - Olay -> POST /api/ai/report (isaretli JPEG, base64). Bildirim karari (bekleme, saat) panelde. Diske hicbir sey yazilmaz.
 """
-import base64, json, math, multiprocessing as mp, os, re, signal, threading, time, urllib.request
+import base64, collections, json, math, multiprocessing as mp, os, re, signal, threading, time, types, urllib.request
 for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_v, "1")         # numpy BLAS 8 is parcacigiyla bos donuyordu (olculdu: seg 1003 -> 283 ms CPU)
 
@@ -69,12 +69,21 @@ class Plates:
         self.det = LicensePlateDetector(detection_model='yolo-v9-t-384-license-plate-end2end')
         self.ocr = LicensePlateRecognizer('cct-s-v1-global-model')
 
-    def __call__(self, img):
+    def __call__(self, img, regions=()):
+        """Tam kare + her aracin kirpmasi (tam karede bulucu 384 px'e kucultuyor, uzak aracin plakasi kayboluyor)."""
         h, w = img.shape[:2]
-        res = []
-        for d in self.det.predict(img):
-            b = d.bounding_box
-            if b.x2 - b.x1 < PLATE_MIN_W or d.confidence < 0.5:
+        res, dets = [], []
+        for x0, y0, x1, y1 in [(0, 0, w, h)] + [tuple(int(v) for v in r) for r in regions]:
+            if x1 - x0 < 40 or y1 - y0 < 40:
+                continue
+            for d in self.det.predict(img[y0:y1, x0:x1]):
+                b = d.bounding_box
+                bb = [b.x1 + x0, b.y1 + y0, b.x2 + x0, b.y2 + y0]
+                if d.confidence >= 0.5 and not any(iou(bb, o[0]) > 0.3 for o in dets):
+                    dets.append((bb, float(d.confidence)))
+        for (x1, y1, x2, y2), sc in dets:
+            b = types.SimpleNamespace(x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2))
+            if b.x2 - b.x1 < PLATE_MIN_W:
                 continue
             px, py = int((b.x2 - b.x1) * 0.1), int((b.y2 - b.y1) * 0.2)     # %10 pay: dar kirpmada son hane kaciyor (olculdu)
             crop = img[max(0, b.y1 - py):min(h, b.y2 + py), max(0, b.x1 - px):min(w, b.x2 + px)]
@@ -82,7 +91,7 @@ class Plates:
             text = re.sub(r'[^0-9A-Z]', '', str(getattr(r, 'plate', r)).upper())
             m = PLATE_RE.match(text)
             if m:
-                res.append({'text': text, 'show': ' '.join(m.groups()), 'box': [b.x1, b.y1, b.x2, b.y2], 'score': float(d.confidence)})
+                res.append({'text': text, 'show': ' '.join(m.groups()), 'box': [b.x1, b.y1, b.x2, b.y2], 'score': sc})
         return res
 
 
@@ -222,12 +231,24 @@ def box_motion(dmask, box, w):
 
 
 def plate_for(box, plates, w, h, now):
-    """Kutunun icinde son 10 sn'de okunmus plaka (normalize kutu) -> yazi."""
-    for t, b, show in reversed(plates):
+    """Kutunun icindeki plaka yeri -> en cok okunan yazi (tek okuma yanlis olabiliyor: gece 16 AFK 551 / 16 AF 551 / 12 AB 15)."""
+    for p in plates:
+        b = p['box']
         cx, cy = (b[0] + b[2]) / 2 * w, (b[1] + b[3]) / 2 * h
-        if now - t < 10 and box[0] <= cx <= box[2] and box[1] <= cy <= box[3]:
-            return show
+        if box[0] <= cx <= box[2] and box[1] <= cy <= box[3]:
+            return collections.Counter(t for _, t in p['reads']).most_common(1)[0][0]
     return None
+
+
+def plate_add(plates, now, box, show):
+    """Ayni yerdeki okumalari biriktirir (5 dk); yazi oylamayla secilir."""
+    for p in plates:
+        if iou(p['box'], box) > 0.3:
+            p['box'] = box; p['at'] = now
+            p['reads'] = [r for r in p['reads'] if now - r[0] < 300][-15:] + [(now, show)]
+            return p
+    plates.append({'box': box, 'at': now, 'reads': [(now, show)]})
+    return plates[-1]
 
 
 # COCO 80 sinif (yolo11n-seg sirasiyla); arac siniflari ayri renkte cizilir
@@ -533,7 +554,7 @@ def run_channel(channel, cfg, counter):
     view = {'watch': False, 'at': 0}
     ov = {'watch': False, 'at': 0}       # canli goruntu ustu katman
     rec = {'buf': [], 'last': 0, 'sent': time.time()}   # kayit ustu katman icin algilama izi
-    state = {'motion_at': 0, 'plates': []}   # plates: [(t, normalize kutu, yazi)] ekranda araca yazilir
+    state = {'motion_at': 0, 'plates': [], 'veh': [], 'own': []}   # plates: plaka yerleri (normalize) + okumalar; veh: son araclar (normalize)
     base = {}                            # korunan nesne -> [taban seg kutusu, ust uste sapma sayisi] (carpma)
 
     def plates_loop():
@@ -550,15 +571,27 @@ def run_channel(channel, cfg, counter):
             last = now
             try:
                 img = cv2.imdecode(np.frombuffer(snapshot(channel), np.uint8), cv2.IMREAD_COLOR)
-                found = reader(img) if img is not None else []
+                h0, w0 = img.shape[:2]
+                regs = [[max(0, b[0] - 0.1 * (b[2] - b[0])) * w0, max(0, b[1] - 0.1 * (b[3] - b[1])) * h0, min(1, b[2] + 0.1 * (b[2] - b[0])) * w0, min(1, b[3] + 0.1 * (b[3] - b[1])) * h0]
+                        for b in sorted(state['veh'], key=lambda b: -(b[2] - b[0]) * (b[3] - b[1]))[:8]]
+                found = reader(img, regs) if img is not None else []
             except Exception as ex:  # noqa: BLE001
                 log(f'K{channel + 1} plaka: {ex}'); time.sleep(10); continue
             now = time.time()
             for t in [t for t in told if now - seen.get(t, 0) > 1800]:   # 30 dk gorulmeyen plaka yeniden bildirilebilir
                 told.discard(t)
-            own = set(cfg.get('ownPlates') or [])
-            h0, w0 = img.shape[:2]
-            state['plates'] = [x for x in state['plates'] if now - x[0] < 10][-20:] + [(now, [p['box'][0] / w0, p['box'][1] / h0, p['box'][2] / w0, p['box'][3] / h0], p['show']) for p in found]
+            state['plates'][:] = [p for p in state['plates'] if now - p['at'] < 300][-30:]
+            # korunan alandaki aracin plakasi "bizim": bildirilmez (ayarda plaka yazmaya gerek yok)
+            gz = [g['box'] for g in (cfg.get('guards') or {}).get(str(channel)) or []]
+            for p in found:
+                nb = [p['box'][0] / w0, p['box'][1] / h0, p['box'][2] / w0, p['box'][3] / h0]
+                spot = plate_add(state['plates'], now, nb, p['show'])
+                cx, cy = (nb[0] + nb[2]) / 2, (nb[1] + nb[3]) / 2
+                if any(z[0] <= cx <= z[2] and z[1] <= cy <= z[3] for z in gz):
+                    best = collections.Counter(t for _, t in spot['reads']).most_common(1)[0][0].replace(' ', '')
+                    if best not in state['own']:
+                        state['own'] = (state['own'] + [best])[-10:]
+            own = set(state['own'])
             for p in found:
                 t = p['text']
                 seen[t] = now
@@ -689,6 +722,7 @@ def run_channel(channel, cfg, counter):
             except Exception as ex:  # noqa: BLE001
                 log(f'K{channel + 1} seg: {ex}'); segs = []
             veh_boxes = [s['box'] for s in segs if s['kind'] == 'vehicle']
+            state['veh'] = [[b[0] / img.shape[1], b[1] / img.shape[0], b[2] / img.shape[1], b[3] / img.shape[0]] for b in veh_boxes]
         for s in segs or []:                              # pose'un kacirdigi kisiler (eklemsiz: durus kutu oranindan)
             if s['cls'] == 'person' and s['score'] >= 0.35 and not any(iou(s['box'], p['box']) > 0.3 for p in people):
                 people.append({'box': [float(v) for v in s['box']], 'score': s['score'], 'kp': np.zeros((17, 3), np.float32), 'poly': s['poly']})
@@ -927,7 +961,7 @@ def main():
     while True:
         try:
             g = post('/api/ai/heartbeat', {'stats': stats})
-            for k in ('types', 'collapseSec', 'minScore', 'fps', 'guards', 'classes', 'ownPlates'):
+            for k in ('types', 'collapseSec', 'minScore', 'fps', 'guards', 'classes'):
                 cfg[k] = g.get(k)
             want = {c['channel'] for c in g.get('channels', [])} if g.get('enabled') else set()
         except Exception as ex:  # noqa: BLE001

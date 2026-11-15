@@ -378,7 +378,6 @@
               <div class="field"><label class="field__label" for="alertScore">En düşük güven (%)</label><input class="input" id="alertScore" type="number" min="20" max="95"></div>
               <div class="field"><label class="field__label" for="alertFps">Saniyede kare</label><input class="input" id="alertFps" type="number" min="1" max="10"></div>
             </div>
-            <div class="field"><label class="field__label" for="alertOwnPlates">Bizim plakalar</label><input class="input" id="alertOwnPlates" type="text" autocomplete="off" placeholder="16 AFK 551, 34 ABC 12"><span class="field__hint">Bu plakalar bildirilmez. Virgülle ayırın.</span></div>
             <div class="field-row">
               <div class="field"><label class="field__label" for="alertFrom">Etkin saat başı</label><input class="input" id="alertFrom" type="time"></div>
               <div class="field"><label class="field__label" for="alertTo">Etkin saat sonu</label><input class="input" id="alertTo" type="time"><span class="field__hint">İkisi boşsa her saat.</span></div>
@@ -2736,7 +2735,7 @@ function alertDraw(g) {
   $('#alertTypes').replaceChildren(...Object.entries(g.types).map(([key, v]) => alertCheck(key, `${v.icon} ${v.tr}`, d.types[key])));
   $('#alertChannels').replaceChildren(...g.channels.map((c) => alertCheck(c.channel, c.name, d.channels.includes(c.channel))));
   $('#alertClasses').replaceChildren(...Object.entries(GUARD_CLASSES).map(([key, label]) => alertCheck(key, label, d.classes?.[key] !== false)));
-  $('#alertCooldown').value = d.cooldownSec; $('#alertCollapse').value = d.collapseSec; $('#alertScore').value = Math.round(d.minScore * 100); $('#alertFps').value = d.fps; $('#alertOwnPlates').value = (d.ownPlates || []).join(', ');
+  $('#alertCooldown').value = d.cooldownSec; $('#alertCollapse').value = d.collapseSec; $('#alertScore').value = Math.round(d.minScore * 100); $('#alertFps').value = d.fps;
   $('#alertFrom').value = d.activeFrom; $('#alertTo').value = d.activeTo;
 }
 async function alertEvents() {
@@ -2827,7 +2826,7 @@ $('#alertDetForm').addEventListener('submit', (e) => {
   const types = Object.fromEntries([...$('#alertTypes').querySelectorAll('input')].map((i) => [i.dataset.k, i.checked]));
   const channels = [...$('#alertChannels').querySelectorAll('input:checked')].map((i) => Number(i.dataset.k));
   alertPut({ detection: { enabled: $('#alertDetEnabled').checked, types, channels, cooldownSec: Number($('#alertCooldown').value), collapseSec: Number($('#alertCollapse').value),
-    minScore: Number($('#alertScore').value) / 100, fps: Number($('#alertFps').value), classes: Object.fromEntries([...$('#alertClasses').querySelectorAll('input')].map((i) => [i.dataset.k, i.checked])), ownPlates: $('#alertOwnPlates').value.split(','), activeFrom: $('#alertFrom').value, activeTo: $('#alertTo').value } }, $('#alertDetForm button[type=submit]'));
+    minScore: Number($('#alertScore').value) / 100, fps: Number($('#alertFps').value), classes: Object.fromEntries([...$('#alertClasses').querySelectorAll('input')].map((i) => [i.dataset.k, i.checked])), activeFrom: $('#alertFrom').value, activeTo: $('#alertTo').value } }, $('#alertDetForm button[type=submit]'));
 });
 $('#alertTest').addEventListener('click', async () => {
   const b = $('#alertTest'), x = alertTg(), ch = $('#alertTestChannel').value; b.disabled = true;

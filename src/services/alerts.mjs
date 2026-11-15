@@ -27,7 +27,7 @@ const DEFAULTS = {
   telegram: { enabled: false, token: null, chat: '', thread: '', photo: true },
   detection: {
     enabled: false, channels: [], types: { person: true, fall: true, collapse: true, fight: false, motion: false, approach: true, plate: true, touch: true, impact: true },
-    ownPlates: [], cooldownSec: 120, collapseSec: 20, minScore: 0.5, fps: 4, activeFrom: '', activeTo: '',
+    cooldownSec: 120, collapseSec: 20, minScore: 0.5, fps: 4, activeFrom: '', activeTo: '',
     guards: {},                                                   // { kanal: [{ name, box: [x1,y1,x2,y2] (0..1), nearM }] } korunan nesneler
     classes: { person: true, vehicle: true, animal: true, object: true },   // katmanda/kayitta gosterilen siniflar
   },
@@ -113,7 +113,6 @@ export class AlertService {
       if (x.collapseSec !== undefined) d.collapseSec = clamp(x.collapseSec, 5, 600, 20);
       if (x.minScore !== undefined) d.minScore = clamp(x.minScore, 0.2, 0.95, 0.5);
       if (x.fps !== undefined) d.fps = clamp(x.fps, 1, 10, 4);
-      if (Array.isArray(x.ownPlates)) d.ownPlates = [...new Set(x.ownPlates.map(normPlate).filter((p) => PLATE_RE.test(p)))].slice(0, 50);
       if (x.guards !== undefined) {
         const z = {};
         for (const [k, list] of Object.entries(x.guards || {})) {
@@ -142,7 +141,7 @@ export class AlertService {
     this.worker = { at: Date.now(), stats: stats && typeof stats === 'object' ? stats : null };
     const d = this.doc.detection, real = this.channelList();
     const channels = d.channels.length ? d.channels.filter((k) => real.includes(k)) : real;
-    return { enabled: d.enabled, channels: d.enabled ? channels.map((k) => ({ channel: k, name: this.channelName(k) })) : [], types: d.types, collapseSec: d.collapseSec, minScore: d.minScore, fps: d.fps, guards: d.guards || {}, classes: d.classes, ownPlates: d.ownPlates || [] };
+    return { enabled: d.enabled, channels: d.enabled ? channels.map((k) => ({ channel: k, name: this.channelName(k) })) : [], types: d.types, collapseSec: d.collapseSec, minScore: d.minScore, fps: d.fps, guards: d.guards || {}, classes: d.classes };
   }
 
   /** Olay: { channel, type, score, detail, image (base64 JPEG, istege bagli) }. Satir yazilir, bildirim arka planda. */
