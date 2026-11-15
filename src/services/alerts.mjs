@@ -18,7 +18,7 @@ export const EVENT_TYPES = {
   collapse: { tr: 'Hareketsiz yatan kişi (bayılma olabilir)', icon: '🚨' },
   fight: { tr: 'Kavga / saldırgan hareket olabilir', icon: '🥊' },
   motion: { tr: 'Hareket algılandı', icon: '👣' },
-  approach: { tr: 'Korunan araca yaklaşan kişi', icon: '🚗' },
+  approach: { tr: 'Korunan nesneye yaklaşan kişi', icon: '🛡️' },
   plate: { tr: 'Plaka okundu', icon: '🔢' },
 };
 const DEFAULTS = {
@@ -26,6 +26,8 @@ const DEFAULTS = {
   detection: {
     enabled: false, channels: [], types: { person: true, fall: true, collapse: true, fight: false, motion: false, approach: true, plate: true },
     ownPlates: [], cooldownSec: 120, collapseSec: 20, minScore: 0.5, fps: 4, activeFrom: '', activeTo: '',
+    guards: {},                                                   // { kanal: [{ name, box: [x1,y1,x2,y2] (0..1), nearM }] } korunan nesneler
+    classes: { person: true, vehicle: true, animal: true, object: true },   // katmanda/kayitta gosterilen siniflar
   },
 };
 const KEEP_DAYS = 90;
@@ -55,7 +57,10 @@ export class AlertService {
 
   async load() {
     const saved = (await this.settings.read('alerts')) ?? {};
-    this.doc = { telegram: { ...DEFAULTS.telegram, ...saved.telegram }, detection: { ...DEFAULTS.detection, ...saved.detection, types: { ...DEFAULTS.detection.types, ...saved.detection?.types } } };
+    this.doc = { telegram: { ...DEFAULTS.telegram, ...saved.telegram }, detection: { ...DEFAULTS.detection, ...saved.detection, types: { ...DEFAULTS.detection.types, ...saved.detection?.types }, classes: { ...DEFAULTS.detection.classes, ...saved.detection?.classes } } };
+    const d = this.doc.detection;   // eski tek alan (guardZones) -> korunan nesne listesi
+    if (d.guardZones && !saved.detection?.guards) d.guards = Object.fromEntries(Object.entries(d.guardZones).map(([k, box]) => [k, [{ name: 'Korunan araç', box, nearM: 0.6 }]]));
+    delete d.guardZones;
     this.pruneTimer = setInterval(() => this.prune().catch(() => {}), 6 * 3600_000); this.pruneTimer.unref?.();
     return this;
   }
@@ -107,14 +112,22 @@ export class AlertService {
       if (x.minScore !== undefined) d.minScore = clamp(x.minScore, 0.2, 0.95, 0.5);
       if (x.fps !== undefined) d.fps = clamp(x.fps, 1, 10, 4);
       if (Array.isArray(x.ownPlates)) d.ownPlates = [...new Set(x.ownPlates.map(normPlate).filter((p) => PLATE_RE.test(p)))].slice(0, 50);
-      if (x.guardZones !== undefined) {
+      if (x.guards !== undefined) {
         const z = {};
-        for (const [k, v] of Object.entries(x.guardZones || {})) {
-          const b = Array.isArray(v) ? v.map(Number) : [];
-          if (/^\d{1,3}$/.test(k) && b.length === 4 && b.every((n) => n >= 0 && n <= 1) && b[0] < b[2] && b[1] < b[3]) z[k] = b;
+        for (const [k, list] of Object.entries(x.guards || {})) {
+          if (!/^\d{1,3}$/.test(k) || !Array.isArray(list)) continue;
+          const ok = [];
+          for (const g of list.slice(0, 8)) {
+            const b = Array.isArray(g?.box) ? g.box.map(Number) : [];
+            if (!(b.length === 4 && b.every((n) => n >= 0 && n <= 1) && b[2] - b[0] >= 0.01 && b[3] - b[1] >= 0.01)) throw new HttpError(400, 'Korunan alan geçersiz', 'INVALID_REQUEST');
+            const name = String(g.name ?? '').trim().slice(0, 40) || 'Korunan nesne';
+            ok.push({ name, box: b.map((n) => Math.round(n * 1e4) / 1e4), nearM: clamp(g.nearM, 0.2, 5, 0.6) });
+          }
+          if (ok.length) z[k] = ok;
         }
-        d.guardZones = z;
+        d.guards = z;
       }
+      if (x.classes) for (const k of Object.keys(DEFAULTS.detection.classes)) if (x.classes[k] !== undefined) d.classes[k] = !!x.classes[k];
       for (const f of ['activeFrom', 'activeTo']) if (x[f] !== undefined) { const s = String(x[f]).trim(); if (s && !TIME_RE.test(s)) throw new HttpError(400, 'Saat SS:DD biçiminde olmalı', 'INVALID_REQUEST'); d[f] = s; }
     }
     await this.settings.write('alerts', this.doc);
@@ -127,7 +140,7 @@ export class AlertService {
     this.worker = { at: Date.now(), stats: stats && typeof stats === 'object' ? stats : null };
     const d = this.doc.detection, real = this.channelList();
     const channels = d.channels.length ? d.channels.filter((k) => real.includes(k)) : real;
-    return { enabled: d.enabled, channels: d.enabled ? channels.map((k) => ({ channel: k, name: this.channelName(k) })) : [], types: d.types, collapseSec: d.collapseSec, minScore: d.minScore, fps: d.fps, guardZones: d.guardZones || {}, ownPlates: d.ownPlates || [] };
+    return { enabled: d.enabled, channels: d.enabled ? channels.map((k) => ({ channel: k, name: this.channelName(k) })) : [], types: d.types, collapseSec: d.collapseSec, minScore: d.minScore, fps: d.fps, guards: d.guards || {}, classes: d.classes, ownPlates: d.ownPlates || [] };
   }
 
   /** Olay: { channel, type, score, detail, image (base64 JPEG, istege bagli) }. Satir yazilir, bildirim arka planda. */

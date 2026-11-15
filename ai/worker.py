@@ -9,7 +9,7 @@ cam-ai: kamera panelinin goruntu analizi (YOLO11n-pose, CPU, onnxruntime).
      collapse : yatay ve hareketsiz > collapseSec
      fight    : (deneysel) iki kisi ust uste ve bilekler cok hizli
      motion   : kisi yokken hareket
-     approach : korunan araca (kamera basina sabit koruma alani, guardZones) yaklasan kisi; alani olmayan kanalda arac yok
+     approach : korunan nesneye (panelde kamera basina cizilen alanlar, guards) yaklasan kisi; ayak -> kontur uzakligi metre
  - Kontur: yolo11n-seg (kisi + arac maskesi -> cokgen). Canli goruntu ustu katman (POST /api/ai/overlay) yalniz izleyen varken.
      plate    : hareket varken 3 sn'de bir ANA akistan tek kare (GET /api/ai/snapshot) -> plaka bulucu + OCR;
                 yalniz >=45 px plaka, Turk plaka bicimi, 60 sn icinde 2 ayni okuma; ayni plaka 30 dk gorulmeden tekrar bildirilmez
@@ -293,8 +293,7 @@ def car_distance(p, car):
     d = cv2.pointPolygonTest(q, (fx, fy * DEPTH_K), True)   # + icinde
     if d >= 0:              # ayak konturun icinde: aracin hemen arkasinda (ortulu) ya da onunde -> bitisik
         return 0.0 if y1 < cy2 else None
-    ratio = ph / max(cy2 - cy1, 1.0)
-    if ratio < 0.4 or ratio > 3.0:
+    if fy < cy1 - 0.3 * ph:     # ayak nesnenin ust kenarindan belirgin yukarida: cok arkada (uzakta) duruyor
         return None
     return -d / (ph / PERSON_M)
 
@@ -551,7 +550,8 @@ def run_channel(channel, cfg, counter):
         counter.value += 1
         min_score = float(cfg.get('minScore', 0.5))
         # --- kontur (seg): izleyen varken saniyede en cok 2, yoksa korunan arac icin 5 sn'de bir
-        zone = (cfg.get('guardZones') or {}).get(str(channel))
+        guards = (cfg.get('guards') or {}).get(str(channel)) or []
+        shown = cfg.get('classes') or {}
         segs = None
         # seg (dilimli): kisi bulucu olarak da calisir (pose-nano uzak/koyu giyimli kisiyi kaciriyor, olculdu 0.03 vs seg 0.52)
         if seg and now - seg_at >= (0.5 if ov['watch'] else 1.0):
@@ -563,22 +563,25 @@ def run_channel(channel, cfg, counter):
         for s in segs or []:                              # pose'un kacirdigi kisiler (eklemsiz: durus kutu oranindan)
             if s['cls'] == 'person' and s['score'] >= 0.35 and not any(iou(s['box'], p['box']) > 0.3 for p in people):
                 people.append({'box': [float(v) for v in s['box']], 'score': s['score'], 'kp': np.zeros((17, 3), np.float32), 'poly': s['poly']})
-        # --- korunan arac: yalniz kamera basina tanimli koruma alani (renk tahmini yok: siyah/diger araclar isaretlenmez)
-        if zone and (segs is not None or not cars):
+        # --- korunan nesneler: panelde kamera basina cizilen alanlar; alana oturan seg nesnesinin konturu kullanilir, yoksa alan
+        if guards and (segs is not None or len(cars) != len(guards)):
             h, w = img.shape[:2]
-            zb = [zone[0] * w, zone[1] * h, zone[2] * w, zone[3] * h]
-            best, bi = 0.2, None
-            for s in segs or []:
-                if s['cls'] == 'car' and s['poly'] is not None and iou(s['box'], zb) > best:
-                    best, bi = iou(s['box'], zb), s
-            poly = bi['poly'] if bi else (cars[0]['poly'] if cars else np.array([[zb[0], zb[1]], [zb[2], zb[1]], [zb[2], zb[3]], [zb[0], zb[3]]], np.float32))
-            cars = [{'box': zb, 'poly': poly, 'score': 1.0, 'at': now}]   # kural alanla (sabit), cizim konturla
-        elif not zone:
+            prev, cars = {c['name']: c for c in cars}, []
+            for g in guards:
+                zb = [g['box'][0] * w, g['box'][1] * h, g['box'][2] * w, g['box'][3] * h]
+                best, bi = 0.2, None
+                for s in segs or []:
+                    if s['cls'] != 'person' and s['poly'] is not None and iou(s['box'], zb) > best:
+                        best, bi = iou(s['box'], zb), s
+                old = prev.get(g['name'])
+                poly = bi['poly'] if bi else (old['poly'] if old and segs is None else np.array([[zb[0], zb[1]], [zb[2], zb[1]], [zb[2], zb[3]], [zb[0], zb[3]]], np.float32))
+                cars.append({'box': zb, 'poly': poly, 'score': 1.0, 'at': now, 'name': g['name'], 'nearM': float(g.get('nearM', NEAR_M))})
+        elif not guards:
             cars = []
         if segs is not None:
             others = [{'box': s['box'], 'poly': s['poly'], 'other': s['kind'], 'label': f"{s['name']} %{int(s['score'] * 100)}"} for s in segs
-                      if s['cls'] != 'person' and not any(iou(s['box'], c['box']) > 0.3 for c in cars)]
-        car_marks = [{'box': c['box'], 'poly': c.get('poly'), 'score': c['score'], 'car': True, 'label': 'korunan arac'} for c in cars]
+                      if s['cls'] != 'person' and shown.get(s['kind'], True) and not any(iou(s['box'], c['box']) > 0.3 for c in cars)]
+        car_marks = [{'box': c['box'], 'poly': c.get('poly'), 'score': c['score'], 'car': True, 'label': c['name']} for c in cars]
         # --- izleyici (acgozlu IoU)
         used = set()
         for tr in tracks:
@@ -619,18 +622,19 @@ def run_channel(channel, cfg, counter):
             x1, y1, x2, y2 = p['box']
             cx, cy, size = (x1 + x2) / 2, (y1 + y2) / 2, max(x2 - x1, y2 - y1)
             # yakinlasma: ayak -> arac konturu uzakligi (m), egilim, yaninda kalma suresi, histerezisli sifirlama
-            ds = [m for m in (car_distance(p, c) for c in cars) if m is not None]
-            dm = min(ds) if ds else None
+            ds = [(m, c) for m, c in ((car_distance(p, c), c) for c in cars) if m is not None]
+            dm, gc = min(ds, key=lambda x: x[0]) if ds else (None, None)
+            near_m = gc['nearM'] if gc else NEAR_M
             hist = tr.car_hist = [h for h in getattr(tr, 'car_hist', []) if now - h[0] <= 4] + ([(now, dm)] if dm is not None else [])
             if dm is not None:
                 v = car_trend(hist, now)
-                p['label'] += f' · araç {dm:.1f} m' + (' ↓' if v < -0.3 else ' ↑' if v > 0.3 else '')
-                if dm <= NEAR_M:
+                p['label'] += f' · {gc["name"]} {dm:.1f} m' + (' ↓' if v < -0.3 else ' ↑' if v > 0.3 else '')
+                if dm <= near_m:
                     tr.near_since = getattr(tr, 'near_since', None) or now
                     p['alarm'] = True
                 else:
                     tr.near_since = None
-                if dm > CLEAR_M:
+                if dm > max(CLEAR_M, near_m * 2):
                     tr.clear_since = getattr(tr, 'clear_since', None) or now
                 else:
                     tr.clear_since = None
@@ -642,8 +646,8 @@ def run_channel(channel, cfg, counter):
             if (not getattr(tr, 'near_car', False) and tr.hits >= 2 and tr.near_since
                     and (now - tr.near_since >= 0.8 or dm <= 0.3)):
                 tr.near_car = True
-                came = max((m for _, m in hist), default=dm) >= CLEAR_M
-                report('approach', p['score'], f'kişi korunan araca {dm:.1f} m' + (' (yaklaşarak)' if came else ''), img, car_marks + [t.p for t in live])
+                came = max((m for _, m in hist), default=dm) >= max(CLEAR_M, near_m * 2)
+                report('approach', p['score'], f'kişi {gc["name"]} yanında, {dm:.1f} m' + (' (yaklaşarak)' if came else ''), img, car_marks + [t.p for t in live])
             if not tr.announced and tr.hits >= 3 and p['score'] >= min_score:
                 tr.announced = True
                 report('person', p['score'], f'{len(live)} kişi', img, [t.p for t in live])
@@ -683,7 +687,7 @@ def run_channel(channel, cfg, counter):
                     tr.p['alarm'] = True
                 report('fight', max(t.p['score'] for t in fast), f'{len(live)} kişi, hızlı kol hareketi', img, [t.p for t in live])
         show(img, car_marks + [t.p for t in live], f'{len(live)} kişi' + ('  korunan araç' if cars else '') + (f'  hareket %{moved * 100:.0f}' if motion else ''))
-        overlay(img, others + car_marks + [predict(t, now) for t in tracks if now - t.seen < 0.6])   # seg ile bulunan kisi seg araliginda da gorunur
+        overlay(img, others + car_marks + ([predict(t, now) for t in tracks if now - t.seen < 0.6] if shown.get('person', True) else []))   # seg ile bulunan kisi seg araliginda da gorunur
         if motion and not live and now - last_motion_ev > 30:
             last_motion_ev = now
             report('motion', None, f'görüntünün %{moved * 100:.0f} değişti', img, [])
@@ -715,7 +719,7 @@ def main():
     while True:
         try:
             g = post('/api/ai/heartbeat', {'stats': stats})
-            for k in ('types', 'collapseSec', 'minScore', 'fps', 'guardZones', 'ownPlates'):
+            for k in ('types', 'collapseSec', 'minScore', 'fps', 'guards', 'classes', 'ownPlates'):
                 cfg[k] = g.get(k)
             want = {c['channel'] for c in g.get('channels', [])} if g.get('enabled') else set()
         except Exception as ex:  # noqa: BLE001

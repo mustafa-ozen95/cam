@@ -341,7 +341,7 @@
       </section>
       <section class="panel" id="alertLivePanel">
         <header class="panel__head"><div><h2 class="panel__title">Canlı algılama</h2><p class="text-sm text-muted">Modelin gördüğü: kişi kutusu, iskelet, duruş (dik/yatay, açı, güven). Kırmızı = alarm. Yalnız bu sekme açıkken akar.</p></div></header>
-        <div class="panel__body stack"><label class="checkbox"><input type="checkbox" id="alertOverlay"><span>Algılamayı Canlı kamera görüntüsünde göster (kontur, iskelet)</span></label><div id="alertLive" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:12px"></div></div>
+        <div class="panel__body stack"><label class="checkbox"><input type="checkbox" id="alertOverlay"><span>Algılamayı Canlı kamera görüntüsünde göster (kontur, iskelet)</span></label><div id="alertLive" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:12px"></div><p class="text-sm text-muted">Korunan nesne: "+ Korunan alan çiz"e basıp görüntüde nesnenin çevresini sürükleyerek çizin. Kişi bu nesneye yazılan mesafeden yakın gelirse alarm verilir.</p><div class="form-actions"><button type="button" class="btn btn--primary" id="alertGuardSave">Korunan alanları kaydet</button></div></div>
       </section>
       <section class="panel" id="alertTgPanel">
         <header class="panel__head"><div><h2 class="panel__title">Telegram</h2><p class="text-sm text-muted">Bot jetonu şifreli saklanır, ekrana geri gelmez.</p></div></header>
@@ -371,6 +371,7 @@
             <label class="checkbox"><input type="checkbox" id="alertDetEnabled"><span>Algılama açık</span></label>
             <div class="field"><span class="field__label">Bildirilecek durumlar</span><div class="row row--wrap" id="alertTypes"></div></div>
             <div class="field"><span class="field__label">Kameralar</span><div class="row row--wrap" id="alertChannels"></div></div>
+            <div class="field"><span class="field__label">Görüntüde gösterilecekler</span><div class="row row--wrap" id="alertClasses"></div><span class="field__hint">Canlı ve kayıt üstü çizimde. Bildirim kurallarını değiştirmez.</span></div>
             <div class="field-row">
               <div class="field"><label class="field__label" for="alertCooldown">Aynı olay arası (sn)</label><input class="input" id="alertCooldown" type="number" min="10" max="86400"></div>
               <div class="field"><label class="field__label" for="alertCollapse">Bayılma için hareketsizlik (sn)</label><input class="input" id="alertCollapse" type="number" min="5" max="600"></div>
@@ -2683,8 +2684,10 @@ const ALERT_NOTIFIED = { sent: ['gönderildi', 'green'], sending: ['gönderiliyo
 const ALERT_TYPES_FALLBACK = { person: { tr: 'İnsan', icon: '🧍' }, fall: { tr: 'Düşme', icon: '⚠️' }, collapse: { tr: 'Hareketsiz yatan kişi', icon: '🚨' }, fight: { tr: 'Kavga', icon: '🥊' }, motion: { tr: 'Hareket', icon: '👣' } };
 let alertDoc = null;
 const alertCheck = (key, label, on) => { const i = el('input', { type: 'checkbox', 'data-k': key }); i.checked = !!on; return el('label', { class: 'checkbox' }, i, el('span', {}, label)); };
+const GUARD_CLASSES = { person: 'İnsan', vehicle: 'Araç', animal: 'Hayvan', object: 'Diğer nesneler' };
+let alertGuards = {};
 function alertDraw(g) {
-  alertDoc = g;
+  alertDoc = g; alertGuards = JSON.parse(JSON.stringify(g.detection.guards || {}));
   $('#alertOverlay').checked = preferences.overlay;
   const t = g.telegram, d = g.detection, k = $('#alertInfo'); k.replaceChildren(); const row = makeRow(k);
   const w = g.worker, alive = !!w && w.lastSeenSec < 60;
@@ -2700,6 +2703,7 @@ function alertDraw(g) {
   $('#alertDetEnabled').checked = d.enabled;
   $('#alertTypes').replaceChildren(...Object.entries(g.types).map(([key, v]) => alertCheck(key, `${v.icon} ${v.tr}`, d.types[key])));
   $('#alertChannels').replaceChildren(...g.channels.map((c) => alertCheck(c.channel, c.name, d.channels.includes(c.channel))));
+  $('#alertClasses').replaceChildren(...Object.entries(GUARD_CLASSES).map(([key, label]) => alertCheck(key, label, d.classes?.[key] !== false)));
   $('#alertCooldown').value = d.cooldownSec; $('#alertCollapse').value = d.collapseSec; $('#alertScore').value = Math.round(d.minScore * 100); $('#alertFps').value = d.fps; $('#alertOwnPlates').value = (d.ownPlates || []).join(', ');
   $('#alertFrom').value = d.activeFrom; $('#alertTo').value = d.activeTo;
 }
@@ -2721,10 +2725,52 @@ function alertLive(on) {
   if (!on || !alertDoc) { for (const i of box.querySelectorAll('img')) i.removeAttribute('src'); box.replaceChildren(); return; }
   const d = alertDoc.detection, list = alertDoc.channels.filter((c) => !d.channels.length || d.channels.includes(c.channel));
   if (!d.enabled || !list.length) { box.replaceChildren(el('p', { class: 'text-sm text-muted' }, 'Algılama kapalı: aşağıdan açıp kaydedin.')); return; }
-  box.replaceChildren(...list.map((c) => el('figure', { style: 'margin:0' },
-    el('img', { src: `/api/alerts/preview?channel=${c.channel}&t=${Date.now()}`, alt: c.name, style: 'width:100%;aspect-ratio:16/9;object-fit:contain;background:#000;border-radius:6px;display:block' }),
-    el('figcaption', { class: 'text-sm text-muted' }, `${c.name} (K${c.channel + 1})`))));
+  box.replaceChildren(...list.map(guardCard));
 }
+/** Canli algilama karti + korunan alan duzenleyici (surukleyerek dikdortgen; ad ve alarm mesafesi). */
+function guardCard(c) {
+  const key = String(c.channel), guards = () => (alertGuards[key] ||= []);
+  const img = el('img', { src: `/api/alerts/preview?channel=${c.channel}&t=${Date.now()}`, alt: c.name, style: 'width:100%;aspect-ratio:16/9;object-fit:contain;background:#000;border-radius:6px;display:block' });
+  const cv = el('canvas', { style: 'position:absolute;inset:0;width:100%;height:100%;touch-action:pan-y;border-radius:6px' });
+  const wrap = el('div', { style: 'position:relative' }, img, cv), list = el('div', { class: 'stack', style: 'gap:6px' });
+  const add = el('button', { type: 'button', class: 'btn btn--sm' }, '+ Korunan alan çiz');
+  let drawing = false, start = null, cur = null;
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))]; };
+  const paint = () => {
+    const r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1, W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+    const x = cv.getContext('2d'); x.clearRect(0, 0, W, H); x.lineWidth = 1.5 * dpr; x.font = `600 ${Math.round(11 * dpr)}px system-ui, sans-serif`;
+    for (const g of guards()) {
+      const [a, b, c2, d] = g.box; x.strokeStyle = '#ff8c00'; x.setLineDash([]); x.strokeRect(a * W, b * H, (c2 - a) * W, (d - b) * H);
+      const t = `${g.name} · ${g.nearM} m`, tw = x.measureText(t).width + 8 * dpr, th = 16 * dpr;
+      x.fillStyle = '#ff8c00'; x.fillRect(a * W, Math.max(0, b * H - th), tw, th); x.fillStyle = '#fff'; x.fillText(t, a * W + 4 * dpr, Math.max(th, b * H) - 4 * dpr);
+    }
+    if (start && cur) { x.strokeStyle = '#ffd60a'; x.setLineDash([6 * dpr, 4 * dpr]); x.strokeRect(start[0] * W, start[1] * H, (cur[0] - start[0]) * W, (cur[1] - start[1]) * H); }
+  };
+  const field = (attrs, value, set) => { const i = el('input', { class: 'input', ...attrs }); i.value = value; i.addEventListener('change', () => { set(i.value); paint(); }); return i; };
+  const renderList = () => list.replaceChildren(...guards().map((g, i) => el('div', { class: 'row row--wrap', style: 'gap:6px;align-items:center' },
+    field({ type: 'text', maxlength: '40', 'aria-label': 'Korunan nesne adı', style: 'flex:1 1 140px;min-width:0' }, g.name, (v) => { g.name = v.trim() || 'Korunan nesne'; }),
+    field({ type: 'number', min: '0.2', max: '5', step: '0.1', 'aria-label': 'Alarm mesafesi (m)', title: 'Alarm mesafesi (m)', style: 'width:84px' }, g.nearM, (v) => { g.nearM = Math.min(5, Math.max(0.2, Number(v) || 0.6)); }),
+    el('span', { class: 'text-sm text-muted' }, 'm'),
+    el('button', { type: 'button', class: 'btn btn--sm', 'aria-label': `${g.name} sil`, onclick: () => { guards().splice(i, 1); renderList(); paint(); } }, 'Sil'))));
+  add.addEventListener('click', () => { drawing = !drawing; add.textContent = drawing ? 'Görüntüde sürükleyin… (iptal)' : '+ Korunan alan çiz'; cv.style.touchAction = drawing ? 'none' : 'pan-y'; cv.style.cursor = drawing ? 'crosshair' : ''; });
+  cv.addEventListener('pointerdown', (e) => { if (!drawing) return; e.preventDefault(); cv.setPointerCapture(e.pointerId); start = cur = pos(e); paint(); });
+  cv.addEventListener('pointermove', (e) => { if (start) { cur = pos(e); paint(); } });
+  cv.addEventListener('pointerup', () => {
+    if (!start) return;
+    const box = [Math.min(start[0], cur[0]), Math.min(start[1], cur[1]), Math.max(start[0], cur[0]), Math.max(start[1], cur[1])].map((v) => Math.round(v * 1e4) / 1e4);
+    start = cur = null;
+    if (box[2] - box[0] >= 0.02 && box[3] - box[1] >= 0.02 && guards().length < 8) { guards().push({ name: `Korunan nesne ${guards().length + 1}`, box, nearM: 0.6 }); renderList(); }
+    drawing = false; add.textContent = '+ Korunan alan çiz'; cv.style.touchAction = 'pan-y'; cv.style.cursor = ''; paint();
+  });
+  new ResizeObserver(paint).observe(wrap);
+  renderList();
+  return el('figure', { style: 'margin:0;display:grid;gap:6px' }, wrap, el('figcaption', { class: 'row row--wrap', style: 'justify-content:space-between;align-items:center;gap:6px' }, el('span', { class: 'text-sm text-muted' }, `${c.name} (K${c.channel + 1})`), add), list);
+}
+$('#alertGuardSave').addEventListener('click', (e) => {
+  const guards = Object.fromEntries(Object.entries(alertGuards).filter(([, v]) => v.length));
+  alertPut({ detection: { guards } }, e.currentTarget);
+});
 async function alertReload() {
   const manage = hasPermission('alert.manage');
   for (const id of ['#alertTgPanel', '#alertDetPanel', '#alertHelpPanel']) $(id).hidden = !manage;
@@ -2749,7 +2795,7 @@ $('#alertDetForm').addEventListener('submit', (e) => {
   const types = Object.fromEntries([...$('#alertTypes').querySelectorAll('input')].map((i) => [i.dataset.k, i.checked]));
   const channels = [...$('#alertChannels').querySelectorAll('input:checked')].map((i) => Number(i.dataset.k));
   alertPut({ detection: { enabled: $('#alertDetEnabled').checked, types, channels, cooldownSec: Number($('#alertCooldown').value), collapseSec: Number($('#alertCollapse').value),
-    minScore: Number($('#alertScore').value) / 100, fps: Number($('#alertFps').value), ownPlates: $('#alertOwnPlates').value.split(','), activeFrom: $('#alertFrom').value, activeTo: $('#alertTo').value } }, $('#alertDetForm button[type=submit]'));
+    minScore: Number($('#alertScore').value) / 100, fps: Number($('#alertFps').value), classes: Object.fromEntries([...$('#alertClasses').querySelectorAll('input')].map((i) => [i.dataset.k, i.checked])), ownPlates: $('#alertOwnPlates').value.split(','), activeFrom: $('#alertFrom').value, activeTo: $('#alertTo').value } }, $('#alertDetForm button[type=submit]'));
 });
 $('#alertTest').addEventListener('click', async () => {
   const b = $('#alertTest'), x = alertTg(), ch = $('#alertTestChannel').value; b.disabled = true;
