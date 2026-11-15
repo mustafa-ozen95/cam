@@ -241,11 +241,12 @@ def plate_for(box, plates, w, h, now):
 
 
 def plate_add(plates, now, box, show):
-    """Ayni yerdeki okumalari biriktirir (5 dk); yazi oylamayla secilir."""
+    """Ayni yerdeki okumalari biriktirir; yazi oylamayla secilir. Yer, ustunde arac durdukca yasar (gece plaka okunmuyor:
+    gunduz okunan plaka park etmis aracta kalir; arac gidince yer silinir)."""
     for p in plates:
         if iou(p['box'], box) > 0.3:
             p['box'] = box; p['at'] = now
-            p['reads'] = [r for r in p['reads'] if now - r[0] < 300][-15:] + [(now, show)]
+            p['reads'] = p['reads'][-15:] + [(now, show)]
             return p
     plates.append({'box': box, 'at': now, 'reads': [(now, show)]})
     return plates[-1]
@@ -580,7 +581,6 @@ def run_channel(channel, cfg, counter):
             now = time.time()
             for t in [t for t in told if now - seen.get(t, 0) > 1800]:   # 30 dk gorulmeyen plaka yeniden bildirilebilir
                 told.discard(t)
-            state['plates'][:] = [p for p in state['plates'] if now - p['at'] < 300][-30:]
             # korunan alandaki aracin plakasi "bizim": bildirilmez (ayarda plaka yazmaya gerek yok)
             gz = [g['box'] for g in (cfg.get('guards') or {}).get(str(channel)) or []]
             for p in found:
@@ -723,6 +723,11 @@ def run_channel(channel, cfg, counter):
                 log(f'K{channel + 1} seg: {ex}'); segs = []
             veh_boxes = [s['box'] for s in segs if s['kind'] == 'vehicle']
             state['veh'] = [[b[0] / img.shape[1], b[1] / img.shape[0], b[2] / img.shape[1], b[3] / img.shape[0]] for b in veh_boxes]
+            for p in state['plates']:                    # plaka yeri ustunde arac var mi
+                cx, cy = (p['box'][0] + p['box'][2]) / 2, (p['box'][1] + p['box'][3]) / 2
+                if any(v[0] <= cx <= v[2] and v[1] <= cy <= v[3] for v in state['veh']):
+                    p['at'] = now
+            state['plates'][:] = [p for p in state['plates'] if now - p['at'] < 60][-30:]
         for s in segs or []:                              # pose'un kacirdigi kisiler (eklemsiz: durus kutu oranindan)
             if s['cls'] == 'person' and s['score'] >= 0.35 and not any(iou(s['box'], p['box']) > 0.3 for p in people):
                 people.append({'box': [float(v) for v in s['box']], 'score': s['score'], 'kp': np.zeros((17, 3), np.float32), 'poly': s['poly']})
