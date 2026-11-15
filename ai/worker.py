@@ -725,7 +725,7 @@ def run_channel(channel, cfg, counter):
         shown = cfg.get('classes') or {}
         segs = None
         # seg (dilimli): kisi bulucu olarak da calisir (pose-nano uzak/koyu giyimli kisiyi kaciriyor, olculdu 0.03 vs seg 0.52)
-        if seg and now - seg_at >= (0.5 if ov['watch'] else 1.0):
+        if seg and now - seg_at >= (0.8 if ov['watch'] else 2.0):
             seg_at = now
             try:
                 segs = detect(seg, aimg, 0.3)
