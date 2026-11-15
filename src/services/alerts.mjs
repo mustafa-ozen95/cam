@@ -28,7 +28,7 @@ const DEFAULTS = {
   detection: {
     enabled: false, channels: [], types: { person: true, fall: true, collapse: true, fight: false, motion: false, approach: true, plate: true, touch: true, impact: true },
     cooldownSec: 120, collapseSec: 20, minScore: 0.5, fps: 4, activeFrom: '', activeTo: '',
-    guards: {},                                                   // { kanal: [{ name, box: [x1,y1,x2,y2] (0..1), nearM }] } korunan nesneler
+    guards: {},                                                   // { kanal: [{ name, box: [x1,y1,x2,y2] (0..1), nearM, on }] } korunan nesneler
     classes: { person: true, vehicle: true, animal: true, object: true },   // katmanda/kayitta gosterilen siniflar
   },
 };
@@ -122,7 +122,7 @@ export class AlertService {
             const b = Array.isArray(g?.box) ? g.box.map(Number) : [];
             if (!(b.length === 4 && b.every((n) => n >= 0 && n <= 1) && b[2] - b[0] >= 0.01 && b[3] - b[1] >= 0.01)) throw new HttpError(400, 'Korunan alan geçersiz', 'INVALID_REQUEST');
             const name = String(g.name ?? '').trim().slice(0, 40) || 'Korunan nesne';
-            ok.push({ name, box: b.map((n) => Math.round(n * 1e4) / 1e4), nearM: clamp(g.nearM, 0.2, 5, 0.6) });
+            ok.push({ name, box: b.map((n) => Math.round(n * 1e4) / 1e4), nearM: clamp(g.nearM, 0.2, 5, 0.6), on: g.on !== false });
           }
           if (ok.length) z[k] = ok;
         }

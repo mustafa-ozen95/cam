@@ -2772,14 +2772,17 @@ function guardCard(c) {
     if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
     const x = cv.getContext('2d'); x.clearRect(0, 0, W, H); x.lineWidth = 1.5 * dpr; x.font = `600 ${Math.round(11 * dpr)}px system-ui, sans-serif`;
     for (const g of guards()) {
-      const [a, b, c2, d] = g.box; x.strokeStyle = '#ff8c00'; x.setLineDash([]); x.strokeRect(a * W, b * H, (c2 - a) * W, (d - b) * H);
-      const t = `${g.name} · ${g.nearM} m`, tw = x.measureText(t).width + 8 * dpr, th = 16 * dpr;
-      x.fillStyle = '#ff8c00'; x.fillRect(a * W, Math.max(0, b * H - th), tw, th); x.fillStyle = '#fff'; x.fillText(t, a * W + 4 * dpr, Math.max(th, b * H) - 4 * dpr);
+      const off = g.on === false, col = off ? '#8a8a8a' : '#ff8c00';
+      const [a, b, c2, d] = g.box; x.strokeStyle = col; x.setLineDash(off ? [5 * dpr, 4 * dpr] : []); x.strokeRect(a * W, b * H, (c2 - a) * W, (d - b) * H);
+      const t = off ? `${g.name} · kapalı` : `${g.name} · ${g.nearM} m`, tw = x.measureText(t).width + 8 * dpr, th = 16 * dpr;
+      x.fillStyle = col; x.fillRect(a * W, Math.max(0, b * H - th), tw, th); x.fillStyle = '#fff'; x.fillText(t, a * W + 4 * dpr, Math.max(th, b * H) - 4 * dpr);
     }
     if (start && cur) { x.strokeStyle = '#ffd60a'; x.setLineDash([6 * dpr, 4 * dpr]); x.strokeRect(start[0] * W, start[1] * H, (cur[0] - start[0]) * W, (cur[1] - start[1]) * H); }
   };
   const field = (attrs, value, set) => { const i = el('input', { class: 'input', ...attrs }); i.value = value; i.addEventListener('change', () => { set(i.value); paint(); }); return i; };
+  const toggle = (g) => { const i = el('input', { type: 'checkbox', 'aria-label': `${g.name} koruma açık`, title: 'Koruma açık/kapalı', style: 'width:20px;height:20px' }); i.checked = g.on !== false; i.addEventListener('change', () => { g.on = i.checked; paint(); }); return i; };
   const renderList = () => list.replaceChildren(...guards().map((g, i) => el('div', { class: 'row row--wrap', style: 'gap:6px;align-items:center' },
+    toggle(g),
     field({ type: 'text', maxlength: '40', 'aria-label': 'Korunan nesne adı', style: 'flex:1 1 140px;min-width:0' }, g.name, (v) => { g.name = v.trim() || 'Korunan nesne'; }),
     field({ type: 'number', min: '0.2', max: '5', step: '0.1', 'aria-label': 'Alarm mesafesi (m)', title: 'Alarm mesafesi (m)', style: 'width:84px' }, g.nearM, (v) => { g.nearM = Math.min(5, Math.max(0.2, Number(v) || 0.6)); }),
     el('span', { class: 'text-sm text-muted' }, 'm'),
@@ -2791,7 +2794,7 @@ function guardCard(c) {
     if (!start) return;
     const box = [Math.min(start[0], cur[0]), Math.min(start[1], cur[1]), Math.max(start[0], cur[0]), Math.max(start[1], cur[1])].map((v) => Math.round(v * 1e4) / 1e4);
     start = cur = null;
-    if (box[2] - box[0] >= 0.02 && box[3] - box[1] >= 0.02 && guards().length < 8) { guards().push({ name: `Korunan nesne ${guards().length + 1}`, box, nearM: 0.6 }); renderList(); }
+    if (box[2] - box[0] >= 0.02 && box[3] - box[1] >= 0.02 && guards().length < 8) { guards().push({ name: `Korunan nesne ${guards().length + 1}`, box, nearM: 0.6, on: true }); renderList(); }
     drawing = false; add.textContent = '+ Korunan alan çiz'; cv.style.touchAction = 'pan-y'; cv.style.cursor = ''; paint();
   });
   new ResizeObserver(paint).observe(wrap);

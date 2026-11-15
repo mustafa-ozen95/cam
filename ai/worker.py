@@ -622,7 +622,7 @@ def run_channel(channel, cfg, counter):
     view = {'watch': False, 'at': 0}
     ov = {'watch': False, 'at': 0}       # canli goruntu ustu katman
     rec = {'buf': [], 'last': 0, 'sent': time.time()}   # kayit ustu katman icin algilama izi
-    state = {'motion_at': 0, 'plates': [], 'veh': [], 'own': []}   # plates: plaka yerleri (normalize) + okumalar; veh: son araclar (normalize)
+    state = {'motion_at': 0, 'plates': [], 'veh': []}   # plates: plaka yerleri (normalize) + okumalar; veh: son araclar (normalize)
     base = {}                            # korunan nesne -> [taban seg kutusu, ust uste sapma sayisi] (carpma)
 
     def plates_loop():
@@ -653,17 +653,15 @@ def run_channel(channel, cfg, counter):
             now = time.time()
             for t in [t for t in told if now - seen.get(t, 0) > 1800]:   # 30 dk gorulmeyen plaka yeniden bildirilebilir
                 told.discard(t)
-            # korunan alandaki aracin plakasi "bizim": bildirilmez (ayarda plaka yazmaya gerek yok)
-            gz = [g['box'] for g in (cfg.get('guards') or {}).get(str(channel)) or []]
+            # su an acik korunan alanin icindeki plaka bildirilmez; ezber yok (alan silinir/kapanirsa plaka yine bildirilir)
+            gz = [g['box'] for g in (cfg.get('guards') or {}).get(str(channel)) or [] if g.get('on', True)]
+            own = set()
             for p in found:
                 nb = [p['box'][0] / w0, p['box'][1] / h0, p['box'][2] / w0, p['box'][3] / h0]
-                spot = plate_add(state['plates'], now, nb, p['show'], p['conf'])
+                plate_add(state['plates'], now, nb, p['show'], p['conf'])
                 cx, cy = (nb[0] + nb[2]) / 2, (nb[1] + nb[3]) / 2
                 if any(z[0] <= cx <= z[2] and z[1] <= cy <= z[3] for z in gz):
-                    best = plate_best(spot).replace(' ', '')
-                    if not best.endswith('?') and best not in state['own']:
-                        state['own'] = (state['own'] + [best])[-10:]
-            own = set(state['own'])
+                    own.add(p['text'])
             for p in [p for p in found if p['sure']]:
                 t = p['text']
                 seen[t] = now
@@ -672,7 +670,7 @@ def run_channel(channel, cfg, counter):
                     continue
                 told.add(t)
                 if t in own:
-                    log(f'K{channel + 1} bizim plaka {p["show"]}'); continue
+                    log(f'K{channel + 1} korunan alandaki plaka {p["show"]}'); told.discard(t); continue
                 s = 960 / img.shape[1]
                 small = cv2.resize(img, (960, int(img.shape[0] * s)))
                 mark = [{'box': [v * s for v in p['box']], 'car': True, 'label': p['show']}]
@@ -769,7 +767,7 @@ def run_channel(channel, cfg, counter):
         # kisi izi yoksa ve hareket yoksa model calismaz (2 sn'de bir yine bakilir)
         if not motion and not tracks and not ov['watch'] and now - last_inf < 1:
             counter.value += 1
-            calm = [{'box': c['box'], 'poly': c.get('poly'), 'car': True, 'label': 'korunan arac'} for c in cars]
+            calm = [{'box': c['box'], 'poly': c.get('poly'), 'car': True, 'label': c['name']} for c in cars]
             show(img, calm, 'sakin (model beklemede)'); overlay(img, others + calm)
             continue
         last_inf = now
@@ -782,7 +780,7 @@ def run_channel(channel, cfg, counter):
         counter.value += 1
         min_score = float(cfg.get('minScore', 0.5))
         # --- kontur (seg): izleyen varken saniyede en cok 2, yoksa korunan arac icin 5 sn'de bir
-        guards = (cfg.get('guards') or {}).get(str(channel)) or []
+        guards = [g for g in (cfg.get('guards') or {}).get(str(channel)) or [] if g.get('on', True)]   # kapali koruma yok sayilir
         shown = cfg.get('classes') or {}
         segs = None
         # seg (dilimli): kisi bulucu olarak da calisir (pose-nano uzak/koyu giyimli kisiyi kaciriyor, olculdu 0.03 vs seg 0.52)
@@ -802,6 +800,10 @@ def run_channel(channel, cfg, counter):
                     p['at'] = now
             state['plates'][:] = [p for p in state['plates'] if now - p['at'] < 60][-30:]
         for s in segs or []:                              # pose'un kacirdigi kisiler (eklemsiz: durus kutu oranindan)
+            # dik duran "hayvan" (h/w >= 1.5) cogunlukla cocuk: kopek/kedi yatay durur (gece cocuk kopek sanildi)
+            child = s['kind'] == 'animal' and (s['box'][3] - s['box'][1]) >= 1.5 * (s['box'][2] - s['box'][0])
+            if child:
+                s['cls'], s['kind'], s['name'] = 'person', 'person', 'insan'
             if s['cls'] == 'person' and s['score'] >= 0.35 and person_ok(s, veh_boxes) and not any(iou(s['box'], p['box']) > 0.3 for p in people):
                 people.append({'box': [float(v) for v in s['box']], 'score': s['score'], 'kp': np.zeros((17, 3), np.float32), 'poly': s['poly']})
         # --- korunan nesneler: panelde kamera basina cizilen alanlar; alana oturan seg nesnesinin konturu kullanilir, yoksa alan
@@ -812,7 +814,7 @@ def run_channel(channel, cfg, counter):
                 zb = [g['box'][0] * w, g['box'][1] * h, g['box'][2] * w, g['box'][3] * h]
                 best, bi = 0.2, None
                 for s in segs or []:
-                    if s['cls'] != 'person' and s['poly'] is not None and iou(s['box'], zb) > best:
+                    if s['poly'] is not None and iou(s['box'], zb) > best:     # her sinif korunabilir (arac, insan, esya)
                         best, bi = iou(s['box'], zb), s
                 old = known.get(g['name'])
                 # model bir karede nesneyi kacirirsa (IR gecisi, ortme) son kontur korunur; hic bulunmadiysa alan dikdortgeni
@@ -856,7 +858,7 @@ def run_channel(channel, cfg, counter):
             for s in segs:
                 if s['cls'] == 'person' or not shown.get(s['kind'], True) or any(iou(s['box'], c['box']) > 0.3 for c in cars):
                     continue
-                if any(iou(s['box'], p['box']) > 0.4 for p in people):       # kisinin ustune yapisan yanlis etiket
+                if any(iou(s['box'], p['box']) > 0.3 for p in people) or any(iou(s['box'], t.p['box']) > 0.3 for t in tracks):   # kisinin ustune yapisan yanlis etiket (cocuk -> kopek)
                     continue
                 pl = plate_for(s['box'], state['plates'], W, H, now) if s['kind'] == 'vehicle' else None
                 # hareketli: kutusunda fark var ve onceki seg'de ayni yerde degildi (park etmis arac yagmurda sayilmaz)
@@ -930,7 +932,8 @@ def run_channel(channel, cfg, counter):
             x1, y1, x2, y2 = p['box']
             cx, cy, size = (x1 + x2) / 2, (y1 + y2) / 2, max(x2 - x1, y2 - y1)
             # yakinlasma: ayak -> arac konturu uzakligi (m), egilim, yaninda kalma suresi, histerezisli sifirlama
-            ds = [(m, c) for m, c in ((car_distance(p, c), c) for c in cars) if m is not None]
+            # korunan nesne bu kisinin kendisiyse (korunan insan) ona yaklasma sayilmaz
+            ds = [(m, c) for m, c in ((car_distance(p, c), c) for c in cars if not (c.get('seg') and iou(c['seg'], p['box']) > 0.4)) if m is not None]
             dm, gc = min(ds, key=lambda x: x[0]) if ds else (None, None)
             near_m = gc['nearM'] if gc else NEAR_M
             hist = tr.car_hist = [h for h in getattr(tr, 'car_hist', []) if now - h[0] <= 4] + ([(now, dm)] if dm is not None else [])
