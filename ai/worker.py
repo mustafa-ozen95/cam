@@ -29,6 +29,7 @@ SECRET = os.environ.get('CAM_AI_SECRET', '')
 # yolo26: ayni hizda daha cok kisi/arac (olculdu: gece kayitlari, 26s-seg arac 1.3-1.8x, kisi puani 0.61->0.72; 26n-pose kisi 10->13)
 MODEL = os.environ.get('CAM_AI_MODEL', '/models/yolo26n-pose.onnx')
 SEGMENT = os.environ.get('CAM_AI_SEG', '/models/yolo26s-seg.onnx')
+SLICE_SEG = os.environ.get('CAM_AI_SLICE_SEG', '/models/yolo26n-seg.onnx')
 SIZE = int(os.environ.get('CAM_AI_SIZE', '416'))
 THREADS = int(os.environ.get('CAM_AI_THREADS', '2'))
 HEADERS = {'Authorization': f'Bearer {SECRET}', 'Content-Type': 'application/json'}
@@ -179,7 +180,7 @@ def night_boost(img):
     return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
 
-def detect(model, img, conf):
+def detect(model, img, conf, slicer=None):
     """Tam kare + genis karede iki kare dilim (yukseklik x yukseklik) ayri calisir: uzaktaki kucuk kisi 416'ya kuculunce kaybolmaz."""
     h, w = img.shape[:2]
     if w < h * 1.2:
@@ -187,7 +188,7 @@ def detect(model, img, conf):
     # tam kare da: yakindaki buyuk, kenara dayali nesne (korunan arac) dilimde bulunamiyor (olculdu: tam %84, dilim yok)
     out = model(img, conf)
     for x in (0, w - h):
-        for p in model(img[:, x:x + h], conf):
+        for p in (slicer or model)(img[:, x:x + h], conf):
             b = p['box']; p['box'] = [b[0] + x, b[1], b[2] + x, b[3]]
             if p.get('kp') is not None:
                 p['kp'][:, 0] += x
@@ -586,6 +587,8 @@ def run_channel(channel, cfg, counter):
     signal.signal(signal.SIGTERM, lambda *_: os._exit(0))
     model, latest, stop = Pose(), {'jpeg': None, 't': 0}, threading.Event()
     seg = Seg(SEGMENT) if os.path.exists(SEGMENT) else None
+    # dilimler (uzak kucuk kisi) hafif modelle: 26s uc gecis kanal basina ~2 cpu-sn yiyordu (olculdu)
+    slicer = Seg(SLICE_SEG) if seg and os.path.exists(SLICE_SEG) else None
     cars, car_check, seg_at = [], 0, 0   # korunan arac [{box, poly, score, at}]
     others = []                          # korunan disindaki araclar (yalniz katmanda gosterilir)
     threading.Thread(target=frames, args=(channel, latest, stop), daemon=True).start()
@@ -764,7 +767,7 @@ def run_channel(channel, cfg, counter):
         if seg and now - seg_at >= (0.8 if ov['watch'] else 2.0):
             seg_at = now
             try:
-                segs = detect(seg, aimg, 0.3)
+                segs = detect(seg, aimg, 0.3, slicer)
                 if dmask is not None and motion:
                     segs += small_pass(seg, aimg, dmask, segs + people)
             except Exception as ex:  # noqa: BLE001
