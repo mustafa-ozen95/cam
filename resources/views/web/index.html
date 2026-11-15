@@ -2765,7 +2765,7 @@ function guardCard(c) {
   });
   new ResizeObserver(paint).observe(wrap);
   renderList();
-  return el('figure', { style: 'margin:0;display:grid;gap:6px' }, wrap, el('figcaption', { class: 'row row--wrap', style: 'justify-content:space-between;align-items:center;gap:6px' }, el('span', { class: 'text-sm text-muted' }, `${c.name} (K${c.channel + 1})`), add), list);
+  return el('figure', { style: 'margin:0;display:grid;gap:6px;align-content:start' }, wrap, el('figcaption', { class: 'row row--wrap', style: 'justify-content:space-between;align-items:center;gap:6px' }, el('span', { class: 'text-sm text-muted' }, `${c.name} (K${c.channel + 1})`), add), list);
 }
 $('#alertGuardSave').addEventListener('click', (e) => {
   const guards = Object.fromEntries(Object.entries(alertGuards).filter(([, v]) => v.length));
