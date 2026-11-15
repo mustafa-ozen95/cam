@@ -37,6 +37,13 @@ def post(path, body, timeout=10):
         return json.loads(r.read() or b'{}')
 
 
+def post_jpeg(channel, data):
+    h = {'Authorization': HEADERS['Authorization'], 'Content-Type': 'image/jpeg'}
+    req = urllib.request.Request(f'{CAM}/api/ai/preview?channel={channel}', data=data, headers=h, method='POST')
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return bool(json.loads(r.read() or b'{}').get('watch'))
+
+
 # ------------------------------------------------------------------ model
 class Pose:
     def __init__(self):
@@ -135,12 +142,22 @@ def frames(channel, latest, stop):
         stop.wait(back); back = min(back * 2, 30)
 
 
-def annotate(img, people, title):
+ASCII = str.maketrans('ıİğĞüÜşŞöÖçÇ°', 'iIgGuUsSoOcC ')
+
+
+def draw(img, people, title):
+    title = title.translate(ASCII)
     v = img.copy()
     for p in people:
         x1, y1, x2, y2 = map(int, p['box'])
         c = (0, 0, 255) if p.get('alarm') else (0, 200, 0)
         cv2.rectangle(v, (x1, y1), (x2, y2), c, 2)
+        if p.get('label'):
+            t = p['label'].translate(ASCII)
+            (tw, th), _ = cv2.getTextSize(t, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+            ty = max(y1, th + 26)
+            cv2.rectangle(v, (x1, ty - th - 4), (x1 + tw + 6, ty), c, -1)
+            cv2.putText(v, t, (x1 + 3, ty - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
         k = p['kp']
         for a, b in SKELETON:
             if k[a, 2] > 0.4 and k[b, 2] > 0.4:
@@ -148,7 +165,12 @@ def annotate(img, people, title):
     cv2.rectangle(v, (0, 0), (v.shape[1], 22), (0, 0, 0), -1)
     cv2.putText(v, title, (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
     ok, j = cv2.imencode('.jpg', v, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    return base64.b64encode(j.tobytes()).decode() if ok else None
+    return j.tobytes() if ok else None
+
+
+def annotate(img, people, title):
+    j = draw(img, people, title)
+    return base64.b64encode(j).decode() if j else None
 
 
 def run_channel(channel, cfg, counter):
@@ -157,6 +179,19 @@ def run_channel(channel, cfg, counter):
     threading.Thread(target=frames, args=(channel, latest, stop), daemon=True).start()
     tracks, prev, last_t, last_motion_ev, last_inf = [], None, 0, 0, 0
     local_gap = {}                       # tur -> son gonderim (yerel seyreltme; asil bekleme panelde)
+    view = {'watch': False, 'at': 0}
+
+    def show(img, people, note):
+        """Canli algilama onizlemesi: izleyen varken her islenen kare, yoksa 3 sn'de bir (izleyici var mi diye)."""
+        now = time.time()
+        if now - view['at'] < (0 if view['watch'] else 3):
+            return
+        view['at'] = now
+        j = draw(img, people, f'K{channel + 1}  {time.strftime("%H:%M:%S")}  {note}')
+        try:
+            view['watch'] = post_jpeg(channel, j) if j else False
+        except Exception:  # noqa: BLE001
+            view['watch'] = False
 
     def report(kind, score, detail, img, people):
         now = time.time()
@@ -194,6 +229,7 @@ def run_channel(channel, cfg, counter):
         # kisi izi yoksa ve hareket yoksa model calismaz (2 sn'de bir yine bakilir)
         if not motion and not tracks and now - last_inf < 2:
             counter.value += 1
+            show(img, [], 'sakin (model beklemede)')
             continue
         last_inf = now
         people = [p for p in model(img, 0.35) if p['score'] >= 0.35]
@@ -217,6 +253,7 @@ def run_channel(channel, cfg, counter):
         for tr in live:
             p = tr.p
             ang, lying = posture(p)
+            p['label'] = f'#{tr.id} {"yatay" if lying else "dik"} {int(ang)}° %{int(p["score"] * 100)}'
             x1, y1, x2, y2 = p['box']
             cx, cy, size = (x1 + x2) / 2, (y1 + y2) / 2, max(x2 - x1, y2 - y1)
             if not tr.announced and tr.hits >= 3 and p['score'] >= min_score:
@@ -233,6 +270,9 @@ def run_channel(channel, cfg, counter):
             ax, ay, asz = tr.lying_anchor
             if math.hypot(cx - ax, cy - ay) > 0.25 * asz:          # yatarken yer degistirdi: hareketsiz degil
                 tr.lying_since, tr.lying_anchor = now, (cx, cy, size)
+            p['label'] += f' {int(now - tr.lying_since)}sn'
+            if tr.fell or tr.collapsed:
+                p['alarm'] = True
             if not tr.collapsed and now - tr.lying_since >= float(cfg.get('collapseSec', 20)):
                 tr.collapsed = True; p['alarm'] = True
                 report('collapse', p['score'], f'{int(now - tr.lying_since)} sn hareketsiz yatıyor', img, [t.p for t in live])
@@ -254,6 +294,7 @@ def run_channel(channel, cfg, counter):
                 for tr in fast:
                     tr.p['alarm'] = True
                 report('fight', max(t.p['score'] for t in fast), f'{len(live)} kişi, hızlı kol hareketi', img, [t.p for t in live])
+        show(img, [t.p for t in live], f'{len(live)} kişi' + (f'  hareket %{moved * 100:.0f}' if motion else ''))
         if motion and not live and now - last_motion_ev > 30:
             last_motion_ev = now
             report('motion', None, f'görüntünün %{moved * 100:.0f} değişti', img, [])

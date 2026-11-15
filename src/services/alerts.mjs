@@ -29,6 +29,8 @@ const KEEP_DAYS = 90;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const clamp = (v, a, b, d) => (Number.isFinite(Number(v)) ? Math.min(b, Math.max(a, Number(v))) : d);
 const escape = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+const CRLF = '\r\n';
+const writePart = (r, jpeg) => { r.write(`--frame${CRLF}Content-Type: image/jpeg${CRLF}Content-Length: ${jpeg.length}${CRLF}${CRLF}`); r.write(jpeg); r.write(CRLF); };
 
 export class AlertService {
   constructor({ db, settings, secret, devices, config }) {
@@ -36,6 +38,8 @@ export class AlertService {
     this.key = alertSecretKey(secret);
     this.lastSent = new Map();     // `${kanal}|${tur}` -> ms
     this.worker = null;            // son nabiz { at, stats }
+    this.previews = new Map();     // kanal -> { jpeg, at } (yalniz bellekte: isaretli son kare)
+    this.viewers = new Map();      // kanal -> Set(res) canli algilama izleyicileri
   }
 
   async load() {
@@ -139,6 +143,21 @@ export class AlertService {
     if (!a || !b || a === b) return true;
     const n = new Date().toTimeString().slice(0, 5);   // konteyner saat dilimi (TZ)
     return a < b ? n >= a && n < b : n >= a || n < b;   // gece yarisini asan aralik (22:00-07:00)
+  }
+
+  /** cam-ai'nin isaretli karesi: bellekte tutulur, izleyicilere MJPEG olarak gider. Yanit: izleyen var mi (yoksa seyrek gonderir). */
+  preview(k, jpeg) {
+    this.previews.set(k, { jpeg, at: Date.now() });
+    const set = this.viewers.get(k);
+    for (const r of set ?? []) if (!r.writableNeedDrain) writePart(r, jpeg);
+    return { watch: (set?.size ?? 0) > 0 };
+  }
+  watch(k, res) {
+    if (!this.viewers.has(k)) this.viewers.set(k, new Set());
+    const set = this.viewers.get(k); set.add(res);
+    const p = this.previews.get(k);
+    if (p && Date.now() - p.at < 10_000) writePart(res, p.jpeg);
+    res.on('close', () => set.delete(res));
   }
 
   // ---------------------------------------------------------------- Telegram

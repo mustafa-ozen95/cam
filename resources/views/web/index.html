@@ -338,6 +338,10 @@
         <header class="panel__head"><h2 class="panel__title">Durum</h2></header>
         <div class="panel__body"><dl class="facts" id="alertInfo"></dl></div>
       </section>
+      <section class="panel" id="alertLivePanel">
+        <header class="panel__head"><div><h2 class="panel__title">Canlı algılama</h2><p class="text-sm text-muted">Modelin gördüğü: kişi kutusu, iskelet, duruş (dik/yatay, açı, güven). Kırmızı = alarm. Yalnız bu sekme açıkken akar.</p></div></header>
+        <div class="panel__body"><div id="alertLive" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:12px"></div></div>
+      </section>
       <section class="panel" id="alertTgPanel">
         <header class="panel__head"><div><h2 class="panel__title">Telegram</h2><p class="text-sm text-muted">Bot jetonu şifreli saklanır, ekrana geri gelmez.</p></div></header>
         <div class="panel__body">
@@ -897,7 +901,7 @@ function openTab(name) {
   if (name === 'audit') reloadAuditLog();
   if (name === 'updates') updateReload();
   if (name === 'database') dbReload();
-  if (name === 'alerts') alertReload();
+  if (name === 'alerts') alertReload(); else alertLive(false);
   if (name !== 'recordings') pauseTl();
 }
 document.addEventListener('click', (e) => {
@@ -2580,10 +2584,20 @@ async function alertEvents() {
     })));
   } catch (err) { box.replaceChildren(writeError(err.message)); }
 }
+function alertLive(on) {
+  const box = $('#alertLive');
+  if (!on || !alertDoc) { for (const i of box.querySelectorAll('img')) i.removeAttribute('src'); box.replaceChildren(); return; }
+  const d = alertDoc.detection, list = alertDoc.channels.filter((c) => !d.channels.length || d.channels.includes(c.channel));
+  if (!d.enabled || !list.length) { box.replaceChildren(el('p', { class: 'text-sm text-muted' }, 'Algılama kapalı: aşağıdan açıp kaydedin.')); return; }
+  box.replaceChildren(...list.map((c) => el('figure', { style: 'margin:0' },
+    el('img', { src: `/api/alerts/preview?channel=${c.channel}&t=${Date.now()}`, alt: c.name, style: 'width:100%;aspect-ratio:16/9;object-fit:contain;background:#000;border-radius:6px;display:block' }),
+    el('figcaption', { class: 'text-sm text-muted' }, `${c.name} (K${c.channel + 1})`))));
+}
 async function alertReload() {
   const manage = hasPermission('alert.manage');
   for (const id of ['#alertTgPanel', '#alertDetPanel', '#alertHelpPanel']) $(id).hidden = !manage;
-  if (manage) { try { alertDraw(await api('/api/alerts')); } catch (err) { $('#alertInfo').replaceChildren(writeError(err.message)); } }
+  $('#alertLivePanel').hidden = !manage;
+  if (manage) { try { alertDraw(await api('/api/alerts')); alertLive(status.tab === 'alerts'); } catch (err) { $('#alertInfo').replaceChildren(writeError(err.message)); } }
   else $('#alertInfo').replaceChildren();
   if (hasPermission('event.read')) alertEvents();
 }
@@ -2594,7 +2608,7 @@ const alertTg = () => {
 };
 async function alertPut(body, button) {
   button.disabled = true;
-  try { alertDraw(await api('/api/alerts', { method: 'PUT', body: JSON.stringify(body) })); notify('Kaydedildi.', 'success'); }
+  try { alertDraw(await api('/api/alerts', { method: 'PUT', body: JSON.stringify(body) })); alertLive(true); notify('Kaydedildi.', 'success'); }
   catch (err) { notify(err.message, 'danger'); } finally { button.disabled = false; }
 }
 $('#alertTgForm').addEventListener('submit', (e) => { e.preventDefault(); alertPut({ telegram: alertTg() }, $('#alertTgForm button[type=submit]')); });

@@ -12,6 +12,11 @@ export function alertsController({ alerts, devices, auditLog, config }) {
     const m = /^Bearer\s+(.+)$/i.exec(String(ctx.req.headers.authorization ?? ''));
     if (!m || !timingSafeEqual(createHash('sha256').update(m[1].trim()).digest(), secret)) throw new HttpError(401, 'Kimlik doğrulanamadı', 'UNAUTHORIZED');
   };
+  const readBinary = (req, limit) => new Promise((resolve, reject) => {
+    const parts = []; let size = 0;
+    req.on('data', (b) => { size += b.length; if (size > limit) { req.destroy(); reject(new HttpError(413, 'Gövde çok büyük', 'BODY_TOO_LARGE')); } else parts.push(b); });
+    req.on('end', () => resolve(Buffer.concat(parts))); req.on('error', reject);
+  });
   const channelOf = (v) => (v === undefined || v === null || v === '' ? undefined : Number(v));
   return {
     async settings(ctx) { return json(ctx.res, 200, alerts.view()); },
@@ -40,7 +45,24 @@ export function alertsController({ alerts, devices, auditLog, config }) {
       }));
     },
 
+    /** Canli algilama: cam-ai'nin isaretli kareleri (kutu, iskelet, durum) MJPEG; kare diske inmez. */
+    async preview(ctx) {
+      const k = Number(ctx.q.get('channel'));
+      if (!Number.isInteger(k) || k < 0) throw new HttpError(400, 'kanal geçersiz', 'INVALID_REQUEST');
+      ctx.needChannel(k);
+      ctx.res.raw = true;
+      ctx.res.writeHead(200, { 'Content-Type': 'multipart/x-mixed-replace; boundary=frame', 'Cache-Control': 'no-store', Connection: 'close' });
+      alerts.watch(k, ctx.res);
+    },
+
     // ---------- cam-ai ----------
+    async framePush(ctx) {
+      worker(ctx);
+      const k = Number(ctx.q.get('channel'));
+      if (!Number.isInteger(k) || k < 0 || k >= (devices.group.channelTotal ?? 0)) throw new HttpError(400, 'kanal geçersiz', 'INVALID_REQUEST');
+      const jpeg = await readBinary(ctx.req, 1_000_000);
+      return json(ctx.res, 200, alerts.preview(k, jpeg));
+    },
     async heartbeat(ctx) { worker(ctx); const g = await readBody(ctx.req, 50_000); return json(ctx.res, 200, alerts.heartbeat(g.stats)); },
     async report(ctx) { worker(ctx); const g = await readBody(ctx.req, 1_500_000); return json(ctx.res, 200, await alerts.report(g)); },
     /** Kanalin alt akisi ham JPEG dizisi olarak (paylasilan akis: izleyicilerle ayni cihaz baglantisi). */
