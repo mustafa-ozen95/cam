@@ -525,6 +525,7 @@ def run_channel(channel, cfg, counter):
     threading.Thread(target=frames, args=(channel, latest, stop), daemon=True).start()
     tracks, prev, last_t, last_motion_ev, last_inf = [], None, 0, 0, 0
     fprev, fprev_t = None, 0             # optik akis icin onceki gri kare (640 px) ve zamani
+    ghost_spots = []                     # sabit sahte kisi yerleri (cx, cy, boy, son)
     veh_boxes = []                       # son seg'deki araclar (sahte kisi suzgeci)
     moving_at = 0                        # son seg'de hareketli arac/hayvan goruldugu an (golge/yagmur suzgeci)
     local_gap = {}                       # tur -> son gonderim (yerel seyreltme; asil bekleme panelde)
@@ -783,7 +784,13 @@ def run_channel(channel, cfg, counter):
             if a is None or math.hypot(c[0] - a[0], c[1] - a[1]) > 0.08 * hh:
                 tr.anchor, tr.top = (c[0], c[1], now), tr.p['score']
             tr.top = max(getattr(tr, 'top', 0), tr.p['score'])
-            tr.ghost = now - tr.anchor[2] > 15 and tr.top < 0.55
+            spot = any(math.hypot(c[0] - g[0], c[1] - g[1]) < 0.15 * hh and abs(hh - g[2]) < 0.3 * hh for g in ghost_spots)
+            tr.ghost = tr.top < 0.55 and (now - tr.anchor[2] > 15 or spot)
+            if tr.ghost and not spot:
+                ghost_spots.append((c[0], c[1], hh, now))
+            if tr.ghost:                 # yer hatirlanir (10 dk): iz yeniden dogsa da hemen gizli
+                ghost_spots[:] = [g if math.hypot(c[0] - g[0], c[1] - g[1]) >= 0.15 * hh else (g[0], g[1], g[2], now) for g in ghost_spots]
+        ghost_spots[:] = [g for g in ghost_spots if now - g[3] < 600][-20:]
         live = [t for t in tracks if t.seen == now and not t.ghost]
         for tr in live:                                  # kisi konturu: seg sonucundan esle, arada kutuyla tasi
             if segs is not None:
