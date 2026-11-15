@@ -9,6 +9,7 @@ cam-ai: kamera panelinin goruntu analizi (YOLO11n-pose, CPU, onnxruntime).
      collapse : yatay ve hareketsiz > collapseSec
      fight    : (deneysel) iki kisi ust uste ve bilekler cok hizli
      motion   : kisi yokken hareket
+     approach : beyaz araca (yolo11n arac sinifi + renk) yaklasan kisi; arac 5 sn'de bir aranir
  - Olay -> POST /api/ai/report (isaretli JPEG, base64). Bildirim karari (bekleme, saat) panelde. Diske hicbir sey yazilmaz.
 """
 import base64, json, math, multiprocessing as mp, os, signal, threading, time, urllib.request
@@ -20,6 +21,7 @@ import onnxruntime as ort
 CAM = os.environ.get('CAM_URL', 'http://cam').rstrip('/')
 SECRET = os.environ.get('CAM_AI_SECRET', '')
 MODEL = os.environ.get('CAM_AI_MODEL', '/models/yolo11n-pose.onnx')
+DETECT = os.environ.get('CAM_AI_DETECT', '/models/yolo11n.onnx')
 SIZE = int(os.environ.get('CAM_AI_SIZE', '416'))
 THREADS = int(os.environ.get('CAM_AI_THREADS', '2'))
 HEADERS = {'Authorization': f'Bearer {SECRET}', 'Content-Type': 'application/json'}
@@ -46,15 +48,15 @@ def post_jpeg(channel, data):
 
 # ------------------------------------------------------------------ model
 class Pose:
-    def __init__(self):
+    def __init__(self, path=MODEL):
         o = ort.SessionOptions()
         o.intra_op_num_threads = THREADS
         o.inter_op_num_threads = 1
         o.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        self.s = ort.InferenceSession(MODEL, o, providers=['CPUExecutionProvider'])
+        self.s = ort.InferenceSession(path, o, providers=['CPUExecutionProvider'])
         self.name = self.s.get_inputs()[0].name
 
-    def __call__(self, img, conf=0.35):
+    def letterbox(self, img):
         h, w = img.shape[:2]
         r = SIZE / max(h, w)
         nw, nh = int(round(w * r)), int(round(h * r))
@@ -62,7 +64,10 @@ class Pose:
         top, left = (SIZE - nh) // 2, (SIZE - nw) // 2
         pad[top:top + nh, left:left + nw] = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_LINEAR)
         x = cv2.cvtColor(pad, cv2.COLOR_BGR2RGB).transpose(2, 0, 1)[None].astype(np.float32) / 255.0
-        out = self.s.run(None, {self.name: x})[0][0].T          # (N, 56): cx cy w h conf + 17*(x y v)
+        return self.s.run(None, {self.name: x})[0][0].T, r, top, left
+
+    def __call__(self, img, conf=0.35):
+        out, r, top, left = self.letterbox(img)          # (N, 56): cx cy w h conf + 17*(x y v)
         out = out[out[:, 4] >= conf]
         if not len(out):
             return []
@@ -77,6 +82,39 @@ class Pose:
             k[:, 0] = (k[:, 0] - left) / r; k[:, 1] = (k[:, 1] - top) / r
             res.append({'box': [float(b[0]), float(b[1]), float(b[0] + b[2]), float(b[1] + b[3])], 'score': float(out[i, 4]), 'kp': k})
         return res
+
+
+class Detect(Pose):
+    """yolo11n (COCO 80 sinif): yalniz araba(2) ve kamyonet/kamyon(7)."""
+    def __call__(self, img, conf=0.4):
+        out, r, top, left = self.letterbox(img)          # (N, 84): cx cy w h + 80 sinif
+        cls = out[:, 4:].argmax(1); sc = out[np.arange(len(out)), 4 + cls]
+        m = ((cls == 2) | (cls == 7)) & (sc >= conf)
+        out, sc = out[m], sc[m]
+        if not len(out):
+            return []
+        boxes = np.stack([out[:, 0] - out[:, 2] / 2, out[:, 1] - out[:, 3] / 2, out[:, 2], out[:, 3]], 1)
+        res = []
+        for i in np.array(cv2.dnn.NMSBoxes(boxes.tolist(), sc.tolist(), conf, 0.45)).flatten():
+            x, y, w, h = boxes[i]
+            res.append({'box': [float((x - left) / r), float((y - top) / r), float((x + w - left) / r), float((y + h - top) / r)], 'score': float(sc[i])})
+        return res
+
+
+def white_ratio(img, box):
+    h, w = img.shape[:2]
+    x1, y1, x2, y2 = [int(v) for v in box]
+    x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
+    if x2 - x1 < 8 or y2 - y1 < 8:
+        return 0.0
+    hsv = cv2.cvtColor(img[y1:y2, x1:x2], cv2.COLOR_BGR2HSV)
+    return float(((hsv[:, :, 1] < 50) & (hsv[:, :, 2] > 150)).mean())
+
+
+def near(person, car, margin=0.25):
+    m = margin * (car[2] - car[0])
+    x1, y1, x2, y2 = car[0] - m, car[1] - m, car[2] + m, car[3] + m
+    return person[0] < x2 and person[2] > x1 and person[1] < y2 and person[3] > y1
 
 
 def iou(a, b):
@@ -150,7 +188,7 @@ def draw(img, people, title):
     v = img.copy()
     for p in people:
         x1, y1, x2, y2 = map(int, p['box'])
-        c = (0, 0, 255) if p.get('alarm') else (0, 200, 0)
+        c = (255, 140, 0) if p.get('car') else (0, 0, 255) if p.get('alarm') else (0, 200, 0)
         cv2.rectangle(v, (x1, y1), (x2, y2), c, 2)
         if p.get('label'):
             t = p['label'].translate(ASCII)
@@ -158,8 +196,8 @@ def draw(img, people, title):
             ty = max(y1, th + 26)
             cv2.rectangle(v, (x1, ty - th - 4), (x1 + tw + 6, ty), c, -1)
             cv2.putText(v, t, (x1 + 3, ty - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
-        k = p['kp']
-        for a, b in SKELETON:
+        k = p.get('kp')
+        for a, b in (SKELETON if k is not None else []):
             if k[a, 2] > 0.4 and k[b, 2] > 0.4:
                 cv2.line(v, (int(k[a, 0]), int(k[a, 1])), (int(k[b, 0]), int(k[b, 1])), (255, 200, 0), 1)
     cv2.rectangle(v, (0, 0), (v.shape[1], 22), (0, 0, 0), -1)
@@ -176,6 +214,8 @@ def annotate(img, people, title):
 def run_channel(channel, cfg, counter):
     signal.signal(signal.SIGTERM, lambda *_: os._exit(0))
     model, latest, stop = Pose(), {'jpeg': None, 't': 0}, threading.Event()
+    detector = Detect(DETECT) if os.path.exists(DETECT) else None
+    cars, car_check = [], 0              # beyaz araclar [{box, score, at}]
     threading.Thread(target=frames, args=(channel, latest, stop), daemon=True).start()
     tracks, prev, last_t, last_motion_ev, last_inf = [], None, 0, 0, 0
     local_gap = {}                       # tur -> son gonderim (yerel seyreltme; asil bekleme panelde)
@@ -229,12 +269,20 @@ def run_channel(channel, cfg, counter):
         # kisi izi yoksa ve hareket yoksa model calismaz (2 sn'de bir yine bakilir)
         if not motion and not tracks and now - last_inf < 2:
             counter.value += 1
-            show(img, [], 'sakin (model beklemede)')
+            show(img, [{'box': c['box'], 'car': True, 'label': 'beyaz arac'} for c in cars], 'sakin (model beklemede)')
             continue
         last_inf = now
         people = [p for p in model(img, 0.35) if p['score'] >= 0.35]
         counter.value += 1
         min_score = float(cfg.get('minScore', 0.5))
+        # --- beyaz arac (5 sn'de bir; kisi araci orterse son bilinen yer 60 sn tutulur)
+        if detector and cfg.get('types', {}).get('approach') and now - car_check >= 5:
+            car_check = now
+            seen = [c for c in detector(img) if white_ratio(img, c['box']) > 0.35]
+            for c in seen:
+                c['at'] = now
+            cars = seen + [c for c in cars if now - c['at'] < 60 and not any(iou(c['box'], s['box']) > 0.3 for s in seen)]
+        car_marks = [{'box': c['box'], 'score': c['score'], 'car': True, 'label': 'beyaz arac'} for c in cars]
         # --- izleyici (acgozlu IoU)
         used = set()
         for tr in tracks:
@@ -256,6 +304,11 @@ def run_channel(channel, cfg, counter):
             p['label'] = f'#{tr.id} {"yatay" if lying else "dik"} {int(ang)}° %{int(p["score"] * 100)}'
             x1, y1, x2, y2 = p['box']
             cx, cy, size = (x1 + x2) / 2, (y1 + y2) / 2, max(x2 - x1, y2 - y1)
+            if cars and tr.hits >= 2 and not getattr(tr, 'near_car', False) and any(near(p['box'], c['box']) for c in cars):
+                tr.near_car = True; p['alarm'] = True
+                report('approach', p['score'], 'kişi beyaz aracın yanında', img, car_marks + [t.p for t in live])
+            elif cars and getattr(tr, 'near_car', False) and not any(near(p['box'], c['box'], 0.5) for c in cars):
+                tr.near_car = False
             if not tr.announced and tr.hits >= 3 and p['score'] >= min_score:
                 tr.announced = True
                 report('person', p['score'], f'{len(live)} kişi', img, [t.p for t in live])
@@ -294,7 +347,7 @@ def run_channel(channel, cfg, counter):
                 for tr in fast:
                     tr.p['alarm'] = True
                 report('fight', max(t.p['score'] for t in fast), f'{len(live)} kişi, hızlı kol hareketi', img, [t.p for t in live])
-        show(img, [t.p for t in live], f'{len(live)} kişi' + (f'  hareket %{moved * 100:.0f}' if motion else ''))
+        show(img, car_marks + [t.p for t in live], f'{len(live)} kişi' + (f'  {len(cars)} beyaz araç' if cars else '') + (f'  hareket %{moved * 100:.0f}' if motion else ''))
         if motion and not live and now - last_motion_ev > 30:
             last_motion_ev = now
             report('motion', None, f'görüntünün %{moved * 100:.0f} değişti', img, [])

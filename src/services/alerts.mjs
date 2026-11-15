@@ -17,11 +17,12 @@ export const EVENT_TYPES = {
   collapse: { tr: 'Hareketsiz yatan kişi (bayılma olabilir)', icon: '🚨' },
   fight: { tr: 'Kavga / saldırgan hareket olabilir', icon: '🥊' },
   motion: { tr: 'Hareket algılandı', icon: '👣' },
+  approach: { tr: 'Beyaz araca yaklaşan kişi', icon: '🚗' },
 };
 const DEFAULTS = {
   telegram: { enabled: false, token: null, chat: '', thread: '', photo: true },
   detection: {
-    enabled: false, channels: [], types: { person: true, fall: true, collapse: true, fight: false, motion: false },
+    enabled: false, channels: [], types: { person: true, fall: true, collapse: true, fight: false, motion: false, approach: true },
     cooldownSec: 120, collapseSec: 20, minScore: 0.5, fps: 4, activeFrom: '', activeTo: '',
   },
 };
