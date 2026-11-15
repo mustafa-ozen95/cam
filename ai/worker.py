@@ -221,9 +221,47 @@ def follow(poly, a, b):
     return q
 
 
+def flow_box(a, b, p, s):
+    """Kisi kutusunu onceki gri kareden (a) bu kareye (b) optik akisla tasir; s: tam kare / gri kare olcegi.
+    Noktalar kisi konturundan (yoksa kutunun ortasindan) alinir, ileri-geri tutarli olanlarin ortancasi."""
+    h, w = a.shape
+    x1, y1, x2, y2 = p['box']
+    mask = np.zeros_like(a)
+    if p.get('poly') is not None and len(p['poly']) >= 3:
+        cv2.fillPoly(mask, [np.round(np.asarray(p['poly']) / s).astype(np.int32)], 255)
+        mask = cv2.erode(mask, np.ones((3, 3), np.uint8))
+    else:
+        bw, bh = (x2 - x1) / s, (y2 - y1) / s
+        cv2.rectangle(mask, (int(x1 / s + bw * 0.25), int(y1 / s + bh * 0.1)), (int(x2 / s - bw * 0.25), int(y2 / s - bh * 0.1)), 255, -1)
+    pts = cv2.goodFeaturesToTrack(a, 40, 0.01, 3, mask=mask)
+    if pts is None or len(pts) < 4:
+        return None
+    lk = dict(winSize=(15, 15), maxLevel=3, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 20, 0.03))
+    nxt, st, _ = cv2.calcOpticalFlowPyrLK(a, b, pts, None, **lk)
+    back, st2, _ = cv2.calcOpticalFlowPyrLK(b, a, nxt, None, **lk)
+    ok = (st.ravel() == 1) & (st2.ravel() == 1) & (np.linalg.norm((back - pts).reshape(-1, 2), axis=1) < 1.0)
+    if ok.sum() < 4:
+        return None
+    d = (nxt - pts).reshape(-1, 2)[ok]
+    dx, dy = float(np.median(d[:, 0])) * s, float(np.median(d[:, 1])) * s
+    if abs(dx) > (x2 - x1) * 0.6 or abs(dy) > (y2 - y1) * 0.6:
+        return None
+    return [x1 + dx, y1 + dy, x2 + dx, y2 + dy]
+
+
+def shift_item(p, nb):
+    dx, dy = nb[0] - p['box'][0], nb[1] - p['box'][1]
+    q = dict(p, box=nb)
+    if q.get('poly') is not None:
+        q['poly'] = np.asarray(q['poly'], np.float32) + np.array([dx, dy], np.float32)
+    if q.get('kp') is not None:
+        q['kp'] = q['kp'].copy(); q['kp'][:, 0] += dx; q['kp'][:, 1] += dy
+    return q
+
+
 def predict(tr, now):
     """Bu karede gorulmeyen izi hiziyla ileri tasir (en cok 0.6 sn)."""
-    v, dt = getattr(tr, 'v', None), now - tr.seen
+    v, dt = getattr(tr, 'v', None), now - max(tr.seen, getattr(tr, 'fseen', 0))
     if not v or dt <= 0:
         return tr.p
     b = tr.p['box']; nb = [b[0] + v[0] * dt, b[1] + v[1] * dt, b[2] + v[0] * dt, b[3] + v[1] * dt]
@@ -412,6 +450,7 @@ def run_channel(channel, cfg, counter):
     others = []                          # korunan disindaki araclar (yalniz katmanda gosterilir)
     threading.Thread(target=frames, args=(channel, latest, stop), daemon=True).start()
     tracks, prev, last_t, last_motion_ev, last_inf = [], None, 0, 0, 0
+    fprev, fprev_t = None, 0             # optik akis icin onceki gri kare (640 px) ve zamani
     local_gap = {}                       # tur -> son gonderim (yerel seyreltme; asil bekleme panelde)
     view = {'watch': False, 'at': 0}
     ov = {'watch': False, 'at': 0}       # canli goruntu ustu katman
@@ -535,6 +574,8 @@ def run_channel(channel, cfg, counter):
         if prev is not None and prev.shape == g.shape:
             moved = float((cv2.absdiff(g, prev) > 25).mean())
         prev = g
+        fg = cv2.cvtColor(cv2.resize(img, (640, int(640 * img.shape[0] / img.shape[1]))), cv2.COLOR_BGR2GRAY)
+        fa, fa_t, fprev, fprev_t = fprev, fprev_t, fg, now
         motion = moved > 0.002
         if moved > 0.01:                 # plaka okuyucu yalniz belirgin harekette (gurultu her 3 sn okumasin)
             state['motion_at'] = now
@@ -591,7 +632,7 @@ def run_channel(channel, cfg, counter):
                     best, bi = iou(tr.p['box'], p['box']), i
             if bi >= 0:
                 used.add(bi)
-                a, b, dt = tr.p['box'], people[bi]['box'], now - tr.seen
+                a, b, dt = tr.p['box'], people[bi]['box'], now - max(tr.seen, getattr(tr, 'fseen', 0))
                 if 0 < dt < 1.5:          # merkez hizi (px/sn), yumusatilmis
                     nv = (((b[0] + b[2]) - (a[0] + a[2])) / 2 / dt, ((b[1] + b[3]) - (a[1] + a[3])) / 2 / dt)
                     ov_v = getattr(tr, 'v', None)
@@ -602,6 +643,14 @@ def run_channel(channel, cfg, counter):
             if i not in used:
                 tracks.append(Track(p, now))
         tracks = [t for t in tracks if now - t.seen < 3]
+        # bu karede model bulamadi (uzak/koyu kisiyi seg saniyede 2 bulur): bir onceki kareden optik akisla her karede tasi
+        if fa is not None and fa.shape == fg.shape:
+            s = img.shape[1] / fg.shape[1]
+            for tr in tracks:
+                if tr.seen != now and now - tr.seen < 1.5 and max(tr.seen, getattr(tr, 'fseen', 0)) == fa_t:
+                    nb = flow_box(fa, fg, tr.p, s)
+                    if nb is not None:
+                        tr.p, tr.fseen = shift_item(tr.p, nb), now
         live = [t for t in tracks if t.seen == now]
         for tr in live:                                  # kisi konturu: seg sonucundan esle, arada kutuyla tasi
             if segs is not None:

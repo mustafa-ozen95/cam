@@ -1483,7 +1483,8 @@ function overlaySync(watch) {
   overlaySource.onmessage = (e) => {
     try {
       const o = JSON.parse(e.data), now = performance.now() / 1000, d = overlayData.get(o.channel) || { hist: [] };
-      d.hist.push([now - (o.age || 0), o.items]); d.hist.sort((a, b) => a[0] - b[0]);   // yakalanma ani (istemci saati)
+      // yakalanma ani (istemci saati): analiz suresi + JPEG cozme boru gecikmesi (olculdu ~0.17 sn; canli MP4'te yok)
+      d.hist.push([now - (o.age || 0) - 0.17, o.items]); d.hist.sort((a, b) => a[0] - b[0]);
       while (d.hist.length > 2 && now - d.hist[0][0] > 4) d.hist.shift();
       d.at = now; overlayData.set(o.channel, d);
     } catch { /* bozuk ileti */ }
@@ -1491,11 +1492,17 @@ function overlaySync(watch) {
 }
 function overlayDrawAll() { for (const k of Object.keys(frames)) overlayDraw(Number(k)); if (status.focus !== null) overlayDraw(status.focus); }
 /** Canli videonun ekrandaki gecikmesi (sn): oynatici tamponu + sabit boru gecikmesi (localStorage overlayShift ile ayarlanir). */
+const lagMark = new WeakMap();
 function videoLag(v) {
   let shift = 0;
   try { shift = Number(localStorage.getItem('overlayShift')) || 0; } catch { /* yok */ }
   const b = v?.buffered;
-  return (b?.length ? Math.max(0, b.end(b.length - 1) - v.currentTime) : 0) + shift;
+  if (!b?.length) return shift;
+  // tamponun sonu parca parca (~0.2 sn) gelir: son kare, parcanin GELDIGI anda cekilmistir; o andan beri gecen sure de eklenir
+  const end = b.end(b.length - 1), now = performance.now() / 1000;
+  let m = lagMark.get(v);
+  if (!m || m.end !== end) { m = { end, at: now }; lagMark.set(v, m); }
+  return Math.max(0, end - v.currentTime) + Math.min(0.5, now - m.at) + shift;
 }
 function overlayDraw(k) {
   const focus = status.focus === k, video = focus ? $('#focusVideo') : frames[k]?.video, canvas = focus ? $('#focusOverlay') : frames[k]?.canvas;
