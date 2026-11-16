@@ -2739,7 +2739,7 @@ function alertDraw(g) {
   $('#alertOverlay').checked = preferences.overlay;
   const t = g.telegram, d = g.detection, k = $('#alertInfo'); k.replaceChildren(); const row = makeRow(k);
   const w = g.worker, alive = !!w && w.lastSeenSec < 60;
-  row('Analiz servisi', !g.aiReady ? 'kurulmamış (CAM_AI_SECRET yok)' : el('span', { class: `badge badge--${alive ? 'green' : 'red'}` }, alive ? 'çalışıyor' : w ? `${w.lastSeenSec} sn'dir ses yok` : 'bağlanmadı'), !alive);
+  row('Analiz servisi', !g.aiReady ? 'kurulu değil (docker-compose ile kurun)' : el('span', { class: `badge badge--${alive ? 'green' : 'red'}` }, alive ? (d.enabled ? 'çalışıyor' : 'hazır, beklemede') : w ? `${w.lastSeenSec} sn'dir ses yok` : 'bağlanmadı (cam-ai konteyneri çalışıyor mu?)'), !alive);
   if (alive && w.stats) row('İzlenen', `${w.stats.channels ?? 0} kamera · ${w.stats.fps ?? '—'} kare/sn · CPU %${w.stats.cpu ?? '—'}`);
   row('Algılama', d.enabled ? 'açık' : 'kapalı');
   row('Telegram bildirimi', t.enabled ? `açık · ${t.chat}` : 'kapalı (Bildirim sekmesi)');

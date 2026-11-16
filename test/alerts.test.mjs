@@ -1,6 +1,9 @@
 /** Yapay zeka (goruntu analizi) varsayilan KAPALI: sir yoksa uclar yok, algilama ve Telegram kapali, kapaliyken olay yazilmaz. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openApp } from './helpers.mjs';
 
 const SECRET = 'ai-test-sirri-0123456789abcdef';
@@ -13,6 +16,26 @@ test('sir tanimsiz (varsayilan): /api/ai/* uclari yok (404)', async () => {
       assert.equal(r.status, 404, `${method} ${path}: ${r.status}`);
     }
   } finally { await t.close(); }
+});
+
+test('sir dosyasi (docker-compose): sir yoksa uretilir, cam-ai ile paylasilir, yeniden acilista ayni kalir', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cam-ai-link-')), secretFile = join(dir, 'secret');
+  try {
+    const t = await openApp({ ai: { secretFile } });
+    let s;
+    try {
+      s = readFileSync(secretFile, 'utf8').trim();
+      assert.match(s, /^[0-9a-f]{64}$/);
+      const hb = await t.req('/api/ai/heartbeat', { method: 'POST', body: {}, bearer: s });
+      assert.equal(hb.status, 200, hb.text);
+      assert.equal(hb.json.enabled, false);   // kurulu ama algilama varsayilan kapali
+    } finally { await t.close(); }
+    const t2 = await openApp({ ai: { secretFile } });
+    try {
+      assert.equal(readFileSync(secretFile, 'utf8').trim(), s);
+      assert.equal((await t2.req('/api/ai/heartbeat', { method: 'POST', body: {}, bearer: s })).status, 200);
+    } finally { await t2.close(); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('varsayilan ayar: algilama ve Telegram kapali; nabiz kanal vermez; olay yazilmaz', async () => {

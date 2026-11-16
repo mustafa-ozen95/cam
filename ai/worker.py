@@ -26,6 +26,8 @@ import onnxruntime as ort
 
 CAM = os.environ.get('CAM_URL', 'http://cam').rstrip('/')
 SECRET = os.environ.get('CAM_AI_SECRET', '')
+# Ortak sir verilmediyse panelin urettigi dosyadan okunur (paylasilan ai_link hacmi): kurulumda elle ayar gerekmez.
+SECRET_FILE = os.environ.get('CAM_AI_SECRET_FILE', '/run/cam-ai/secret')
 # yolo26: ayni hizda daha cok kisi/arac (olculdu: gece kayitlari, 26s-seg arac 1.3-1.8x, kisi puani 0.61->0.72; 26n-pose kisi 10->13)
 MODEL = os.environ.get('CAM_AI_MODEL', '/models/yolo26n-pose.onnx')
 SEGMENT = os.environ.get('CAM_AI_SEG', '/models/yolo26s-seg.onnx')
@@ -1034,9 +1036,23 @@ def cpu_usage():
     return None
 
 
+def read_secret():
+    if SECRET:
+        return SECRET
+    try:
+        with open(SECRET_FILE) as f:
+            return f.read().strip()
+    except OSError:
+        return ''
+
+
 def main():
-    if not SECRET:
-        log('CAM_AI_SECRET yok: bekleniyor'); time.sleep(3600); return
+    secret, waited = read_secret(), False
+    while not secret:                      # panel ilk acilista uretir; o zamana kadar bekle
+        if not waited:
+            log(f'ortak sir yok ({SECRET_FILE}): panel bekleniyor'); waited = True
+        time.sleep(10); secret = read_secret()
+    HEADERS['Authorization'] = f'Bearer {secret}'
     if not os.path.exists(MODEL):
         log(f'model yok: {MODEL}'); return
     manager = mp.Manager()

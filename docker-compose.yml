@@ -58,10 +58,12 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD gerekli (.env.example)}
       # base64, 32 bayt (openssl rand -base64 32). Boşsa data/secret.key dosyası kullanılır. Veritabanına girmez.
       CAM_SECRET_KEY: ${CAM_SECRET_KEY:-}
-      # cam-ai ile ortak sir (openssl rand -hex 32). Bossa goruntu analizi uc noktalari kapali (404).
+      # cam-ai ile ortak sir. Bossa panel ilk acilista uretir ve ai_link hacmine yazar (cam-ai oradan okur); elle ayar gerekmez.
       CAM_AI_SECRET: ${CAM_AI_SECRET:-}
+      CAM_AI_SECRET_FILE: /app/ai-link/secret
     volumes:
       - data:/app/data
+      - ai_link:/app/ai-link
     # DB_REPLICAS=0 (dışarıdaki veritabanı) iken db servisi yoktur; bağımlılık o zaman aranmaz.
     depends_on:
       db:
@@ -111,21 +113,26 @@ services:
       # WebRTC medyası; HTTP değil, vekil taşımaz.
       - "${CAM_RTC_PORT:-8189}:8189/udp"
 
-  # Goruntu analizi (YOLO11n-pose, CPU). Istege bagli: COMPOSE_PROFILES=ai. Kareyi panelin paylasilan akisindan alir;
-  # cihaza ek baglanti acmaz, diske yazmaz. Ayar ve olaylar: panel Ayarlar -> Bildirim.
+  # Goruntu analizi (YOLO, CPU). Kendiliginden kurulur ama BOSTA bekler: model yuklemez, kare almaz; panelde
+  # Ayarlar -> Yapay zeka'dan algilama acilinca calisir. Hic istenmiyorsa: CAM_AI_REPLICAS=0
+  # (konteyner kalkmaz; imaj yine derlenir). Kareyi panelin paylasilan akisindan alir; cihaza ek baglanti acmaz, diske yazmaz.
   cam-ai:
     build: ./ai
-    profiles: ["ai"]
     container_name: ${CAM_AI_CONTAINER:-cam-ai}
     restart: unless-stopped
+    deploy:
+      replicas: ${CAM_AI_REPLICAS:-1}
     environment:
       CAM_URL: http://cam
       CAM_AI_SECRET: ${CAM_AI_SECRET:-}
+      CAM_AI_SECRET_FILE: /run/cam-ai/secret
       CAM_AI_THREADS: ${CAM_AI_THREADS:-2}
     cpus: ${CAM_AI_CPUS:-6}
     mem_limit: ${CAM_AI_MEMORY:-1536m}
     read_only: true
     tmpfs: ["/tmp"]
+    volumes:
+      - ai_link:/run/cam-ai:ro
     depends_on: [cam]
 
 networks:
@@ -141,3 +148,6 @@ volumes:
   database:
     # MariaDB verisi (üyeler, cihazlar, günlük, roller, anahtarlar...).
     name: ${CAM_DB_VOLUME:-cam_database}
+  ai_link:
+    # Yalniz panel ile cam-ai arasindaki ortak sir (panel yazar, cam-ai salt okur). Gizli anahtar (data/) buraya girmez.
+    name: ${CAM_AI_LINK_VOLUME:-cam_ai_link}

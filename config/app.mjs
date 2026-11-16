@@ -121,6 +121,8 @@ export const config = Object.freeze({
    */
   ai: {
     secret: env.CAM_AI_SECRET || '',
+    // Sir verilmediyse burada uretilir/okunur ve cam-ai ile paylasilir (docker-compose: ai_link hacmi). Bossa uretilmez.
+    secretFile: env.CAM_AI_SECRET_FILE || '',
     telegramApi: (env.CAM_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, ''),
   },
 

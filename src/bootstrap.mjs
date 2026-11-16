@@ -2,8 +2,8 @@
  * Onyukleme (Laravel bootstrap/app.php karsiligi): hizmetleri kurar, denetleyicileri baglar, rotalari yukler, uygulamayi dondurur.
  * Giris noktasi bin/cam.mjs; testler de buradan uygulama kurar (gercek cihaz yerine sahte surucuyle).
  */
-import { join } from 'node:path';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { App } from './core/app.mjs';
 import { Database } from './core/database.mjs';
@@ -58,7 +58,29 @@ export async function createApp(config, extra = {}) {
   try { return await createAppWithDb(config, db, extra); } catch (e) { await db.close(); throw e; }
 }
 
+/**
+ * cam-ai ortak sirri: CAM_AI_SECRET verilmediyse ve paylasilan dosya yolu (CAM_AI_SECRET_FILE) tanimliysa oradan okunur,
+ * yoksa uretilip yazilir (cam-ai ayni dosyayi salt okur). Kurulumda elle ayar gerekmez; algilama yine varsayilan KAPALI.
+ */
+export function withAiSecret(config) {
+  const { secret, secretFile } = config.ai ?? {};
+  if (secret || !secretFile) return config;
+  try {
+    let s = existsSync(secretFile) ? readFileSync(secretFile, 'utf8').trim() : '';
+    if (!/^[0-9a-f]{64}$/.test(s)) {
+      s = randomBytes(32).toString('hex');
+      mkdirSync(dirname(secretFile), { recursive: true });
+      writeFileSync(secretFile, s + '\n', { mode: 0o644 });   // yalniz bu iki konteynerin gordugu hacim; cam-ai baska kullanici
+    }
+    return { ...config, ai: { ...config.ai, secret: s } };
+  } catch (e) {
+    console.error(`Görüntü analizi ortak sırrı yazılamadı (${secretFile}): ${e.message}`);
+    return config;
+  }
+}
+
 async function createAppWithDb(config, db, extra) {
+  config = withAiSecret(config);
   const secret = panelSecret(config);
   await db.runMigrations({ secret });   // gizli anahtara bagli kayitli veriyi tasiyan gocler (surum 3) anahtari ister
   const settings = new Settings(db);

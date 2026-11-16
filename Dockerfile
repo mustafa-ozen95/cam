@@ -12,7 +12,8 @@ COPY routes ./routes
 COPY config ./config
 COPY resources ./resources
 COPY docs ./docs
-RUN mkdir -p /app/data && chown -R node:node /app/data
+# ai-link: cam-ai ile ortak sir (bos hacim ilk baglanista bu klasorun sahipligini alir)
+RUN mkdir -p /app/data /app/ai-link && chown -R node:node /app/data /app/ai-link
 # Konteynerde 80: Docker (20.10+) kök olmayan kullanıcıya düşük portu açar (ip_unprivileged_port_start=0).
 ENV CAM_PORT=80 CAM_HOST=0.0.0.0 TZ=Europe/Istanbul NODE_ENV=production
 VOLUME /app/data
