@@ -21,14 +21,26 @@ export const LIVE_ACCESS = ['public', 'private'];
 export const normalizeSlug = (v) => String(v ?? '').trim().toLowerCase().replace(/^\/+|\/+$/g, '');
 export function slugValid(slug, reserved = RESERVED_SLUGS) { return SLUG_RE.test(slug) && !reserved.has(slug) && !RESERVED_SLUGS.has(slug); }
 
-/** Bu kimlik (principal; null = kimliksiz) bu sayfayi gorebilir mi? */
+/**
+ * Bu kimlik (principal; null = kimliksiz) bu sayfayi gorebilir mi?
+ *
+ * SAYFADA ACIKCA SECILEN ROL, O SAYFAYI IZLEMEK ICIN YETER. Once live.view de isteniyordu: Muhasebe rolu sayfaya eklenmis
+ * ama izinsiz oldugu icin giremiyordu; live.view vermek ise ona ana paneldeki BUTUN kameralari acardi. Rol secimi yalniz
+ * bu sayfanin kamera listesini acar (allowedPaths). Yalniz uye: API anahtarinin rolu kendi izinlerinden genis olmasin.
+ * Rol listesi bossa sayfa live.view izni olan herkese acik.
+ */
 export function canView(page, principal) {
   if (!page) return false;
   if (page.access === 'public') return true;
   if (!principal) return false;
   if (principal.hasPermission('*')) return true;
-  if (!principal.hasPermission('live.view')) return false;
-  return !page.roles?.length || page.roles.includes(principal.role);
+  if (page.roles?.length) return page.roles.includes(principal.role) && (principal.type === 'member' || principal.hasPermission('live.view'));
+  return principal.hasPermission('live.view');
+}
+
+/** Uye (izni olmayan) icin gorebildigi ozel sayfalar: girisin varacagi yer (bkz. views.mainPage). */
+export function rolePages(pages, principal) {
+  return principal?.type === 'member' ? pages.filter((p) => p.access === 'private' && p.roles?.includes(principal.role)) : [];
 }
 
 export class LivePageStore {

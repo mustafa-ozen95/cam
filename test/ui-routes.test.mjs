@@ -6,9 +6,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { openApp } from './helpers.mjs';
 
-const ROOT = new URL('../resources/views/web/', import.meta.url).pathname;
+// .pathname degil: yolda ASCII disi harf (or. "Masaüstü") %C3%BC olarak kalir ve klasor bulunmaz.
+const ROOT = fileURLToPath(new URL('../resources/views/web/', import.meta.url));
 const files = (dir) => readdirSync(dir).flatMap((n) => { const p = join(dir, n); return statSync(p).isDirectory() ? (n === 'fonts' ? [] : files(p)) : /\.(html|js)$/.test(n) ? [p] : []; });
 
 /** Olu arayuz kodu: indirme sekmesi gizli, bu uc noktalar sunucuda yok (bilerek serbest). */
