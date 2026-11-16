@@ -212,6 +212,9 @@ test('gunluk: eski (Turkce alan adli) kayitlar yeni kayitlarla ayni zincirde dog
   const t = await openApp();
   try {
     await t.login('admin', 'adminparola1');
+    // Girisin gunluk kaydi sirayla (arka planda) yazilir: beklenmezse yavas makinede (CI) silmeden ya da elle kurulan
+    // zincirden SONRA iner, lastSignature'i ezer ve zincir kirilir (aralikli hata: ok=false, record=2).
+    await t.services.auditLog.wait();
     const sign = t.services.auditLog.sign;
     await t.services.db.query('DELETE FROM audit_log');
     let previous = '';
