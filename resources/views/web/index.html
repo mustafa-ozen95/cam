@@ -337,10 +337,10 @@
       </section>
     </div></section>
 
-    <!-- BILDIRIM (alert.manage): goruntu analizi (cam-ai, YOLO) ve Telegram; olaylar event.read. Jeton yanitta gelmez, yalniz "tanimli". -->
-    <section class="page" id="s-alerts" hidden><div class="page__inner page__inner--wide">
+    <!-- YAPAY ZEKA (alert.manage; olaylar event.read): goruntu analizi (cam-ai, YOLO), canli algilama, korunan alanlar, kurallar, olaylar. -->
+    <section class="page" id="s-ai" hidden><div class="page__inner page__inner--wide">
       <header class="page-head">
-        <div class="page-head__text"><h1>Ayarlar</h1><p class="page-head__subtitle">Görüntü analizi (insan, düşme, bayılma, hareket) ve Telegram bildirimleri.</p></div>
+        <div class="page-head__text"><h1>Ayarlar</h1><p class="page-head__subtitle">Görüntü analizi (insan, düşme, bayılma, hareket): canlı algılama, korunan alanlar, algılama kuralları ve olaylar.</p></div>
       </header>
       <section class="panel">
         <header class="panel__head"><h2 class="panel__title">Durum</h2></header>
@@ -349,27 +349,6 @@
       <section class="panel" id="alertLivePanel">
         <header class="panel__head"><div><h2 class="panel__title">Canlı algılama</h2><p class="text-sm text-muted">Modelin gördüğü: kişi kutusu, iskelet, duruş (dik/yatay, açı, güven). Kırmızı = alarm. Yalnız bu sekme açıkken akar.</p></div></header>
         <div class="panel__body stack"><label class="checkbox"><input type="checkbox" id="alertOverlay"><span>Algılamayı Canlı kamera görüntüsünde göster (kontur, iskelet)</span></label><div id="alertLive" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:12px"></div><p class="text-sm text-muted">Korunan nesne: "+ Korunan alan çiz"e basıp görüntüde nesnenin çevresini sürükleyerek çizin. Kişi bu nesneye yazılan mesafeden yakın gelirse alarm verilir.</p><div class="form-actions"><button type="button" class="btn btn--primary" id="alertGuardSave">Korunan alanları kaydet</button></div></div>
-      </section>
-      <section class="panel" id="alertTgPanel">
-        <header class="panel__head"><div><h2 class="panel__title">Telegram</h2><p class="text-sm text-muted">Bot jetonu şifreli saklanır, ekrana geri gelmez.</p></div></header>
-        <div class="panel__body">
-          <form id="alertTgForm" class="stack" autocomplete="off">
-            <label class="checkbox"><input type="checkbox" id="alertTgEnabled"><span>Bildirim gönder</span></label>
-            <div class="field-row">
-              <div class="field"><label class="field__label" for="alertTgToken">Bot jetonu</label><input class="input input--mono" id="alertTgToken" type="password" maxlength="80" autocomplete="new-password"><span class="field__hint" id="alertTgTokenHint">@BotFather'ın verdiği değer.</span></div>
-              <div class="field"><label class="field__label" for="alertTgChat">Kanal / sohbet</label><input class="input input--mono" id="alertTgChat" maxlength="64" placeholder="@kanal ya da -100…"><span class="field__hint">Bot kanala yönetici olarak eklenmeli.</span></div>
-              <div class="field"><label class="field__label" for="alertTgThread">Konu kimliği (isteğe bağlı)</label><input class="input input--mono" id="alertTgThread" inputmode="numeric" maxlength="12"></div>
-            </div>
-            <label class="checkbox"><input type="checkbox" id="alertTgPhoto"><span>Görüntüyü de gönder</span></label>
-            <div class="table-wrap" id="alertChats" hidden></div>
-            <div class="form-actions row row--wrap">
-              <button type="button" class="btn" id="alertChatsFind">Sohbetleri bul</button>
-              <select class="select" id="alertTestChannel" aria-label="Deneme görüntüsü kamerası"></select>
-              <button type="button" class="btn" id="alertTest">Deneme gönder</button>
-              <button type="submit" class="btn btn--primary">Kaydet</button>
-            </div>
-          </form>
-        </div>
       </section>
       <section class="panel" id="alertDetPanel">
         <header class="panel__head"><div><h2 class="panel__title">Algılama</h2><p class="text-sm text-muted">Analiz sunucuda yapılır; görüntü diske kaydedilmez. Kamera seçilmezse hepsi izlenir.</p></div></header>
@@ -396,6 +375,34 @@
       <section class="panel">
         <header class="panel__head"><div><h2 class="panel__title">Son olaylar</h2><p class="text-sm text-muted">90 gün saklanır.</p></div><button type="button" class="btn btn--sm" id="alertEventsReload">Yenile</button></header>
         <div class="panel__body panel__body--flush"><div class="table-wrap" id="alertEvents"></div></div>
+      </section>
+    </div></section>
+
+    <!-- BILDIRIM (alert.manage): algilanan olaylarin Telegram'a gonderimi. Jeton yanitta gelmez, yalniz "tanimli". -->
+    <section class="page" id="s-alerts" hidden><div class="page__inner page__inner--wide">
+      <header class="page-head">
+        <div class="page-head__text"><h1>Ayarlar</h1><p class="page-head__subtitle">Yapay zekânın algıladığı olayların Telegram bildirimleri.</p></div>
+      </header>
+      <section class="panel" id="alertTgPanel">
+        <header class="panel__head"><div><h2 class="panel__title">Telegram</h2><p class="text-sm text-muted">Bot jetonu şifreli saklanır, ekrana geri gelmez.</p></div></header>
+        <div class="panel__body">
+          <form id="alertTgForm" class="stack" autocomplete="off">
+            <label class="checkbox"><input type="checkbox" id="alertTgEnabled"><span>Bildirim gönder</span></label>
+            <div class="field-row">
+              <div class="field"><label class="field__label" for="alertTgToken">Bot jetonu</label><input class="input input--mono" id="alertTgToken" type="password" maxlength="80" autocomplete="new-password"><span class="field__hint" id="alertTgTokenHint">@BotFather'ın verdiği değer.</span></div>
+              <div class="field"><label class="field__label" for="alertTgChat">Kanal / sohbet</label><input class="input input--mono" id="alertTgChat" maxlength="64" placeholder="@kanal ya da -100…"><span class="field__hint">Bot kanala yönetici olarak eklenmeli.</span></div>
+              <div class="field"><label class="field__label" for="alertTgThread">Konu kimliği (isteğe bağlı)</label><input class="input input--mono" id="alertTgThread" inputmode="numeric" maxlength="12"></div>
+            </div>
+            <label class="checkbox"><input type="checkbox" id="alertTgPhoto"><span>Görüntüyü de gönder</span></label>
+            <div class="table-wrap" id="alertChats" hidden></div>
+            <div class="form-actions row row--wrap">
+              <button type="button" class="btn" id="alertChatsFind">Sohbetleri bul</button>
+              <select class="select" id="alertTestChannel" aria-label="Deneme görüntüsü kamerası"></select>
+              <button type="button" class="btn" id="alertTest">Deneme gönder</button>
+              <button type="submit" class="btn btn--primary">Kaydet</button>
+            </div>
+          </form>
+        </div>
       </section>
       <section class="panel" id="alertHelpPanel">
         <header class="panel__head"><h2 class="panel__title">Telegram botu nasıl açılır</h2></header>
@@ -860,24 +867,24 @@ function table(headers, rows) {
 let info = null;
 const visible = () => (info ? info.channelNames.map((_, k) => k).filter((k) => !info.channelEmpty?.[k]) : []);
 const status = { tab: 'live', focus: null, device: null, deviceSelected: false };
-const TABS = ['live', 'recordings', 'downloads', 'devices', 'members', 'livepages', 'audit', 'updates', 'database', 'alerts', 'access'];
+const TABS = ['live', 'recordings', 'downloads', 'devices', 'members', 'livepages', 'audit', 'updates', 'database', 'ai', 'alerts', 'access'];
 // İzin tabanlı görünürlük: sunucunun /api/ben ile verdiği izin listesi (models/permission.mjs kataloğu)
 const hasPermission = (i) => !!me?.permissions?.includes(i);
-const TAB_PERMISSION = { live: ['live.view'], recordings: ['recording.list', 'recording.play', 'recording.download'], devices: ['device.read'], members: ['member.manage'], audit: ['audit.read'], updates: ['update.check'], database: ['database.manage'], access: ['permission.manage', 'api.key'], livepages: ['livepage.manage'], alerts: ['alert.manage', 'event.read'] };
+const TAB_PERMISSION = { live: ['live.view'], recordings: ['recording.list', 'recording.play', 'recording.download'], devices: ['device.read'], members: ['member.manage'], audit: ['audit.read'], updates: ['update.check'], database: ['database.manage'], access: ['permission.manage', 'api.key'], livepages: ['livepage.manage'], ai: ['alert.manage', 'event.read'], alerts: ['alert.manage'] };
 // Ust baslikta konum yolu (kirinti) YOK: bolum menude secili, alt duzey orta bolmenin basliginda.
 const allowed = (s) => TABS.includes(s) && s !== 'downloads' && (TAB_PERMISSION[s] ?? []).some(hasPermission);
 /*
  * AYARLAR: Cihaz, Üyeler (Roller ve API anahtarlari dahil), Günlük, Güncelleme, Veritabani. Ust menude tek giris; her bolumun
  * ustunde ayni alt sekme seridi (DC panellerindeki Ayarlar -> sekmeler). Adresler degismedi (#devices, #audit...).
  */
-const SETTINGS = [['devices', 'Cihaz'], ['members', 'Üyeler'], ['livepages', 'Canlı sayfalar'], ['audit', 'Günlük'], ['updates', 'Güncelleme'], ['database', 'Veritabanı'], ['alerts', 'Bildirim']];
+const SETTINGS = [['devices', 'Cihaz'], ['members', 'Üyeler'], ['livepages', 'Canlı sayfalar'], ['audit', 'Günlük'], ['updates', 'Güncelleme'], ['database', 'Veritabanı'], ['ai', 'Yapay zekâ'], ['alerts', 'Bildirim']];
 const SETTINGS_OF = { access: 'members' };   // Yetki (roller, anahtarlar) Uyeler sekmesinin icinde
 const settingsAllowed = (s) => (s === 'members' ? allowed('members') || allowed('access') : allowed(s));
 const settingsTarget = (s) => (s === 'members' && !allowed('members') && allowed('access') ? 'access' : s);
 const firstSettings = () => settingsTarget(SETTINGS.map(([s]) => s).find(settingsAllowed) ?? 'live');
 const isSettings = (name) => SETTINGS.some(([s]) => s === (SETTINGS_OF[name] ?? name));
 function setupSettingsTabs() {
-  for (const id of ['s-devices', 's-members', 's-access', 's-livepages', 's-audit', 's-updates', 's-database', 's-alerts']) {
+  for (const id of ['s-devices', 's-members', 's-access', 's-livepages', 's-audit', 's-updates', 's-database', 's-ai', 's-alerts']) {
     const sec = document.getElementById(id);
     if (!sec || sec.querySelector('.settings-tabs')) continue;
     const nav = el('nav', { class: 'tabs settings-tabs', 'aria-label': 'Ayarlar' }, ...SETTINGS.map(([s, label]) => el('a', { href: `#${s}`, class: 'tabs__link', 'data-tab': s }, label)));
@@ -911,7 +918,9 @@ function openTab(name) {
   if (name === 'audit') reloadAuditLog();
   if (name === 'updates') updateReload();
   if (name === 'database') dbReload();
-  if (name === 'alerts') alertReload(); else alertLive(false);
+  // Yapay zeka ve Bildirim ayni belgeyi (/api/alerts) okur; canli algilama onizlemesi yalniz Yapay zeka sekmesindeyken akar.
+  if (name === 'ai' || name === 'alerts') alertReload();
+  if (name !== 'ai') alertLive(false);
   if (name !== 'recordings') pauseTl();
 }
 document.addEventListener('click', (e) => {
@@ -2733,7 +2742,7 @@ function alertDraw(g) {
   row('Analiz servisi', !g.aiReady ? 'kurulmamış (CAM_AI_SECRET yok)' : el('span', { class: `badge badge--${alive ? 'green' : 'red'}` }, alive ? 'çalışıyor' : w ? `${w.lastSeenSec} sn'dir ses yok` : 'bağlanmadı'), !alive);
   if (alive && w.stats) row('İzlenen', `${w.stats.channels ?? 0} kamera · ${w.stats.fps ?? '—'} kare/sn · CPU %${w.stats.cpu ?? '—'}`);
   row('Algılama', d.enabled ? 'açık' : 'kapalı');
-  row('Telegram', t.enabled ? `açık · ${t.chat}` : 'kapalı');
+  row('Telegram bildirimi', t.enabled ? `açık · ${t.chat}` : 'kapalı (Bildirim sekmesi)');
   $('#alertTgEnabled').checked = t.enabled; $('#alertTgPhoto').checked = t.photo;
   $('#alertTgChat').value = t.chat ?? ''; $('#alertTgThread').value = t.thread ?? ''; $('#alertTgToken').value = '';
   $('#alertTgToken').placeholder = t.tokenSet ? 'tanımlı — değiştirmek için yazın' : '123456:ABC…';
@@ -2815,9 +2824,8 @@ $('#alertGuardSave').addEventListener('click', (e) => {
 });
 async function alertReload() {
   const manage = hasPermission('alert.manage');
-  for (const id of ['#alertTgPanel', '#alertDetPanel', '#alertHelpPanel']) $(id).hidden = !manage;
-  $('#alertLivePanel').hidden = !manage;
-  if (manage) { try { alertDraw(await api('/api/alerts')); alertLive(status.tab === 'alerts'); } catch (err) { $('#alertInfo').replaceChildren(writeError(err.message)); } }
+  for (const id of ['#alertTgPanel', '#alertDetPanel', '#alertHelpPanel', '#alertLivePanel']) $(id).hidden = !manage;
+  if (manage) { try { alertDraw(await api('/api/alerts')); alertLive(status.tab === 'ai'); } catch (err) { $('#alertInfo').replaceChildren(writeError(err.message)); } }
   else $('#alertInfo').replaceChildren();
   if (hasPermission('event.read')) alertEvents();
 }
@@ -2828,7 +2836,7 @@ const alertTg = () => {
 };
 async function alertPut(body, button) {
   button.disabled = true;
-  try { alertDraw(await api('/api/alerts', { method: 'PUT', body: JSON.stringify(body) })); alertLive(true); notify('Kaydedildi.', 'success'); }
+  try { alertDraw(await api('/api/alerts', { method: 'PUT', body: JSON.stringify(body) })); alertLive(status.tab === 'ai'); notify('Kaydedildi.', 'success'); }
   catch (err) { notify(err.message, 'danger'); } finally { button.disabled = false; }
 }
 $('#alertTgForm').addEventListener('submit', (e) => { e.preventDefault(); alertPut({ telegram: alertTg() }, $('#alertTgForm button[type=submit]')); });
