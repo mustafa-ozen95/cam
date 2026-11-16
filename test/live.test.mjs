@@ -247,6 +247,21 @@ test('coklu canli sayfa: private sayfa giris + rol ister, kameralari baska sayfa
     assert.equal((await get('/ofis/', ali)).status, 403);
     assert.equal((await get('/ofis/cameras.json', ali)).status, 403);
     assert.equal((await whep('ofis', 'k1', ali)).status, 403);
+    // REGRESYON (Muhasebe giremiyordu): izinsiz rol sayfaya ACIKCA eklenince yalniz o sayfayi izler, duzeni degistiremez;
+    // ana panel (bos ekran) yerine sayfasina yonlenir. Ana paneldeki kameralar ona acilmaz.
+    assert.equal((await u.req(`/api/live-pages/${id}`, { method: 'PATCH', body: { roles: ['camera', 'accounting'] } })).status, 200);
+    await u.services.members.add('can', 'canparola12345', 'accounting');
+    await u.login('can', 'canparola12345');
+    const can = u.cookies.get('can');
+    assert.deepEqual((await (await get('/ofis/cameras.json', can)).json()).cameras.map((k) => k.path), ['k1']);
+    assert.equal((await whep('ofis', 'k1', can)).status, 201);
+    assert.equal((await whep('ofis', 'k0', can)).status, 404, 'sayfanin duzeninde olmayan kamera');
+    assert.equal((await u.req('/ofis/layout', { method: 'PUT', body: { column: 2, paths: ['k0'] }, who: 'can' })).status, 403, 'duzen yalniz yonetici');
+    assert.equal((await u.req('/api/snapshot?path=k1', { who: 'can' })).status, 403, 'ana panel canli izleme kapali');
+    const home = await get('/', can);
+    assert.equal(home.status, 302); assert.equal(home.headers.get('location'), '/ofis/');
+    assert.equal((await u.req('/api/live-pages', { who: 'can' })).status, 403, 'liste ana panelin; izinsiz uye ona varmaz');
+    assert.equal((await get('/', ayse)).status, 200, 'izni olan uye ana paneli gorur');
     // sayfaya bagli rol silinemez
     const r2 = await u.req('/api/access/roles', { method: 'POST', body: { id: 'gece', name: 'Gece', permissions: ['live.view'] } });
     assert.equal(r2.status, 200, r2.text);

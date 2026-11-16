@@ -10,6 +10,8 @@ import { HubUnauthorizedError } from '../services/hub.mjs';
 
 const FLOW_COOKIE = 'cam_hub_flow';
 const FLOW_SECONDS = 600;
+/** Giristen sonra donulecek adres: yalniz tek bolumlu yerel yol (/<canli-sayfa>/). Baska her sey (//, http:, ?..) yok sayilir: acik yonlendirme olmaz. */
+const NEXT_RE = /^\/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\/$/;
 const FLOW_LABEL = LABELS.hubFlow;   // oturum cerezinden ayri imza amaci: akis cerezi oturum cerezi olarak gecmez. Degisirse yarim kalan girisler duser
 
 /** Giris sayfasinda gosterilecek hata metinleri; adres cubugunda yalniz KOD gider, metin sunucuda. */
@@ -31,7 +33,8 @@ export function hubController({ hub, links, members, auditLog, config }) {
     async start(ctx) {
       if (!hub.isEnabled()) return json(ctx.res, 404, { error: 'Yok', code: 'NOT_FOUND' });
       const codeVerifier = hub.codeVerifier(), status = randomBytes(24).toString('base64url');
-      const payload = Buffer.from(JSON.stringify({ d: codeVerifier, s: status, e: Date.now() + FLOW_SECONDS * 1000 })).toString('base64url');
+      const next = ctx.q.get('next') ?? '';
+      const payload = Buffer.from(JSON.stringify({ d: codeVerifier, s: status, e: Date.now() + FLOW_SECONDS * 1000, ...(NEXT_RE.test(next) ? { n: next } : {}) })).toString('base64url');
       writeCookie(ctx.res, FLOW_COOKIE, `${payload}.${sign(payload)}`, FLOW_SECONDS, secure(ctx.res));
       return redirect(ctx.res, hub.authorizeUrl(status, hub.codeChallenge(codeVerifier)));
     },
@@ -58,7 +61,7 @@ export function hubController({ hub, links, members, auditLog, config }) {
       writeCookie(res, FLOW_COOKIE, '', 0, secure(res));
       writeCookie(res, config.session.cookie, members.sessionCookie(u), config.session.day * 86400, secure(res));
       auditLog.write('hub-login', u.name, req, { email: identity.email, hubRole: identity.role });
-      return redirect(res, '/');
+      return redirect(res, typeof stream.n === 'string' && NEXT_RE.test(stream.n) ? stream.n : '/');
     },
 
     /**
