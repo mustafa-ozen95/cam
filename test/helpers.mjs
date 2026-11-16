@@ -53,7 +53,7 @@ export async function openApp(extra = {}) {
   const g = extra.database ?? await tempDb();
   const y = { ...base, dataDir: data, database: g.setting, secretKey: extra.secretKey ?? '', server: { ...base.server, port: 0, address: '127.0.0.1', ...extra.server },
     device: { ...base.device, test: true, seed: JSON.stringify(extra.devices ?? DEVICES) },
-    permissions: { ...base.permissions, initialAdminPassword: 'adminparola1' }, identity: { ...base.identity, ...extra.identity }, live: { ...base.live, ...extra.live } };
+    permissions: { ...base.permissions, initialAdminPassword: 'adminparola1' }, identity: { ...base.identity, ...extra.identity }, live: { ...base.live, ...extra.live }, ai: { ...base.ai, ...extra.ai } };
   let app;
   try { app = await createApp(y, { databaseMove: extra.databaseMove }); } catch (e) { if (!extra.database) await g.remove(); if (!extra.data) rmSync(data, { recursive: true, force: true }); throw e; }
   const server = app.listen();

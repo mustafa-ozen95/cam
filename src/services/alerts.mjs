@@ -149,6 +149,8 @@ export class AlertService {
     const channel = Number(g.channel), type = String(g.type ?? '');
     if (!Number.isInteger(channel) || channel < 0 || channel >= (this.devices.group.channelTotal ?? 0)) throw new HttpError(400, 'kanal geçersiz', 'INVALID_REQUEST');
     if (!EVENT_TYPES[type]) throw new HttpError(400, 'olay türü geçersiz', 'INVALID_REQUEST');
+    // Algilama kapaliyken (varsayilan) olay yazilmaz, bildirilmez: cam-ai ayari gec alsa da sunucu kabul etmez.
+    if (!this.doc.detection.enabled) return { id: null, notified: 'disabled' };
     const score = clamp(g.score, 0, 1, null), detail = g.detail ? String(g.detail).slice(0, 500) : null;
     const image = typeof g.image === 'string' && g.image.length < 1_400_000 ? Buffer.from(g.image, 'base64') : null;
     const ev = { id: randomBytes(8).toString('hex'), ts: new Date().toISOString(), channel, type, score, detail };
