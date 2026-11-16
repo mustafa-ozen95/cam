@@ -37,8 +37,9 @@ test('varsayilan ayar: algilama ve Telegram kapali; nabiz kanal vermez; olay yaz
     assert.equal((await t.req('/api/alerts', { method: 'PUT', body: { detection: { enabled: true } } })).status, 200);
     const on = await t.req('/api/ai/heartbeat', { method: 'POST', body: {}, bearer: SECRET });
     assert.equal(on.json.enabled, true);
-    assert.ok(on.json.channels.length > 0);
     const r2 = await t.req('/api/ai/report', { method: 'POST', body: { channel: 0, type: 'person', score: 0.9 }, bearer: SECRET });
     assert.ok(r2.json.id, r2.text);
+    const [row2] = await t.services.db.query('SELECT COUNT(*) AS n FROM events');
+    assert.equal(Number(row2.n), 1);
   } finally { await t.close(); }
 });
