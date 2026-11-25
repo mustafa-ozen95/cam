@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { Fmp4Splitter, makeHvc1, codecName, findBox, boxes } from '../src/drivers/fmp4.mjs';
-import { CONVERT_BITRATE, MP4_OUTPUT, Mp4Feed, RELAY_FIRST, convertArgs, sharedMp4 } from '../src/drivers/mp4-stream.mjs';
+import { CONVERT_BITRATE, CONVERT_PRESET, MP4_OUTPUT, Mp4Feed, RELAY_FIRST, convertArgs, sharedMp4 } from '../src/drivers/mp4-stream.mjs';
 import { DeviceBase } from '../src/drivers/base.mjs';
 import { openApp } from './helpers.mjs';
 
@@ -79,10 +79,13 @@ test('ffmpeg: kopya ya da kaynak kalitede H.264 (olcek/kare hizi suzgeci YOK)', 
   // kopyada da zaman damgasi duzeltilir (cihaz RTP zamanini geri sicratinca medya zamani durmasin)
   assert.match(copy.args[copy.args.indexOf('-bsf:v') + 1], /^setts=ts=.*PREV_OUTPTS.*clip\(PTS-PREV_INPTS/);
   assert.match(copy.args[copy.args.indexOf('-bsf:v') + 1], /^setts=ts=if\(eq\(PREV_OUTPTS\\,NOPTS\)\\,PTS.*eq\(PTS\\,NOPTS\)\+eq\(PREV_INPTS\\,NOPTS\)/, 'damgasiz ilk paket sonraki damgalari bozmaz');
+  // buyuk goruntu (ana akis) kaynaga yakin kalitede (SSIM 0,98); izgaradaki cok sayida alt akis ucuz ayarda
+  assert.equal(CONVERT_PRESET.Main, 'veryfast'); assert.equal(CONVERT_PRESET.Extra1, 'ultrafast'); assert.ok(CONVERT_BITRATE.Main >= 4000);
   for (const type of ['Main', 'Extra1']) {
     const a = convertArgs(type);
     assert.equal(a[a.indexOf('-c:v') + 1], 'libx264');
     assert.equal(a[a.indexOf('-b:v') + 1], `${CONVERT_BITRATE[type]}k`);
+    assert.equal(a[a.indexOf('-preset') + 1], CONVERT_PRESET[type]);
     assert.ok(!a.includes('-r') && !/scale|fps=/.test(a[a.indexOf('-vf') + 1]), 'cozunurluk ve kare hizi kaynaktaki gibi');
     // zaman damgasi cozucuden sonra verilir (cihaz RTP zamanini geri sicratiyor); giriste wallclock YOK (40c651e)
     assert.match(a[a.indexOf('-vf') + 1], /^setpts=.*PREV_OUTPTS\+if\(isnan\(PTS-PREV_INPTS\).*RTCTIME/, 'kare araligi korunur, gercek saate tutunur');

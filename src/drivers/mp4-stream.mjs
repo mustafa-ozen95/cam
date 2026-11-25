@@ -17,6 +17,9 @@ export const MP4_OUTPUT = ['-an', '-f', 'mp4', '-movflags', 'frag_keyframe+empty
  * Kaynak kalitede H.264'e cevirme (tarayici H.265 oynatamazsa; Chrome). Cozunurluk ve kare hizi oldugu gibi
  * (goruntu kalitesinden odun verilmez). Bit hizi kaynagin ~1,5-2 kati (H.264 ayni kalite icin daha cok ister).
  * Olcum (Uniview): ana 1080p 25 kare/sn %82 cekirdek 3,09 Mbps; alt 704x576 %18 cekirdek 1,04 Mbps.
+ * Ana akis (buyuk goruntu) veryfast 4 Mbps: ultrafast 3 Mbps'te kaynaga gore SSIM 0,945-0,949'du (bulanik, bloklu);
+ * veryfast 4 Mbps 0,983-0,986, tek akis basina ~%15 cekirdek fazla (2026-11-25, k14/k22 ana akis, 10 sn). Izgaradaki
+ * alt akislar cok sayida oldugundan ultrafast kalir.
  * Anahtar kare saniyede bir: yeni izleyici beklemez, tampon kirpilabilir.
  *
  * Kare hizi kaynaktaki gibi GECIRILIR (-fps_mode passthrough): mp4 cikisinda ffmpeg'in varsayilani sabit kare hizidir;
@@ -36,7 +39,8 @@ export const MP4_OUTPUT = ['-an', '-f', 'mp4', '-movflags', 'frag_keyframe+empty
  * Damga giriste (-use_wallclock_as_timestamps) DEGIL cozucuden sonra verilir: giriste verilince kopya akis ve cozucu de
  * etkilendi, kareler bozuldu (40c651e).
  */
-export const CONVERT_BITRATE = { Main: 3000, Extra1: 1000 };
+export const CONVERT_BITRATE = { Main: 4000, Extra1: 1000 };
+export const CONVERT_PRESET = { Main: 'veryfast', Extra1: 'ultrafast' };
 export const KEYFRAME_EXPR = 'expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+1))';
 const NOW = '(RTCTIME-RTCSTART)/(TB*1000000)';
 const STEP = 'if(isnan(PTS-PREV_INPTS),0.001/TB,clip(PTS-PREV_INPTS,0.001/TB,1/TB))';
@@ -54,8 +58,8 @@ export const TIMESTAMP_FILTER = `setpts='if(isnan(PREV_OUTPTS),${NOW},max(PREV_O
  */
 export const COPY_TIMESTAMP_BSF = 'setts=ts=if(eq(PREV_OUTPTS\\,NOPTS)\\,PTS\\,PREV_OUTPTS+if(eq(PTS\\,NOPTS)+eq(PREV_INPTS\\,NOPTS)\\,0.001/TB\\,clip(PTS-PREV_INPTS\\,0.001/TB\\,1/TB)))';
 export const convertArgs = (type) => {
-  const b = CONVERT_BITRATE[type] ?? CONVERT_BITRATE.Extra1;
-  return ['-vf', TIMESTAMP_FILTER, '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-b:v', `${b}k`, '-maxrate', `${b}k`, '-bufsize', `${2 * b}k`, '-force_key_frames', KEYFRAME_EXPR, '-bf', '0', '-fps_mode', 'passthrough'];
+  const b = CONVERT_BITRATE[type] ?? CONVERT_BITRATE.Extra1, preset = CONVERT_PRESET[type] ?? CONVERT_PRESET.Extra1;
+  return ['-vf', TIMESTAMP_FILTER, '-c:v', 'libx264', '-preset', preset, '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-b:v', `${b}k`, '-maxrate', `${b}k`, '-bufsize', `${2 * b}k`, '-force_key_frames', KEYFRAME_EXPR, '-bf', '0', '-fps_mode', 'passthrough'];
 };
 
 /**
