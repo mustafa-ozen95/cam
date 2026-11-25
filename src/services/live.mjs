@@ -220,6 +220,8 @@ export class LiveService {
     const ready = list.filter((x) => this.codec.has(x.k));
     this.cameras = ready.map((x) => ({ path: `k${x.k}`, name: x.name, device: x.device, converted: this.codec.get(x.k) !== 'h264' }));
     this.healthy = true;
+    const moved = this.devices.group?.toRelay?.() ?? 0;   // yol hazir olmadan cihaza dogrudan acilmis yayinlar mediamtx'e gecer
+    if (moved) console.log(`live: cihaza dogrudan acik ${moved} canli yayin kapatildi (mediamtx'ten yeniden acilir)`);
     return { channel: list.length, ready: ready.length };
   }
 

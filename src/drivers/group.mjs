@@ -89,6 +89,23 @@ export class DeviceGroup extends DeviceBase {
    */
   #relay(c, channel, type) { return typeof c.rtspUrl === 'function' ? this.relay?.(channel, type === 'Mini' ? 'Extra1' : type) ?? null : null; }
   feed(channel, type, width, fps) { const { c, local } = this.#find(channel); const t = type === 'Mini' && !c.miniSupport ? 'Extra1' : type; return c.feed(local, t, width, fps, this.#relay(c, channel, t)); }
+  /**
+   * mediamtx yolu hazir olan kanalda cihaza DOGRUDAN acik kalmis canli yayinlari kapatir (LiveService her esitlemeden sonra
+   * cagirir); izleyici yeniden baglanir ve mediamtx'ten okur. Panel yeniden baslayinca tarayicilar ilk esitlemeden (46
+   * kanalin kodek olcumu) once baglanip cihaza dogrudan yayin aciyordu; izlendikce oyle kaliyordu. Kapatilan sayisini dondurur.
+   */
+  toRelay() {
+    let n = 0;
+    for (const c of this.devices) {
+      if (typeof c.rtspUrl !== 'function' || !c.feeds) continue;
+      for (const [key, y] of [...c.feeds]) {
+        const m = /^(?:mp4:)?(\d+)\/(Main|Extra1|Mini)(?:\/|$)/.exec(key);
+        if (!m || y.relayed || y.stopped || !this.#relay(c, c.startIndex + Number(m[1]), m[2])) continue;
+        y.stop("mediamtx'e geçiliyor"); n++;
+      }
+    }
+    return n;
+  }
   /** Canli MP4; surucusu desteklemeyen cihazda (Xiongmai DVR) null (501). */
   feedMp4(channel, type, convert) { const { c, local } = this.#find(channel); return c.feedMp4 ? c.feedMp4(local, type, convert, (cv) => this.feedLabel(c, channel, type, cv), this.#relay(c, channel, type)) : null; }
   /** Gunlukte akisin adi: "Cihaz · Kamera adi · kanal 3 · Extra1 h264" (adres/parola yok). */

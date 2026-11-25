@@ -59,6 +59,13 @@ test('mediamtx uzerinden (relay): canli MJPEG cihaza baglanmaz, tum genislikler 
   assert.deepEqual(asked, [[19, 'Extra1'], [20, 'Main']], 'yol adi global kanal; Mini alt akis yolunu okur');
   assert.equal(got[0][0], 3); assert.equal(got[0][4].copy, 'k19');
   assert.equal(got[1][0], 4); assert.equal(got[1][4].copy, 'k20');
+  // yol hazir olmadan cihaza dogrudan acilmis canli yayinlar mediamtx'e gecer; yonlendirilmis olan ve yolu olmayan kalir
+  const stopped = [];
+  const y = (name, o = {}) => ({ stopped: false, ...o, stop: () => stopped.push(name) });
+  c.feeds = new Map([['mp4:3/Extra1', y('kopya')], ['mp4:3/Extra1/h264', y('h264')], ['4/Main/1280/', y('mjpeg')], ['5/Extra1/480/10', y('akan', { relayed: true })], ['mp4:6/Main', y('yolsuz')]]);
+  g.relay = (k) => (k === 22 ? null : { copy: `k${k}`, h264: null, stall: () => {} });
+  assert.equal(g.toRelay(), 3);
+  assert.deepEqual(stopped, ['kopya', 'h264', 'mjpeg']);
   const dvr = new DeviceGroup({ setting: {}, devices: [{ id: 1, startIndex: 0, channelCount: 4, feed: (...a) => a }] });
   dvr.relay = () => assert.fail('RTSP siz surucu (Xiongmai DVR-IP) icin sorulmaz');
   assert.equal(dvr.feed(0, 'Extra1', 480)[4], null);
