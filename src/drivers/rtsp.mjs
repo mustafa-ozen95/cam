@@ -5,7 +5,7 @@
  */
 import { spawn } from 'node:child_process';
 import { DeviceBase, localText, localSec } from './base.mjs';
-import { sharedMp4 } from './mp4-stream.mjs';
+import { sharedMp4, RELAY_FIRST } from './mp4-stream.mjs';
 
 const JPEG_START = Buffer.from([0xff, 0xd8]);
 const JPEG_END = Buffer.from([0xff, 0xd9]);
@@ -32,15 +32,16 @@ export class RtspDevice extends DeviceBase {
    * genislik === 0 yalniz Main icin: OLCEKSIZ, kameranin tam cozunurlugu (tam ekran ve goruntu al).
    * fps yalniz izgara akislari (Mini/Extra1) icin; izinli degerler OPTIONAL_FPS, verilmezse Mini 5, Extra1 10. Main kameranin kendi hizindadir.
    * Farkli fps ayri baglantidir: kayit cihazinin es zamanli akis siniri (16) bunu da sayar.
+   * relay (grup verir, bkz. LiveService.relay): cihaz yerine mediamtx'in kopya yolu; tum genislik/fps'ler cihazda tek oturumu paylasir.
    */
-  feed(channel, type, requested, fps) {
+  feed(channel, type, requested, fps, relay = null) {
     // Ana akis IZGARADA (uye tercihi "ana akış"): kare boyunda (640/960) ve izgara kare hiziyla; odak/tam ekran olcekli (1280) ya da olceksiz (0), kendi hiziyla.
     const gridMain = type === 'Main' && GRID_MAIN_WIDTH.includes(requested) && OPTIONAL_FPS.includes(fps);
     const width = type === 'Mini' ? 320 : type === 'Extra1' ? 480 : gridMain ? requested : requested === 0 ? 0 : 1280;
     const rate = type === 'Main' ? (gridMain ? fps : null) : OPTIONAL_FPS.includes(fps) ? fps : type === 'Mini' ? 5 : 10;
     const key = `${channel}/${type}/${width}/${rate ?? ''}`;
     let y = this.feeds.get(key);
-    if (!y) { y = new RtspFeed(this, this.livePath(channel, type), width, () => this.feeds.delete(key), false, rate); this.feeds.set(key, y); y.start(); }
+    if (!y) { y = new RtspFeed(this, this.livePath(channel, type), width, () => this.feeds.delete(key), false, rate, relay); this.feeds.set(key, y); y.start(); }
     return y;
   }
 
@@ -49,9 +50,9 @@ export class RtspDevice extends DeviceBase {
    * cevir=false: kameranin videosu oldugu gibi (yeniden kodlamasiz). cevir=true: kaynak kalitede H.264 (tarayici H.265 oynatmiyorsa),
    * kopya yayindan cevrilir. etiket(cevir): gunlukte akisin adi (grup verir: cihaz, kamera adi, kanal, tur).
    */
-  feedMp4(channel, type, convert = false, label = null) {
+  feedMp4(channel, type, convert = false, label = null, relay = null) {
     return sharedMp4(this.feeds, {
-      ffmpeg: this.ffmpeg, channel, type, convert,
+      ffmpeg: this.ffmpeg, channel, type, convert, relay,
       input: () => ['-rtsp_transport', 'tcp', '-i', this.rtspUrl(this.livePath(channel, type))],
       label: label ?? ((cv) => `${this.setting.host} mp4:${channel}/${type}${cv ? '/h264' : ''}`),
     });
@@ -96,21 +97,23 @@ export class RtspDevice extends DeviceBase {
  * ffmpeg argumanlari (test/rtsp-args.test.mjs). Suzgec: kare hizi (yalniz canli izgara) ve olcek;
  * genislik 0 = olceksiz, kameranin tam cozunurlugu. Suzgec yoksa -vf hic yazilmaz.
  */
-export function feedArgs(device, { path, width, playback, fps }) {
+export function feedArgs(device, { path, width, playback, fps, relay }) {
   const vf = [!playback && fps ? `fps=${fps}` : null, width ? device.scale(width) : null].filter(Boolean);
-  return ['-hide_banner', '-loglevel', 'error', '-rtsp_transport', 'tcp', '-i', device.rtspUrl(path), '-an',
+  return ['-hide_banner', '-loglevel', 'error', '-rtsp_transport', 'tcp', '-i', relay?.copy ?? device.rtspUrl(path), '-an',
     ...(vf.length ? ['-vf', vf.join(',')] : []), '-q:v', width && width <= 320 ? '9' : '6', '-f', 'image2pipe', '-c:v', 'mjpeg', 'pipe:1'];
 }
 
 export class RtspFeed {
-  constructor(device, path, width, onEnd, playback, fps = null) {
-    Object.assign(this, { device, path, width, onEnd, playback, fps });
+  /** relay: canli yayinda mediamtx kaynagi (bkz. feed); verilirse cihaza baglanilmaz, takilinca relay.stall(). */
+  constructor(device, path, width, onEnd, playback, fps = null, relay = null) {
+    Object.assign(this, { device, path, width, onEnd, playback, fps, relay });
+    this.relayed = !!relay;   // budgetVar: cihaz baglantisi sayilmaz
     this.subscribers = new Set(); this.lastZ = Date.now(); this.last = null; this.stopped = false; this.jpegBuffer = Buffer.alloc(0); this.error = null; this.frameCounter = 0;
   }
 
   start() {
     this.ready = this.#setup().catch((e) => { this.error = e.message; this.stop(); });
-    this.watcher = setInterval(() => { if (this.last && Date.now() - this.lastZ > (this.playback ? 20_000 : 10_000)) this.stop(); }, 2000);
+    this.watcher = setInterval(() => { if (this.last && Date.now() - this.lastZ > (this.playback ? 20_000 : 10_000)) this.#fail(); }, 2000);
   }
 
   async #setup() {
@@ -119,10 +122,10 @@ export class RtspFeed {
     this.ff.on('error', (e) => { this.error = `ffmpeg başlatılamadı: ${e.code ?? e.message}`; this.stop(); });   // dinleyicisiz 'error' tum paneli dusurur
     this.ff.stderr.on('data', () => {});
     this.ff.stdout.on('data', (b) => this.#jpeg(b));
-    this.ff.on('close', () => this.stop());
-    const t0 = Date.now();
+    this.ff.on('close', () => this.#fail());
+    const t0 = Date.now(), first = this.relay ? RELAY_FIRST : 15_000;
     while (!this.last && !this.stopped) {
-      if (Date.now() - t0 > 15_000) throw new Error(this.playback ? 'Bu anda kayıt yok' : 'Kameradan görüntü gelmedi');
+      if (Date.now() - t0 > first) { if (this.relay) this.relay.stall(); throw new Error(this.playback ? 'Bu anda kayıt yok' : 'Kameradan görüntü gelmedi'); }
       await new Promise((r) => setTimeout(r, 100));
     }
   }
@@ -158,6 +161,9 @@ export class RtspFeed {
   }
 
   async firstFrame() { await this.ready; return this.last; }
+
+  /** Kendiliginden kapanma (veri kesildi, ffmpeg kapandi): yonlendirilmis yayinda mediamtx kaynagi yeniden kurulur. */
+  #fail() { if (!this.stopped && this.relay) { try { this.relay.stall(); } catch {} } this.stop(); }
 
   stop() {
     if (this.stopped) return;

@@ -17,7 +17,8 @@ export class DeviceGroup extends DeviceBase {
 
   get channelTotal() { return this.devices.reduce((m, c) => Math.max(m, c.startIndex + c.channelCount), 0); }
 
-  add(c) { this.devices.push(c); this.devices.sort((a, b) => a.startIndex - b.startIndex); }
+  /** relayCount (bootstrap baglar): mediamtx'in cihaza acik oturumlari; cihazin akis butcesine eklenir (base.mjs budgetVar). */
+  add(c) { c.relaySessions = () => this.relayCount?.(c.id) ?? 0; this.devices.push(c); this.devices.sort((a, b) => a.startIndex - b.startIndex); }
   /** Ayni id'li cihazi yenisiyle degistirir (eskisinin akislari kapanir). */
   change(id, fresh) {
     const i = this.devices.findIndex((c) => c.id === id);
@@ -82,9 +83,14 @@ export class DeviceGroup extends DeviceBase {
   }
 
   // ---------- kanal bazli islemler: ilgili cihaza yonlendirilir ----------
-  feed(channel, type, width, fps) { const { c, local } = this.#find(channel); return c.feed(local, type === 'Mini' && !c.miniSupport ? 'Extra1' : type, width, fps); }
+  /**
+   * Canli akislar: relay (bootstrap baglar: LiveService.relay) kanalin mediamtx kaynagini verir; null ise cihaza dogrudan.
+   * Yol adi global kanal numarasiyla (kN), surucu yalniz yerel kanali bilir: esleme burada.
+   */
+  #relay(c, channel, type) { return typeof c.rtspUrl === 'function' ? this.relay?.(channel, type === 'Mini' ? 'Extra1' : type) ?? null : null; }
+  feed(channel, type, width, fps) { const { c, local } = this.#find(channel); const t = type === 'Mini' && !c.miniSupport ? 'Extra1' : type; return c.feed(local, t, width, fps, this.#relay(c, channel, t)); }
   /** Canli MP4; surucusu desteklemeyen cihazda (Xiongmai DVR) null (501). */
-  feedMp4(channel, type, convert) { const { c, local } = this.#find(channel); return c.feedMp4 ? c.feedMp4(local, type, convert, (cv) => this.feedLabel(c, channel, type, cv)) : null; }
+  feedMp4(channel, type, convert) { const { c, local } = this.#find(channel); return c.feedMp4 ? c.feedMp4(local, type, convert, (cv) => this.feedLabel(c, channel, type, cv), this.#relay(c, channel, type)) : null; }
   /** Gunlukte akisin adi: "Cihaz · Kamera adi · kanal 3 · Extra1 h264" (adres/parola yok). */
   feedLabel(c, channel, type, convert) {
     const camera = this.nameOverrides?.[channel] || this.channelNames?.[channel] || `K${channel + 1}`;

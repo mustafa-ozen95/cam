@@ -8,12 +8,18 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { CONVERTER_FLOOD, LIVE_TRANSCODE, WHEP_TIMEOUT, frozenPaths, livePaths, stuckConverters } from '../src/services/live.mjs';
+import { CONVERTER_FLOOD, LIVE_TRANSCODE, LiveService, STALL_INTERVAL, WHEP_TIMEOUT, deviceSources, frozenPaths, livePaths, stuckConverters } from '../src/services/live.mjs';
+import { DeviceGroup } from '../src/drivers/group.mjs';
+import { DeviceBase } from '../src/drivers/base.mjs';
 import { openApp } from './helpers.mjs';
 
 test('mediamtx yollari: H.264 dogrudan, H.265 kaynak + izlenince calisan cevirici (olcek/kare hizi suzgeci yok)', () => {
   const y = livePaths([{ k: 0, url: 'rtsp://a/0' }, { k: 32, url: 'rtsp://b/32' }, { k: 5, url: 'rtsp://a/5' }], new Map([[0, 'hevc'], [32, 'h264']]));
-  assert.deepEqual(Object.keys(y).sort(), ['k0', 'k0_source', 'k32']);
+  assert.deepEqual(Object.keys(y).sort(), ['k0', 'k0_source', 'k32', 'k5_source'], 'kodegi olculmemis kanal yalniz kaynak yolu (olcum mediamtx uzerinden)');
+  assert.deepEqual(y.k5_source, { source: 'rtsp://a/5', rtspTransport: 'tcp', sourceOnDemand: true });
+  const m = livePaths([{ k: 2, url: 'rtsp://a/2s1', main: 'rtsp://a/2s0' }], new Map([[2, 'h264']]));
+  assert.deepEqual(Object.keys(m).sort(), ['k2', 'k2_main']);
+  assert.deepEqual(m.k2_main, { source: 'rtsp://a/2s0', rtspTransport: 'tcp', sourceOnDemand: true }, 'ana akis yalniz okunurken cihaza baglanir');
   assert.deepEqual(y.k32, { source: 'rtsp://b/32', rtspTransport: 'tcp', sourceOnDemand: true });
   assert.equal(y.k0_source.source, 'rtsp://a/0');
   assert.equal(y.k0.source, 'publisher');
@@ -63,6 +69,67 @@ test('takilan cevirici: kopya kare yigini ya da kaynagi okumayan cevirici yenide
   const d = stuckConverters(c.state, items({ s0: 'yeni', k0: 10, k1: 3 * 125 * 1024 * 60, k1src: false }), requested, t0 + 180_000);
   assert.deepEqual(d.stuck.map((x) => [x.name, x.reason]), [['k1', 'kaynagi okumuyor']]);
   assert.equal(d.state.get('k0').session, 'yeni');
+});
+
+test('takilan cevirici: panel kaynak yolunu okusa da yalniz mediamtx icindeki (127.0.0.1) okuyucu sayilir', () => {
+  const requested = { k1: { source: 'publisher' }, k1_source: {} };
+  const items = [{ name: 'k1', ready: true, source: { type: 'rtspSession', id: 'b' }, bytesReceived: 0 }, { name: 'k1_source', ready: true, readers: [{ type: 'rtspSession', id: 'panel' }] }];
+  const a = stuckConverters(new Map(), items, requested, 1, new Set(['cevirici']));
+  const b = stuckConverters(a.state, items, requested, 60_001, new Set(['cevirici']));
+  assert.deepEqual(b.stuck.map((x) => x.reason), ['kaynagi okumuyor']);
+  assert.deepEqual(stuckConverters(new Map(), items, requested, 1, new Set(['panel'])).state.get('k1').strikes, 0);
+});
+
+test('relay: panel canli akisi mediamtx yolundan; kapali/esitlenmemis/olculmemis kanal null (cihaza dogrudan); takilan kaynak hizla yeniden kurulur', async () => {
+  const calls = [];
+  const s = new LiveService({ config: { live: { rtcApi: 'http://cam-rtc:9997' } }, devices: { ffmpeg: 'ffmpeg' }, livePages: null });
+  assert.equal(s.rtsp, 'rtsp://cam-rtc:8554');
+  assert.equal(s.relay(0, 'Extra1'), null, 'ilk esitleme yok');
+  s.healthy = true;
+  for (const n of ['k0', 'k0_source', 'k0_main', 'k1', 'k1_main', 'k2_source']) s.written.set(n, JSON.stringify({ source: `rtsp://nvr/${n}` }));
+  s.codec.set(0, 'hevc'); s.codec.set(1, 'h264');
+  const r = (k, t) => { const x = s.relay(k, t); return x && { copy: x.copy, h264: x.h264 }; };
+  assert.deepEqual(r(0, 'Extra1'), { copy: 'rtsp://cam-rtc:8554/k0_source', h264: 'rtsp://cam-rtc:8554/k0' });
+  assert.deepEqual(r(1, 'Extra1'), { copy: 'rtsp://cam-rtc:8554/k1', h264: 'rtsp://cam-rtc:8554/k1' });
+  assert.deepEqual(r(0, 'Main'), { copy: 'rtsp://cam-rtc:8554/k0_main', h264: null });
+  assert.equal(r(2, 'Extra1'), null, 'kodek olculmedi');
+  assert.equal(r(2, 'Main'), null, 'yol yazilmamis');
+  s.healthy = false; assert.equal(r(0, 'Main'), null, 'mediamtx ulasilamiyor'); s.healthy = true;
+  assert.equal(new LiveService({ config: { live: { rtcApi: '' } }, devices: {}, livePages: null }).relay(0, 'Main'), null, '/live kapali');
+
+  const mtx = createServer((req, res) => { calls.push(`${req.method} ${req.url}`); req.resume(); req.on('end', () => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{}'); }); }).listen(0);
+  await new Promise((ok) => mtx.once('listening', ok));
+  try {
+    s.y = { rtcApi: `http://127.0.0.1:${mtx.address().port}` };
+    assert.equal(await s.stall(0, 'Extra1', 100_000), true);
+    assert.deepEqual(calls, ['DELETE /v3/config/paths/delete/k0_source', 'POST /v3/config/paths/add/k0_source'], 'cihaza giden kaynak yolu');
+    assert.equal(await s.stall(0, 'Extra1', 100_000 + STALL_INTERVAL - 1), false, 'yol basina sinirli');
+    assert.equal(await s.stall(0, 'Main', 100_000), true); assert.equal(calls.at(-1), 'POST /v3/config/paths/add/k0_main');
+    assert.equal(await s.stall(1, 'Extra1', 100_000), true); assert.equal(calls.at(-1), 'POST /v3/config/paths/add/k1', 'H.264 kanalda kaynak kN');
+  } finally { mtx.close(); }
+});
+
+test('akis butcesi: mediamtx\'in cihaza acik oturumlari cihaz basina sayilir; kayitli oynatma dolu cihazda acilmaz', () => {
+  const items = [
+    { name: 'k0_source', ready: true, source: { type: 'rtspSource' } },
+    { name: 'k0', ready: true, source: { type: 'rtspSession' } },          // cevirici yayini: cihaz oturumu degil
+    { name: 'k1', ready: true, source: { type: 'rtspSource' } },
+    { name: 'k1_main', ready: true, source: { type: 'rtspSource' } },
+    { name: 'k2_main', ready: false, source: { type: 'rtspSource' } },      // acilmamis
+    { name: 'k17_source', ready: true, source: { type: 'rtspSource' } },
+    { name: 'k99', ready: true, source: { type: 'rtspSource' } },           // cihazi yok
+  ];
+  const n = deviceSources(items, (k) => (k < 16 ? 'a' : k < 32 ? 'b' : null));
+  assert.deepEqual([...n], [['a', 3], ['b', 1]]);
+
+  const c = Object.assign(Object.create(DeviceBase.prototype), { id: 'a', startIndex: 0, channelCount: 16, feeds: new Map(), playCounter: 0, downloadCounter: 0, streamMax: 4, playMax: 4 });
+  const g = new DeviceGroup({ setting: {}, devices: [c] });
+  assert.equal(g.canPlay(0), true, 'baglanmadan once mediamtx sayisi 0');
+  g.relayCount = (id) => n.get(id) ?? 0;
+  assert.equal(c.relaySessions(), 3);
+  assert.equal(g.canPlay(0), true, '3 + 0 < 4');
+  c.playCounter = 1;
+  assert.equal(g.canPlay(0), false, 'mediamtx 3 + oynatma 1 = sinir');
 });
 
 test('/live kapali (CAM_RTC_API bos): 404', async () => {

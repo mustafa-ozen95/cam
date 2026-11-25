@@ -30,9 +30,9 @@ export class Xiongmai extends Dvr {
    * Canli MP4 (RtspDevice.feedMp4 ile ayni sozlesme, kanal/tur basina tek baglanti). Goruntu anamorfik (944x1080, 352x288): -aspect kapta en-boy
    * oranini verir, tarayici kareyi CAM_RATIO'ya (varsayilan 16:9) acar; kopya yayinda yeniden kodlama yok.
    */
-  feedMp4(channel, type, convert = false, label = null) {
+  feedMp4(channel, type, convert = false, label = null, relay = null) {
     return sharedMp4(this.feeds, {
-      ffmpeg: this.ffmpeg, channel, type, convert,
+      ffmpeg: this.ffmpeg, channel, type, convert, relay,
       input: () => ['-rtsp_transport', 'tcp', '-i', this.rtspUrl(this.livePath(channel, type))],
       extra: this.ratio ? ['-aspect', this.ratio.join(':')] : [],
       label: label ?? ((cv) => `${this.setting.host} mp4:${channel}/${type}${cv ? '/h264' : ''}`),

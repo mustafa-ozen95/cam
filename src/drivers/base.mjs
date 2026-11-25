@@ -28,8 +28,11 @@ export class DeviceBase {
   /** ffmpeg olcek suzgeci: genislik w, oran duzeltilmis yukseklik. */
   scale(w) { const o = this.ratio; return o ? `scale=${w}:${Math.max(2, Math.round((w * o[1]) / o[0] / 2) * 2)}` : `scale='min(${w},iw)':-2`; }
 
-  /** Cihaza acik baglanti: kopya yayindan cevrilen (kaynak) yayin baglanti acmaz, sayilmaz. */
-  budgetVar() { return [...this.feeds.values()].filter((y) => !y.source).length + this.playCounter + this.downloadCounter < this.streamMax; }
+  /**
+   * Cihaza acik baglanti: kopya yayindan cevrilen (kaynak) ve mediamtx'ten okunan (relayed) yayin cihaza baglanti acmaz, sayilmaz;
+   * onun yerine mediamtx'in cihaza actigi oturumlar sayilir (relaySessions, grup baglar; bkz. LiveService.deviceSessions).
+   */
+  budgetVar() { return [...this.feeds.values()].filter((y) => !y.source && !y.relayed).length + (this.relaySessions?.() ?? 0) + this.playCounter + this.downloadCounter < this.streamMax; }
   canPlay() { return this.playCounter < this.playMax && this.budgetVar(); }
   canDownload() { return this.downloadCounter < this.downloadMax && this.budgetVar(); }
 

@@ -38,6 +38,9 @@ Veri MariaDB'dedir (`db` servisi, adlandırılmış hacim `cam_database`); dış
 verin, `db` servisi kalkmasın diye `DB_REPLICAS=0` yapın.
 HTTP portu dışarı açılmaz; alan adını ve TLS'i önündeki vekil verir (panele 80'den ulaşır). `/live` görüntüsü
 `cam-rtc` (mediamtx) servisinden, 8189/udp üzerinden akar; tarayıcıya verilecek sunucu adresi `CAM_RTC_HOST`.
+`cam-rtc` açıkken canlı izlemede kayıt cihazına yalnız mediamtx bağlanır: panelin canlı akışları (ızgara, tam ekran, görüntü al, AI)
+cihaz yerine mediamtx'in RTSP'sinden (`CAM_RTC_RTSP`, varsayılan `CAM_RTC_API` konağının 8554'ü) okunur, alt akışın H.264
+çevirisi tek yerde yapılır. Kayıtlı oynatma ve indirme doğrudan cihazdandır; `CAM_RTC_API` boşsa her şey doğrudan cihazdandır.
 
 **Canlı izleme sayfaları** (Ayarlar → Canlı sayfalar, izin `livepage.manage`): her sayfa bir kayıttır: ad, yol (`/<yol>/`,
 a-z 0-9 -), erişim ve kendi kamera düzeni. *Herkese açık* sayfa üyeliksiz izlenir ve gömülebilir (`CAM_LIVE_EMBED`); *giriş gerekli*

@@ -43,3 +43,23 @@ test('canli MP4: kopya ve cevrilen yayin ayni kamera baglantisini paylasir', () 
   assert.equal(c.feedMp4(3, 'Extra1', true), h);
   h.stop();
 });
+
+test('mediamtx uzerinden (relay): canli MJPEG cihaza baglanmaz, tum genislikler ayni yolu okur; grup global kanali sorar', async () => {
+  const relay = { copy: 'rtsp://cam-rtc:8554/k7_main', h264: null, stall: () => {} };
+  const noDevice = { ...device, rtspUrl: () => assert.fail('cihaza baglandi') };
+  for (const width of [0, 640, 1280]) { const a = feedArgs(noDevice, { path: 'a', width, playback: false, fps: null, relay }); assert.equal(a[a.indexOf('-i') + 1], relay.copy); }
+  assert.equal(feedArgs(device, { path: 'p', width: 960, playback: true }).includes('rtsp://x/p'), true, 'kayitli oynatma cihazdan');
+
+  const { DeviceGroup } = await import('../src/drivers/group.mjs');
+  const asked = [], got = [];
+  const c = { id: 2, startIndex: 16, channelCount: 16, miniSupport: false, rtspUrl: () => '', feed: (...a) => { got.push(a); return {}; }, feedMp4: (...a) => { got.push(a); return {}; } };
+  const g = new DeviceGroup({ setting: {}, devices: [c] });
+  g.relay = (k, t) => { asked.push([k, t]); return { copy: `k${k}`, h264: null, stall: () => {} }; };
+  g.feed(19, 'Mini', 320, 5); g.feedMp4(20, 'Main', true);
+  assert.deepEqual(asked, [[19, 'Extra1'], [20, 'Main']], 'yol adi global kanal; Mini alt akis yolunu okur');
+  assert.equal(got[0][0], 3); assert.equal(got[0][4].copy, 'k19');
+  assert.equal(got[1][0], 4); assert.equal(got[1][4].copy, 'k20');
+  const dvr = new DeviceGroup({ setting: {}, devices: [{ id: 1, startIndex: 0, channelCount: 4, feed: (...a) => a }] });
+  dvr.relay = () => assert.fail('RTSP siz surucu (Xiongmai DVR-IP) icin sorulmaz');
+  assert.equal(dvr.feed(0, 'Extra1', 480)[4], null);
+});

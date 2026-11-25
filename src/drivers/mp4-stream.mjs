@@ -64,18 +64,35 @@ export const convertArgs = (type) => {
  * cevirme yok, kopyanin kendisi verilir. Kamera kayit cihazinda bir gecikmede kopya da cevrilmis de ayni anda durur ve
  * birlikte surer; cihaza giden baglanti sayisi yariya iner.
  * input: kamera girisi (-i dahil); extra: iki yayinda da cikis secenekleri (Xiongmai -aspect); label(cevir): gunluk adi.
+ *
+ * relay (LiveService.relay, grup verir): kamera yerine mediamtx. Kopya relay.copy'den okunur; relay.h264 varsa (Extra1)
+ * H.264 yayini mediamtx'in cevirdigi yayinin KOPYASIDIR (panelde libx264 yok, ceviri /live ile ortak). relay.h264 null
+ * (Main) ise bugunku gibi kopyadan borudan cevrilir. Yonlendirilmis yayin goruntu vermez ya da kesilirse relay.stall().
  */
-export function sharedMp4(feeds, { ffmpeg, channel, type, convert, input, extra = [], label }) {
+export const RELAY_FIRST = 25_000;   // mediamtx DESCRIBE'i kaynak acilana dek bekletir (kaynak 15 sn, cevirici 20 sn; docker/mediamtx.yml)
+const relayInput = (url) => ['-rtsp_transport', 'tcp', '-i', url];
+export function sharedMp4(feeds, { ffmpeg, channel, type, convert, input, extra = [], label, relay = null }) {
   const key = `mp4:${channel}/${type}`;
+  const relayed = relay ? { relayed: true, firstDuration: RELAY_FIRST, onStall: relay.stall } : {};
+  // H.264 istegi, mediamtx cevirisi var ve kaynaktan ayri: kopya yayin hic acilmaz (kanal H.264 ise copy === h264, asagida kopya verilir).
+  if (convert && relay?.h264 && relay.h264 !== relay.copy) {
+    const hKey = `${key}/h264`;
+    let y = feeds.get(hKey);
+    if (!y) {
+      const h = new Mp4Feed({ ffmpeg, args: [...relayInput(relay.h264), '-c:v', 'copy', '-bsf:v', COPY_TIMESTAMP_BSF, ...extra, ...MP4_OUTPUT], onEnd: () => { if (feeds.get(hKey) === h) feeds.delete(hKey); }, label: label(true), ...relayed });
+      feeds.set(hKey, h); h.start(); y = h;
+    }
+    return y;
+  }
   let copy = feeds.get(key);
   if (!copy) {
-    copy = new Mp4Feed({ ffmpeg, args: [...input(), '-c:v', 'copy', '-bsf:v', COPY_TIMESTAMP_BSF, ...extra, ...MP4_OUTPUT], onEnd: () => { if (feeds.get(key) === copy) feeds.delete(key); }, label: label(false) });
+    copy = new Mp4Feed({ ffmpeg, args: [...(relay ? relayInput(relay.copy) : input()), '-c:v', 'copy', '-bsf:v', COPY_TIMESTAMP_BSF, ...extra, ...MP4_OUTPUT], onEnd: () => { if (feeds.get(key) === copy) feeds.delete(key); }, label: label(false), ...relayed });
     feeds.set(key, copy); copy.start();
   }
-  if (!convert || copy.codec?.startsWith('avc1')) return copy;
+  if (!convert || copy.codec?.startsWith('avc1') || (relay?.h264 && relay.h264 === relay.copy)) return copy;
   const hKey = `${key}/h264`;
   let y = feeds.get(hKey);
-  if (!y || y.source !== copy) {
+  if (!y || (y.source && y.source !== copy)) {
     y?.stop('kaynak yayın yenilendi');
     const h = new Mp4Feed({ ffmpeg, args: [...convertArgs(type), ...extra, ...MP4_OUTPUT], source: copy, onEnd: () => { if (feeds.get(hKey) === h) feeds.delete(hKey); }, label: label(true) });
     feeds.set(hKey, h); h.start(); y = h;
@@ -92,8 +109,8 @@ export class Mp4Feed {
    * etiket: gunlukte akisin adi (cihaz, kamera, kanal, tur); gunluk: test icin yazici.
    * kaynak: baska bir Mp4Feed (kopya yayin); verilirse kamera ikinci kez acilmaz, args onun ciktisina (stdin) uygulanir.
    */
-  constructor({ ffmpeg, args, source = null, onEnd = () => {}, firstDuration = 15_000, stopDuration = 10_000, label = 'akış', log = console.log }) {
-    Object.assign(this, { ffmpeg, args, source, onEnd, firstDuration, stopDuration });
+  constructor({ ffmpeg, args, source = null, onEnd = () => {}, firstDuration = 15_000, stopDuration = 10_000, label = 'akış', log = console.log, relayed = false, onStall = null }) {
+    Object.assign(this, { ffmpeg, args, source, onEnd, firstDuration, stopDuration, relayed, onStall });
     this.log = new FeedLog(label, log);
     this.subscribers = new Set(); this.init = null; this.codec = null; this.gop = []; this.gopByte = 0;
     this.error = null; this.stopped = false; this.lastZ = Date.now(); this.splitter = new Fmp4Splitter();
@@ -101,7 +118,7 @@ export class Mp4Feed {
 
   start() {
     this.ready = new Promise((resolve) => { this.resolveReady = resolve; });
-    this.t0 = Date.now(); this.log.event(this.source ? 'başladı (kopya yayından çevrilir)' : 'başladı');
+    this.t0 = Date.now(); this.log.event(this.source ? 'başladı (kopya yayından çevrilir)' : this.relayed ? 'başladı (mediamtx)' : 'başladı');
     if (this.source) this.source.ready.then(() => this.#fromSource()); else this.#spawn(this.args, 'ignore');
     return this;
   }
@@ -118,15 +135,22 @@ export class Mp4Feed {
   }
 
   #spawn(args, stdin) {
-    this.firstTime = setTimeout(() => { if (!this.init) { this.error ??= 'Kameradan görüntü gelmedi'; this.stop(`ilk görüntü ${sec(this.firstDuration)} içinde gelmedi (ffmpeg çalışıyor)`); } }, this.firstDuration);
+    this.firstTime = setTimeout(() => { if (!this.init) { this.error ??= 'Kameradan görüntü gelmedi'; this.#fail(`ilk görüntü ${sec(this.firstDuration)} içinde gelmedi (ffmpeg çalışıyor)`); } }, this.firstDuration);
     // ffmpeg calisiyor ama cihazdan veri gelmiyor: cihaz baglantiyi tutup gondermeyi birakmis
-    this.watcher = setInterval(() => { if (this.init && Date.now() - this.lastZ > this.stopDuration) this.stop(`cihaz veri göndermeyi bıraktı: ${sec(Date.now() - this.lastZ)} veri yok, bağlantı açık (ffmpeg çalışıyordu)`); }, 2000);
+    this.watcher = setInterval(() => { if (this.init && Date.now() - this.lastZ > this.stopDuration) this.#fail(`cihaz veri göndermeyi bıraktı: ${sec(Date.now() - this.lastZ)} veri yok, bağlantı açık (ffmpeg çalışıyordu)`); }, 2000);
     this.ff = spawn(this.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...args], { stdio: [stdin, 'pipe', 'pipe'], windowsHide: true });
     this.ff.on('error', (e) => { this.error = `ffmpeg başlatılamadı: ${e.code ?? e.message}`; this.stop(this.error); });   // dinleyicisiz 'error' tum paneli dusurur
     this.ff.stderr.on('data', (b) => this.log.stderr(b));
     this.ff.stdout.on('data', (b) => this.#data(b));
     // ffmpeg kendiliginden kapandi: cihaz baglantiyi kesti ya da akisi reddetti (nedeni ffmpeg satirlarinda)
-    this.ff.on('close', (code, signal) => this.stop(`ffmpeg kapandı (${signal ? `sinyal ${signal}` : `kod ${code}`}) — ${this.source ? 'kopya yayın bitti' : 'cihaz bağlantıyı kesti ya da akışı reddetti'}`));
+    this.ff.on('close', (code, signal) => this.#fail(`ffmpeg kapandı (${signal ? `sinyal ${signal}` : `kod ${code}`}) — ${this.source ? 'kopya yayın bitti' : this.relayed ? 'mediamtx yayını kesti ya da reddetti' : 'cihaz bağlantıyı kesti ya da akışı reddetti'}`));
+  }
+
+  /** Kendiliginden kapanma (panel kapatmadi): yonlendirilmis yayinda mediamtx kaynagi yeniden kurulur (relay.stall). */
+  #fail(reason) {
+    if (this.stopped) return;
+    if (this.relayed) { try { this.onStall?.(); } catch {} }
+    this.stop(reason);
   }
 
   #data(b) {

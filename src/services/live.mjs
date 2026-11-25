@@ -6,6 +6,11 @@
  *    (Chrome WebRTC'de H.265 oynatmiyor). Cihaz parolasi dosyaya yazilmaz, yalniz bellekte ve mediamtx'in belleginde durur;
  *  - her sayfanin ORTAK duzenini sayfa kaydinda tutar (live_pages tablosu; veritabani yedegine girer).
  * mediamtx yeniden baslarsa yollar bir sonraki esitlemede (en gec 1 dk) geri yazilir. CAM_RTC_API bossa kapali.
+ *
+ * Canli izlemede kayit cihazina YALNIZ mediamtx baglanir: panelin canli akislari (MP4 kopya/H.264, MJPEG, goruntu al, AI)
+ * cihaz yerine mediamtx yollarindan okur (relay). Olculen: panel 16 + mediamtx 11 = 27 es zamanli cihaz oturumu, 7 kanal
+ * iki yerden; ceviri de iki yerde (panel %300, mediamtx %225 cekirdek). Cihaz oturum sinirina dayaninca kanallar dusup
+ * yeniden baglanmada 500 donuyordu (izleyicide donma). Kayitli oynatma ve indirme dogrudan cihazdadir.
  */
 import { spawn } from 'node:child_process';
 import { KEYFRAME_EXPR, TIMESTAMP_FILTER } from '../drivers/mp4-stream.mjs';
@@ -25,14 +30,18 @@ export const LIVE_TRANSCODE = `-vf "settb=1/90000,${TIMESTAMP_FILTER}" -c:v libx
 export const LIVE_FIRST_COUNT = 12;
 export const LIVE_COLUMNS = [1, 2, 3, 4, 5, 6];
 
-/** Kanal listesi + kodekler -> mediamtx yollari (test/live.test.mjs). */
+/**
+ * Kanal listesi + kodekler -> mediamtx yollari (test/live.test.mjs). Her kanala ana akis yolu kN_main (yalniz okunurken
+ * cihaza baglanir). Kodegi henuz olculmemis kanal yalniz kaynak yolunu (kN_source) alir: olcum de cihaza degil mediamtx'e gider.
+ */
 export function livePaths(list, codec) {
   const y = {};
   for (const x of list) {
     const kd = codec.get(x.k);
-    if (!kd) continue;
     const source = { source: x.url, rtspTransport: 'tcp', sourceOnDemand: true };
-    if (kd === 'h264') y[`k${x.k}`] = source;
+    if (x.main) y[`k${x.k}_main`] = { source: x.main, rtspTransport: 'tcp', sourceOnDemand: true };
+    if (!kd) y[`k${x.k}_source`] = source;
+    else if (kd === 'h264') y[`k${x.k}`] = source;
     else {
       y[`k${x.k}_source`] = source;
       y[`k${x.k}`] = { source: 'publisher', runOnDemand: `ffmpeg -hide_banner -loglevel error -rtsp_transport tcp -i rtsp://127.0.0.1:8554/k${x.k}_source -an ${LIVE_TRANSCODE} -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/k${x.k}`, runOnDemandRestart: true };
@@ -72,9 +81,11 @@ export const WHEP_TIMEOUT = 25_000;
  * bayt geldigi icin ne tarayicinin bekcisi ne frozenPaths bunu goruyordu; elle yeniden baslatildi.
  * Takili sayilir: ayni yayin oturumunda cikis iki esitleme arasinda ortalama CONVERTER_FLOOD'u asarsa, ya da iki
  * esitleme ust uste kaynak yolunu okuyan kimse yoksa. prev: onceki { yol -> { session, bytes, time, strikes } }.
+ * local: mediamtx'in kendi icinden (127.0.0.1) gelen RTSP oturumlarinin kimlikleri; verilirse kaynak yolunun okuyucusu
+ * yalniz bunlardan sayilir (panel de kaynak yolunu okur; onu sayarsak okumayan cevirici gorunmez).
  * { stuck: [{ name, session, reason }], state } doner; takilan yol state'e girmez (yeni oturum sifirdan olculur).
  */
-export function stuckConverters(prev, items, requested, now = Date.now()) {
+export function stuckConverters(prev, items, requested, now = Date.now(), local = null) {
   const by = new Map(items.map((p) => [p.name, p]));
   const state = new Map(); const stuck = [];
   for (const [name, setting] of Object.entries(requested)) {
@@ -83,13 +94,34 @@ export function stuckConverters(prev, items, requested, now = Date.now()) {
     if (!p?.ready || p.source?.type !== 'rtspSession' || !p.source.id) continue;
     const o = prev.get(name); const same = o?.session === p.source.id;
     const rate = same && now > o.time ? (p.bytesReceived - o.bytes) / ((now - o.time) / 1000) : 0;
-    const strikes = by.get(`${name}_source`)?.readers?.length ? 0 : (same ? o.strikes : 0) + 1;
+    const readers = (by.get(`${name}_source`)?.readers ?? []).filter((r) => !local || local.has(r.id));
+    const strikes = readers.length ? 0 : (same ? o.strikes : 0) + 1;
     if (rate > CONVERTER_FLOOD) stuck.push({ name, session: p.source.id, reason: `cikis ${Math.round(rate / 1024)} KB/sn (kopya kare)` });
     else if (strikes >= 2) stuck.push({ name, session: p.source.id, reason: 'kaynagi okumuyor' });
     else state.set(name, { session: p.source.id, bytes: p.bytesReceived, time: now, strikes });
   }
   return { stuck, state };
 }
+
+/**
+ * mediamtx'in su an kayit cihazina acik oturumlari, cihaz basina (test/live.test.mjs). items: /v3/paths/list; hazir ve kaynagi
+ * cihaz (rtspSource) olan yol bir oturumdur (kN, kN_source, kN_main; cevirici yayini kN rtspSession, sayilmaz).
+ * deviceOf(k): global kanalin cihaz kimligi. Panelin akis butcesi (base.mjs budgetVar) bunu ekler: canli izleme cihaza
+ * yalniz mediamtx'ten baglaninca kayitli oynatma/indirme siniri ancak boyle cihazin gercek yukunu gorur.
+ */
+export function deviceSources(items, deviceOf) {
+  const n = new Map();
+  for (const p of items) {
+    const m = /^k(\d+)(_source|_main)?$/.exec(p.name ?? '');
+    if (!m || !p.ready || p.source?.type !== 'rtspSource') continue;
+    const id = deviceOf(Number(m[1]));
+    if (id != null) n.set(id, (n.get(id) ?? 0) + 1);
+  }
+  return n;
+}
+
+/** Panelin yonlendirilmis yayini takilinca kaynak yolu en cok bu araliklarla yeniden kurulur (yol basina, ms). */
+export const STALL_INTERVAL = 20_000;
 
 function codecMeasure(ffprobe, url) {
   return new Promise((resolve) => {
@@ -106,16 +138,56 @@ export class LiveService {
   constructor({ config, devices, livePages }) {
     this.y = config.live; this.devices = devices; this.livePages = livePages;
     this.codec = new Map(); this.written = new Map(); this.received = new Map(); this.converters = new Map(); this.cameras = []; this.last = null;
+    this.healthy = false; this.stalls = new Map(); this.sources = new Map();
     this.ffprobe = (devices.ffmpeg ?? 'ffmpeg').replace(/ffmpeg(\.exe)?$/, 'ffprobe$1');
+    // mediamtx RTSP adresi (panel canli akislari buradan okur): verilmezse yonetim adresinin konagi, 8554.
+    this.rtsp = (this.y.rtcRtsp || (this.y.rtcApi ? this.y.rtcApi.replace(/^https?:/, 'rtsp:').replace(/:\d+$/, ':8554') : '')).replace(/\/+$/, '');
   }
   get open() { return !!this.y.rtcApi; }
+  /** mediamtx'in bu cihaza acik oturum sayisi (son esitlemede; en cok ~60 sn eski). */
+  deviceSessions(id) { return this.sources.get(id) ?? 0; }
+
+  /**
+   * Panelin canli akisi icin mediamtx kaynagi (grup cagirir; k: global kanal, type: Main | Extra1 | Mini).
+   * { copy, h264, stall } ya da null (null: cihaza dogrudan, eskisi gibi). copy: kameranin kendi videosu; h264: mediamtx'in
+   * cevirdigi H.264 (Extra1; H.264 kanalda copy ile ayni), Main icin null (panel kopyadan cevirir; Main'in WebRTC izleyicisi yok).
+   * null: /live kapali, son esitleme basarisiz (mediamtx'e ulasilamiyor), yol yazilmamis ya da Extra1 kodegi olculmemis.
+   */
+  relay(k, type) {
+    if (!this.open || !this.healthy || !this.rtsp) return null;
+    const url = (name) => `${this.rtsp}/${name}`;
+    const stall = () => this.stall(k, type);
+    if (type === 'Main') return this.written.has(`k${k}_main`) ? { copy: url(`k${k}_main`), h264: null, stall } : null;
+    const kd = this.codec.get(k);
+    if (!kd || !this.written.has(`k${k}`)) return null;
+    const copy = kd === 'h264' ? `k${k}` : `k${k}_source`;
+    return this.written.has(copy) ? { copy: url(copy), h264: url(`k${k}`), stall } : null;
+  }
+
+  /**
+   * Yonlendirilmis yayin goruntu vermedi ya da veri kesildi: cihaza giden kaynak yolu hemen silinip yeniden eklenir (mediamtx
+   * cihaza yeni oturum acar; cevirici de dusup yeniden kalkar). Donmus yolu esitleme ancak 1-2 dk'da yakaliyordu.
+   * Yol basina STALL_INTERVAL'de bir; cihaza dogrudan donulmez (oturum sinirini yeniden asmamak icin).
+   */
+  async stall(k, type, now = Date.now()) {
+    const name = type === 'Main' ? `k${k}_main` : this.codec.get(k) === 'h264' ? `k${k}` : `k${k}_source`;
+    const j = this.written.get(name);
+    if (!j || now - (this.stalls.get(name) ?? 0) < STALL_INTERVAL) return false;
+    this.stalls.set(name, now);
+    try {
+      await this.#api('DELETE', `/v3/config/paths/delete/${name}`);
+      await this.#api('POST', `/v3/config/paths/add/${name}`, JSON.parse(j));
+      console.log(`live: ${name} panel akisi takildi, kaynak yeniden baglandi`);
+      return true;
+    } catch (e) { console.error(`live: ${name} yeniden baglanamadi:`, e.message); return false; }
+  }
 
   /** ilk: ilk esitlemenin sozu (testler bekler). */
   start() { if (this.open && !this.first) this.first = this.#loop(); }
   close() { clearTimeout(this.time); this.time = null; this.closed = true; }
   async #loop() {
     try { const r = await this.sync(); if (JSON.stringify(r) !== JSON.stringify(this.last)) console.log(`live: ${r.ready}/${r.channel} kanal mediamtx'te`); this.last = r; }
-    catch (e) { console.error('live esitleme:', e.message); }
+    catch (e) { this.healthy = false; this.sources = new Map(); console.error('live esitleme:', e.message); }
     if (!this.closed) { this.time = setTimeout(() => this.#loop(), 60_000); this.time.unref?.(); }
   }
 
@@ -133,14 +205,28 @@ export class LiveService {
       for (let i = 0; i < c.channelCount; i++) {
         const k = c.startIndex + i;
         if (b.channelEmpty?.[k]) continue;
-        list.push({ k, name: b.channelNames?.[k] ?? `Kamera ${k + 1}`, device: c.setting.name ?? '', url: c.rtspUrl(c.livePath(i, 'Extra1')) });
+        list.push({ k, name: b.channelNames?.[k] ?? `Kamera ${k + 1}`, device: c.setting.name ?? '', url: c.rtspUrl(c.livePath(i, 'Extra1')), main: c.rtspUrl(c.livePath(i, 'Main')) });
       }
     }
+    // Olculmemis kanallar once kaynak yoluyla yazilir; ffprobe cihaza degil mediamtx'e (kN_source) baglanir.
     const toMeasure = list.filter((x) => !this.codec.has(x.k));
-    await Promise.all(Array.from({ length: 4 }, async () => { while (toMeasure.length) { const x = toMeasure.shift(); const kd = await codecMeasure(this.ffprobe, x.url); if (kd) this.codec.set(x.k, kd); } }));
+    if (toMeasure.length) {
+      await this.#write(livePaths(list, this.codec));
+      await Promise.all(Array.from({ length: 4 }, async () => { while (toMeasure.length) { const x = toMeasure.shift(); const kd = await codecMeasure(this.ffprobe, `${this.rtsp}/k${x.k}_source`); if (kd) this.codec.set(x.k, kd); } }));
+    }
+    const requested = livePaths(list, this.codec);
+    await this.#write(requested);
+    await this.#revive(requested);
     const ready = list.filter((x) => this.codec.has(x.k));
-    const requested = livePaths(ready, this.codec);
+    this.cameras = ready.map((x) => ({ path: `k${x.k}`, name: x.name, device: x.device, converted: this.codec.get(x.k) !== 'h264' }));
+    this.healthy = true;
+    return { channel: list.length, ready: ready.length };
+  }
+
+  /** Istenen yollari mediamtx'e yazar, fazlasini siler. mediamtx'te olmayan yol (yeniden basladi) written'dan da duser. */
+  async #write(requested) {
     const existing = new Set(((await this.#api('GET', '/v3/config/paths/list?itemsPerPage=10000'))?.items ?? []).map((p) => p.name));
+    for (const name of this.written.keys()) if (!existing.has(name)) this.written.delete(name);
     for (const [name, setting] of Object.entries(requested)) {
       const j = JSON.stringify(setting);
       if (existing.has(name) && this.written.get(name) === j) continue;   // degismeyen yol yeniden yazilmaz: acik izleyici dusmesin
@@ -148,9 +234,6 @@ export class LiveService {
       this.written.set(name, j);
     }
     for (const name of existing) if (!(name in requested)) { await this.#api('DELETE', `/v3/config/paths/delete/${name}`); this.written.delete(name); }
-    await this.#revive(requested);
-    this.cameras = ready.map((x) => ({ path: `k${x.k}`, name: x.name, device: x.device, converted: this.codec.get(x.k) !== 'h264' }));
-    return { channel: list.length, ready: ready.length };
   }
 
   /**
@@ -160,6 +243,10 @@ export class LiveService {
    */
   async #revive(requested) {
     const items = (await this.#api('GET', '/v3/paths/list?itemsPerPage=10000'))?.items ?? [];
+    this.sources = deviceSources(items, (k) => this.devices.group?.deviceIdOf?.(k) ?? null);
+    // Kaynak yolunun okuyucusu yalniz mediamtx'in kendi cevirici ffmpeg'i sayilir (panel de okur, bkz. stuckConverters).
+    const sessions = (await this.#api('GET', '/v3/rtspsessions/list?itemsPerPage=10000'))?.items ?? [];
+    const local = new Set(sessions.filter((x) => /^(127\.0\.0\.1|\[::1\]|::1)(:|$)/.test(String(x.remoteAddr ?? ''))).map((x) => x.id));
     const r = frozenPaths(this.received, items, requested);
     for (const name of r.frozen) {
       await this.#api('DELETE', `/v3/config/paths/delete/${name}`);
@@ -167,7 +254,7 @@ export class LiveService {
       console.log(`live: ${name} akisi donmustu, yeniden baglandi`);
     }
     this.received = r.received;
-    const c = stuckConverters(this.converters, items, requested);
+    const c = stuckConverters(this.converters, items, requested, Date.now(), local);
     for (const x of c.stuck) {
       try { await this.#api('POST', `/v3/rtspsessions/kick/${x.session}`); console.log(`live: ${x.name} cevirici takildi (${x.reason}), yeniden baslatildi`); }
       catch (e) { console.error(`live: ${x.name} cevirici yeniden baslatilamadi:`, e.message); }

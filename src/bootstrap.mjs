@@ -109,6 +109,8 @@ async function createAppWithDb(config, db, extra) {
   const links = await new HubLinks(db, { hub, members, auditLog, config }).load();
   livePages = await new LivePageStore(db, { roleValid: (r) => permissions.roleVar(r) }).load();
   const live = new LiveService({ config, devices, livePages });
+  devices.group.relay = (channel, type) => live.relay(channel, type);   // canli akislar cihaz yerine mediamtx'ten (kapaliyken null)
+  devices.group.relayCount = (id) => live.deviceSessions(id);            // ...ve mediamtx'in cihaza actigi oturumlar akis butcesinde
   const updates = await new UpdateService({ settings, setting: config.updates }).load();
   const alerts = await new AlertService({ db, settings, secret, devices, config }).load();
   const databaseMove = { file: databaseFile(config, secret), secret, restart: () => process.kill(process.pid, 'SIGTERM'), ...extra.databaseMove };

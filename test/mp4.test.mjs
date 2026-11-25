@@ -6,7 +6,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { Fmp4Splitter, makeHvc1, codecName, findBox, boxes } from '../src/drivers/fmp4.mjs';
-import { CONVERT_BITRATE, MP4_OUTPUT, Mp4Feed, convertArgs, sharedMp4 } from '../src/drivers/mp4-stream.mjs';
+import { CONVERT_BITRATE, MP4_OUTPUT, Mp4Feed, RELAY_FIRST, convertArgs, sharedMp4 } from '../src/drivers/mp4-stream.mjs';
+import { DeviceBase } from '../src/drivers/base.mjs';
 import { openApp } from './helpers.mjs';
 
 const example = (encoder) => {
@@ -166,4 +167,42 @@ test('ayni uye hesabiyla baska ekranda 16 akis acikken yeni ekran 429 almaz (uye
     held.forEach((f) => f());
     assert.equal(r.status, 200);
   } finally { await u.close(); }
+});
+
+test('mediamtx uzerinden (relay): alt akis H.264 panelde cevrilmez, mediamtx cevirisinin kopyasi; ana akis kopyadan borudan cevrilir', () => {
+  const label = (cv) => (cv ? 'h264' : 'kopya'), input = () => assert.fail('cihaza baglandi');
+  const at = (a, f) => a[a.indexOf(f) + 1];
+  const feeds = new Map();
+  const relay = { copy: 'rtsp://m:8554/k3_source', h264: 'rtsp://m:8554/k3', stall: () => {} };
+  const h = sharedMp4(feeds, { ffmpeg: '/yok/ffmpeg', channel: 3, type: 'Extra1', convert: true, input, label, relay });
+  assert.equal(at(h.args, '-i'), relay.h264); assert.equal(at(h.args, '-c:v'), 'copy'); assert.ok(!h.args.includes('libx264'));
+  assert.ok(!h.source && h.relayed && h.firstDuration === RELAY_FIRST);
+  assert.ok(!feeds.has('mp4:3/Extra1'), 'H.264 istegi kaynak kopyasini acmaz');
+  const copy = sharedMp4(feeds, { ffmpeg: '/yok/ffmpeg', channel: 3, type: 'Extra1', convert: false, input, label, relay });
+  assert.equal(at(copy.args, '-i'), relay.copy);
+
+  // H.264 kanal: kopya ile cevrilen ayni yol, tek yayin
+  const same = { copy: 'rtsp://m:8554/k4', h264: 'rtsp://m:8554/k4', stall: () => {} };
+  const a = sharedMp4(feeds, { ffmpeg: '/yok/ffmpeg', channel: 4, type: 'Extra1', convert: true, input, label, relay: same });
+  assert.equal(a, feeds.get('mp4:4/Extra1')); assert.equal(at(a.args, '-i'), same.h264);
+
+  // Main: mediamtx cevirmez; kopya kN_main'den, H.264 borudan (3000k)
+  const main = { copy: 'rtsp://m:8554/k5_main', h264: null, stall: () => {} };
+  const mh = sharedMp4(feeds, { ffmpeg: '/yok/ffmpeg', channel: 5, type: 'Main', convert: true, input, label, relay: main });
+  assert.equal(at(mh.source.args, '-i'), main.copy); assert.equal(at(mh.args, '-b:v'), `${CONVERT_BITRATE.Main}k`); assert.ok(!mh.args.includes('-i'));
+  for (const y of feeds.values()) y.stop();
+});
+
+test('yonlendirilmis yayin kendiliginden kapanirsa mediamtx kaynagi yeniden kurulur; panel kapatirsa kurulmaz; butcede sayilmaz', async () => {
+  let stalls = 0;
+  // ffmpeg yerine node: '-hide_banner' secenegini tanimaz, hemen kapanir (cihaz/mediamtx yayini kesmis gibi)
+  const y = new Mp4Feed({ ffmpeg: process.execPath, args: [], relayed: true, onStall: () => { stalls++; }, log: () => {} }).start();
+  await new Promise((r) => { const t = setInterval(() => { if (y.stopped) { clearInterval(t); r(); } }, 20); });
+  assert.equal(stalls, 1, 'ffmpeg kendiliginden kapandi');
+  const z = new Mp4Feed({ ffmpeg: '/yok/ffmpeg', args: [], relayed: true, onStall: () => { stalls++; }, log: () => {} });
+  z.stop(); assert.equal(stalls, 1, 'panelin kapattigi yayin');
+
+  const d = Object.assign(Object.create(DeviceBase.prototype), { feeds: new Map([['a', { relayed: true }], ['b', { relayed: true }], ['c', {}]]), playCounter: 0, downloadCounter: 0, streamMax: 2 });
+  assert.equal(d.budgetVar(), true, 'mediamtx yayinlari cihaz baglantisi degil');
+  d.feeds.set('d', {}); assert.equal(d.budgetVar(), false);
 });

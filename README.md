@@ -40,6 +40,9 @@ Data lives in MariaDB (`db` service, named volume `cam_database`); to use an ext
 `DB_REPLICAS=0` so the `db` service does not start. The HTTP port is not published; the reverse proxy in front provides the domain and TLS (it reaches the
 panel on 80). The `/live` video comes from the `cam-rtc` (mediamtx) service over 8189/udp; the server address given to the
 browser is `CAM_RTC_HOST`.
+With `cam-rtc` enabled, only mediamtx connects to the recorder for live viewing: the panel's live streams (grid, full screen,
+snapshot, AI) read from mediamtx's RTSP (`CAM_RTC_RTSP`, default: the `CAM_RTC_API` host on 8554) instead of the device, and the
+sub-stream H.264 conversion happens once. Playback and download stay direct; with `CAM_RTC_API` empty everything is direct.
 
 **Live pages** (Settings → Live pages, permission `livepage.manage`): each page is a record: name, path (`/<path>/`, a-z 0-9 -),
 access and its own camera layout. A *public* page is watched without signing in and can be embedded (`CAM_LIVE_EMBED`); a

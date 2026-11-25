@@ -74,6 +74,8 @@ export const config = Object.freeze({
    */
   live: {
     rtcApi: (env.CAM_RTC_API || '').replace(/\/+$/, ''),
+    // Panelin canli akislari (MP4, MJPEG, goruntu al, AI) cihaz yerine buradan okur; verilmezse rtcApi'nin konagi, 8554 (RTSP).
+    rtcRtsp: (env.CAM_RTC_RTSP || '').replace(/\/+$/, ''),
     rtcWhep: (env.CAM_RTC_WHEP || (env.CAM_RTC_API ? env.CAM_RTC_API.replace(/\/+$/, '').replace(/:\d+$/, ':8889') : '')).replace(/\/+$/, ''),
     frame: env.CAM_LIVE_EMBED ?? '*',        // iframe ile gomebilecek kokenler ("*" her yer); bos = yalniz panel
     /** Kayitli duzen yokken gosterilecek kameralar: virgulle kanal no (1'den), sirayla. Bos = ilk 12 kamera. */
